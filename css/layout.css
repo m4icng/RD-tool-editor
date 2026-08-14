@@ -1,0 +1,66 @@
+.app {
+  --sidebar-width: 294px;
+  width: min(1880px, calc(100% - 32px));
+  height: calc(100vh - 32px);
+  height: calc(100dvh - 32px);
+  min-height: 0;
+  margin: 16px auto;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 7px minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(194,205,220,.9);
+  border-radius: var(--radius-xl);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.sidebar { display: flex; min-height: 0; overflow: hidden; flex-direction: column; border-right: 1px solid var(--line); background: linear-gradient(180deg,#fbfcfe,#f6f9fd); }
+.sidebar-scroll { min-height: 0; flex: 1; overflow-y: auto; padding: 18px 16px; }
+.main { min-width: 0; min-height: 0; display: flex; overflow: hidden; flex-direction: column; background: #f7f9fc; }
+.topbar { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 20px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.92); }
+.workspace { --right-rail-width: clamp(280px,25vw,340px); min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 7px var(--right-rail-width); gap: 7px; overflow: hidden; padding: 14px; }
+.playable-workspace { --playable-hud-width: clamp(270px,24vw,330px); min-height: 0; flex: 1; display: grid; grid-template-columns: minmax(0,1fr) 7px var(--playable-hud-width); gap: 7px; overflow: hidden; padding: 14px; }
+.json-card { min-height: 0; }
+.canvas-card, .right-card { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel); box-shadow: 0 5px 16px rgba(37,50,77,.05); }
+.canvas-card { min-height: 0; display: flex; flex-direction: column; }
+.right-rail { --tray-pane-height: 56%; min-height: 0; display: grid; grid-template-rows: minmax(170px,var(--tray-pane-height)) 7px minmax(130px,1fr); gap: 7px; overflow: hidden; }
+.right-rail.json-mode { grid-template-rows: minmax(0,1fr); }
+.right-card { min-height: 0; display: flex; flex-direction: column; }
+.playable-map-card { min-height: 0; }
+.playable-hud { min-height: 0; overflow: hidden; }
+.playable-control-card { height: 100%; }
+.canvas-area { position: relative; min-height: 0; flex: 1; display: grid; place-items: center; overflow: hidden; padding: clamp(10px,2.2vh,24px); background: linear-gradient(90deg,rgba(205,214,227,.25) 1px,transparent 1px),linear-gradient(rgba(205,214,227,.25) 1px,transparent 1px),#f8fafc; background-size: 24px 24px; }
+.board-wrap { position: relative; width: min(100%,790px); min-width: 0; max-width: 100%; padding: 14px; border: 1px solid #d7deea; border-radius: 18px; background: #fff; box-shadow: 0 12px 30px rgba(46,59,84,.13); }
+.layer-list, .info-scroll { min-height: 0; overflow-y: auto; padding: 12px; }
+.data-card .panel-header { min-height: 46px; padding-block: 7px; }
+.data-card .panel-accent { height: 24px; }
+.data-card .info-scroll { padding: 8px; }
+.placeholder { flex: 1; display: grid; place-items: center; padding: 40px; }
+.placeholder-card { width: min(520px,100%); padding: 42px; border: 1px solid var(--line); border-radius: var(--radius-xl); background: #fff; box-shadow: var(--shadow-soft); text-align: center; }
+.panel-resizer { position: relative; z-index: 8; min-width: 0; min-height: 0; border-radius: 999px; outline: none; touch-action: none; user-select: none; }
+.panel-resizer::after { content: ""; position: absolute; inset: 20% 2px; border-radius: inherit; background: #d2dae6; transition: background 120ms ease,box-shadow 120ms ease; }
+.panel-resizer:hover::after,.panel-resizer:focus-visible::after,.panel-resizer.dragging::after { background: var(--primary); box-shadow: 0 0 0 3px rgba(50,104,245,.12); }
+.panel-resizer-vertical { cursor: col-resize; }
+.panel-resizer-horizontal { cursor: row-resize; }
+.panel-resizer-horizontal::after { inset: 2px 20%; }
+.app-panel-resizer { margin-block: 12px; }
+
+@media (max-width: 1100px) {
+  .app { --sidebar-width: 238px; }
+  .workspace { --right-rail-width: minmax(250px,32%); padding: 10px; }
+  .playable-workspace { --playable-hud-width: minmax(250px,32%); padding: 10px; }
+}
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .app { width: 100%; height: auto; min-height: 100dvh; margin: 0; grid-template-columns: 1fr; overflow: visible; border: 0; border-radius: 0; }
+  .panel-resizer { display: none; }
+  .sidebar { max-height: 470px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .main { overflow: visible; }
+  .topbar { align-items: flex-start; flex-direction: column; }
+  .topbar-actions { flex-wrap: wrap; }
+  .workspace { grid-template-columns: 1fr; overflow: visible; padding: 8px; }
+  .playable-workspace { grid-template-columns: 1fr; overflow: visible; padding: 8px; }
+  .canvas-card { min-height: 560px; }
+  .playable-hud { min-height: 430px; }
+  .right-rail { grid-template-columns: 1fr; grid-template-rows: minmax(460px,auto) minmax(300px,auto); }
+  .right-rail.json-mode { grid-template-rows: minmax(430px,auto); }
+}

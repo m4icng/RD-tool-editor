@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>RD Level Editor</title>
+  <link rel="stylesheet" href="./css/variables.css?v=0.9.0">
+  <link rel="stylesheet" href="./css/layout.css?v=0.9.0">
+  <link rel="stylesheet" href="./css/editor.css?v=0.9.0">
+  <link rel="stylesheet" href="./css/components.css?v=0.9.0">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">🐸</div>
+        <div class="brand-copy"><strong>RailwayDash Editor</strong><span>Level Editor · v0.1</span></div>
+      </div>
+
+      <nav class="tabs" aria-label="Các khu vực editor">
+        <button class="tab-btn active" type="button" data-tab="level">LevelDes</button>
+        <button class="tab-btn" type="button" data-tab="playable">Playable</button>
+        <button class="tab-btn" type="button" data-tab="json">DataJson</button>
+      </nav>
+
+      <div class="sidebar-scroll" id="levelControls">
+        <section class="control-section">
+          <div class="section-heading"><h2>Kích thước map</h2><span>Số nguyên ≥ 1</span></div>
+          <div class="dimension-card dimension-pair">
+            <label><span>Width</span><div class="dimension-stepper"><button type="button" data-map-dimension="columns" data-delta="-1">−</button><input id="mapWidthInput" type="number" min="1" step="1" value="17"><button type="button" data-map-dimension="columns" data-delta="1">+</button></div></label>
+            <label><span>Height</span><div class="dimension-stepper"><button type="button" data-map-dimension="rows" data-delta="-1">−</button><input id="mapHeightInput" type="number" min="1" step="1" value="28"><button type="button" data-map-dimension="rows" data-delta="1">+</button></div></label>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading"><h2>Công cụ</h2><span>Phím 1–4</span></div>
+          <div class="tool-list">
+            <button class="tool-btn active" type="button" data-tool="path"><span class="tool-icon">◦</span><span class="tool-label">Vẽ đường</span><span class="shortcut">1</span></button>
+            <button class="tool-btn" type="button" data-tool="item"><span class="tool-icon">✦</span><span class="tool-label">Đặt item</span><span class="shortcut">2</span></button>
+            <button class="tool-btn" type="button" data-tool="select"><span class="tool-icon">↖</span><span class="tool-label">Chọn ô</span><span class="shortcut">3</span></button>
+            <div class="tool-menu erase-tool-menu">
+              <button class="tool-btn" id="eraseToolBtn" type="button" data-tool="erase" aria-haspopup="menu" aria-controls="eraseOptions" aria-expanded="false"><span class="tool-icon">⌫</span><span class="tool-label">Xóa · Thông minh</span><span class="shortcut">4</span></button>
+              <div class="erase-options" id="eraseOptions" role="menu" aria-label="Tùy chọn xóa">
+                <button class="erase-option danger" type="button" role="menuitem" data-erase-action="all"><span>🧹</span><span>Xóa toàn bộ map</span></button>
+                <div class="erase-divider" role="separator"></div>
+                <button class="erase-option active" type="button" role="menuitemradio" aria-checked="true" data-erase-mode="smart"><span>⌫</span><span>Xóa thông minh</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="path"><span>◦</span><span>Xóa đường đi</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="item"><span>✦</span><span>Xóa item</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="element"><span>◆</span><span>Xóa element</span><i>✓</i></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading"><h2>Palette</h2><span id="assetCount"></span></div>
+          <div class="palette-tabs" role="tablist" aria-label="Phân loại object">
+            <button class="palette-tab active" id="itemPaletteTab" type="button" role="tab" aria-selected="true" aria-controls="assetPalette" data-palette-tab="item">Item</button>
+            <button class="palette-tab" id="elementPaletteTab" type="button" role="tab" aria-selected="false" aria-controls="assetPalette" data-palette-tab="element">Element</button>
+            <button class="palette-tab" id="terrainPaletteTab" type="button" role="tab" aria-selected="false" aria-controls="assetPalette" data-palette-tab="terrain">Terrain</button>
+          </div>
+          <div class="palette" id="assetPalette"></div>
+        </section>
+      </div>
+
+      <div class="sidebar-scroll playable-sidebar hidden" id="playableControls">
+        <section class="control-section">
+          <div class="section-heading"><h2>Điều khiển</h2><span>Play mode</span></div>
+          <div class="playable-help">
+            <strong>Chọn hướng khi rắn dừng</strong>
+            <span><kbd>WASD</kbd> hoặc phím mũi tên</span>
+            <span>Vuốt chuột trên map theo hướng muốn đi</span>
+            <small>Input khi rắn đang chạy sẽ không được lưu.</small>
+          </div>
+        </section>
+        <section class="control-section">
+          <div class="section-heading"><h2>Luật nhanh</h2></div>
+          <div class="playable-help compact">
+            <span>Rắn tự chạy trên đoạn thẳng.</span>
+            <span>Dừng ở ngã rẽ và góc cua.</span>
+            <span>Chỉ được quay đầu khi chưa có đuôi.</span>
+          </div>
+        </section>
+      </div>
+
+      <div class="sidebar-scroll hidden" id="jsonControls">
+        <section class="control-section">
+          <div class="section-heading"><h2>Data JSON</h2><span>RailwayDash v1</span></div>
+          <label class="json-file-name json-sidebar-file-name"><span>Tên file</span><input id="jsonFileNameInput" type="text" value="untitled-level.json" spellcheck="false"></label>
+          <div class="topbar-actions json-sidebar-actions hidden" id="jsonActions">
+            <button class="btn" id="newLevelBtn" type="button">＋ Level mới</button>
+            <button class="btn" id="jsonImportBtn" type="button">Nhập file</button>
+            <button class="btn btn-primary" id="jsonDownloadBtn" type="button">Tải xuống</button>
+          </div>
+        </section>
+        <section class="control-section json-sidebar-preview-section">
+          <div class="section-heading"><h2>Preview file</h2><span id="jsonValidationStatus">Đang kiểm tra level</span></div>
+          <pre class="json-sidebar-preview" id="jsonPreview"></pre>
+        </section>
+      </div>
+
+      <div class="sidebar-footer"><span><i class="autosave-dot"></i>Lưu trên thiết bị</span><span id="saveStatus">Đã lưu</span></div>
+    </aside>
+
+    <div class="panel-resizer panel-resizer-vertical app-panel-resizer" id="sidebarResizeHandle" role="separator" aria-orientation="vertical" aria-label="Đổi độ rộng thanh công cụ" tabindex="0"></div>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-title">
+          <p id="topbarEyebrow">Level Design / Layer fruit đang chọn</p>
+          <div class="layer-picker" id="levelLayerPicker">
+            <select id="layerSelect" aria-label="Layer fruit đang chọn"></select>
+            <button class="btn btn-primary layer-add-btn" id="addLayerBtn" type="button">＋ <span>Thêm layer</span></button>
+            <button class="layer-picker-btn" id="toggleActiveLayerVisibilityBtn" type="button" title="Ẩn hoặc hiện layer" aria-label="Ẩn hoặc hiện layer">◉</button>
+            <button class="layer-picker-btn danger" id="deleteActiveLayerBtn" type="button" title="Xóa layer đang chọn" aria-label="Xóa layer đang chọn">×</button>
+          </div>
+        </div>
+        <div class="topbar-actions" id="levelActions">
+          <button class="btn" id="importBtn" type="button">Nhập JSON</button>
+          <button class="btn" id="exportBtn" type="button">Xuất JSON</button>
+          <button class="btn" id="undoBtn" type="button" title="Hoàn tác (Ctrl+Z)">↶ <span>Undo</span></button>
+          <button class="btn" id="redoBtn" type="button" title="Làm lại (Ctrl+Shift+Z)">↷ <span>Redo</span></button>
+          <input class="hidden" id="fileInput" type="file" accept="application/json,.json">
+        </div>
+      </header>
+
+      <section class="workspace" id="levelWorkspace">
+        <article class="canvas-card">
+          <header class="panel-header">
+            <div class="panel-title"><span class="panel-accent"></span><div><h2>Map level</h2><p id="gridMeta"></p></div></div>
+            <span class="tool-badge" id="activeToolBadge">Vẽ đường</span>
+          </header>
+          <div class="canvas-area" id="canvasArea"><div class="board-wrap" id="boardWrap"><div class="grid-board" id="gridBoard" role="grid" aria-label="Lưới thiết kế level"></div></div></div>
+          <footer class="canvas-hint"><span>Click vào ô để thao tác</span><span><kbd>Ctrl</kbd> + <kbd>Z</kbd> hoàn tác</span><span><kbd>Delete</kbd> xóa item đã chọn</span></footer>
+        </article>
+
+        <div class="panel-resizer panel-resizer-vertical" id="workspaceResizeHandle" role="separator" aria-orientation="vertical" aria-label="Đổi diện tích map và panel dữ liệu" tabindex="0"></div>
+
+        <aside class="right-rail" id="levelRightRail">
+          <section class="right-card tray-card level-rail-content">
+            <header class="panel-header"><div class="panel-title"><span class="panel-accent green"></span><div><h2>Khay chứa</h2><p>Hiển thị và setup layer của từng khay</p></div></div></header>
+            <div class="tray-panel" id="trayPanel"></div>
+          </section>
+          <div class="panel-resizer panel-resizer-horizontal level-rail-content" id="rightRailResizeHandle" role="separator" aria-orientation="horizontal" aria-label="Đổi chiều cao khu vực khay và data" tabindex="0"></div>
+          <section class="right-card data-card level-rail-content">
+            <header class="panel-header"><div class="panel-title"><span class="panel-accent amber"></span><div><h2>Data hiện tại</h2><p>Thống kê và kiểm tra nhanh</p></div></div></header>
+            <div class="info-scroll">
+              <div class="stats-grid compact-stats">
+                <div class="stat"><span>Ô đường đi</span><strong id="pathStat">0</strong></div>
+                <div class="stat"><span>Ô cỏ</span><strong id="grassStat">0</strong></div>
+                <div class="stat"><span>Priority</span><strong id="priorityStat">0</strong></div>
+                <div class="stat"><span>Tổng item</span><strong id="itemStat">0</strong></div>
+                <div class="stat"><span>Tổng fruit</span><strong id="fruitStat">0</strong></div>
+                <div class="stat"><span>Loại fruit</span><strong id="fruitTypeStat">0</strong></div>
+                <div class="stat"><span>Khay</span><strong id="trayStat">0</strong></div>
+                <div class="stat"><span>Setup/cần</span><strong id="capacityStat">0/0</strong></div>
+              </div>
+              <div class="data-summary" id="dataSummary"></div>
+              <details class="data-details validation-details" open><summary>Kiểm tra level</summary><div class="validation" id="validationList"></div></details>
+              <details class="data-details inspector" id="inspectorDetails"><summary>Ô đang chọn</summary><div id="inspectorBody"></div></details>
+            </div>
+          </section>
+          <article class="right-card json-card json-folder-card hidden" id="jsonFolderCard">
+            <header class="panel-header"><div class="panel-title"><span class="panel-accent amber"></span><div><h2>Folder & file</h2><p>Quản lý level JSON trên ổ đĩa</p></div></div><span class="json-status" id="jsonDirtyStatus">Chưa tải xuống</span></header>
+            <div class="json-toolbar json-folder-toolbar">
+              <div class="json-toolbar-actions"><button class="btn" id="chooseFolderBtn" type="button">Chọn thư mục</button><button class="btn" id="refreshFolderBtn" type="button" disabled>Làm mới</button></div>
+              <p id="folderStatus">Chưa chọn thư mục. File mới sẽ được tải xuống.</p>
+            </div>
+            <div class="json-file-list" id="jsonFileList"></div>
+          </article>
+        </aside>
+      </section>
+
+      <section class="playable-workspace hidden" id="playableWorkspace">
+        <article class="canvas-card playable-map-card">
+          <header class="panel-header">
+            <div class="panel-title"><span class="panel-accent green"></span><div><h2>Playable map</h2><p id="playableGridMeta">Snapshot level hiện tại</p></div></div>
+            <span class="play-status-badge ready" id="playableStatusBadge">Sẵn sàng</span>
+          </header>
+          <div class="canvas-area playable-canvas" id="playableCanvasArea">
+            <div class="board-wrap playable-board-wrap" id="playableBoardWrap">
+              <div class="grid-board playable-board" id="playableGridBoard" role="grid" aria-label="Map chơi thử"></div>
+            </div>
+            <div class="playable-end-overlay hidden" id="playableEndOverlay" role="dialog" aria-modal="true" aria-labelledby="playableEndTitle">
+              <div class="playable-end-card"><span id="playableEndIcon">🏁</span><h2 id="playableEndTitle">Hoàn thành</h2><p id="playableEndCopy"></p><div><button class="btn btn-primary" id="playAgainBtn" type="button">Chơi lại</button><button class="btn" id="exitPlayableBtn" type="button">Về Editor</button></div></div>
+            </div>
+          </div>
+          <footer class="canvas-hint"><span>Chỉ nhập hướng khi trạng thái đang chờ</span><span><kbd>WASD</kbd> · <kbd>↑↓←→</kbd> · vuốt chuột</span></footer>
+        </article>
+
+        <div class="panel-resizer panel-resizer-vertical" id="playableResizeHandle" role="separator" aria-orientation="vertical" aria-label="Đổi diện tích playable map và HUD" tabindex="0"></div>
+
+        <aside class="playable-hud">
+          <section class="right-card playable-control-card">
+            <header class="panel-header"><div class="panel-title"><span class="panel-accent"></span><div><h2>Phiên chơi</h2><p id="playableStatusCopy">Đang chuẩn bị snapshot</p></div></div></header>
+            <div class="playable-hud-scroll">
+              <div class="playable-blocker hidden" id="playableBlocker"></div>
+              <div class="playable-settings">
+                <label><span>Chế độ</span><select id="playModeSelect"><option value="continuous">Chơi liên tục</option><option value="step">Từng bước</option></select></label>
+                <label><span>Tốc độ</span><select id="playSpeedSelect"><option value="6">Chậm · 6 ô/s</option><option value="9" selected>Thường · 9 ô/s</option><option value="12">Nhanh · 12 ô/s</option></select></label>
+              </div>
+              <div class="playable-actions"><button class="btn" id="playPauseBtn" type="button">Pause</button><button class="btn" id="playRestartBtn" type="button">Restart</button></div>
+              <div class="playable-direction" id="playableDirectionHint"></div>
+              <section class="runtime-section"><div class="runtime-heading"><h3>Hàng đang kéo</h3><span id="playableCargoCount">0</span></div><div class="cargo-strip" id="playableCargo"></div></section>
+              <section class="runtime-section"><div class="runtime-heading"><h3>Tiến độ khay</h3><span id="playableTrayCount">0</span></div><div class="runtime-trays" id="playableTrayProgress"></div></section>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <section class="placeholder hidden" id="placeholderView">
+        <div class="placeholder-card"><div class="placeholder-icon" id="placeholderIcon">⚙</div><h2 id="placeholderTitle">Đang phát triển</h2><p id="placeholderCopy"></p><button class="btn btn-primary" id="backToLevelBtn" type="button">← Quay lại LevelDes</button></div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./js/app.bundle.js?v=0.9.0"></script>
+</body>
+</html>

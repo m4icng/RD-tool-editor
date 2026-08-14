@@ -1,0 +1,11 @@
+{
+  "name": "snacky-level-editor",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-bundle.mjs",
+    "test": "node --test",
+    "serve": "node scripts/serve.mjs"
+  }
+}

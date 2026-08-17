@@ -64,7 +64,7 @@ export class InputController {
     if (!this.isEnabled()) return;
     if (event.detail !== 0) return;
     const cell = event.target.closest(".grid-cell");
-    if (cell) this.onCell(Number(cell.dataset.x), Number(cell.dataset.y));
+    if (cell) this.onCell(Number(cell.dataset.x), Number(cell.dataset.y), { clientX: event.clientX, clientY: event.clientY });
   }
 
   handlePointerDown(event) {
@@ -77,7 +77,7 @@ export class InputController {
     const eraseOverride = event.button === 2;
 
     if (!eraseOverride && !this.canDrag()) {
-      this.onCell(position.x, position.y);
+      this.onCell(position.x, position.y, { clientX: event.clientX, clientY: event.clientY });
       return;
     }
 
@@ -87,7 +87,7 @@ export class InputController {
     this.strokeMode = eraseOverride ? "erase" : "primary";
     this.grid.classList.add("is-drawing");
     this.onStrokeStart();
-    this.paintTo(position);
+    this.paintTo(position, { clientX: event.clientX, clientY: event.clientY });
   }
 
   handlePointerMove(event) {
@@ -96,7 +96,7 @@ export class InputController {
     const target = this.root.elementFromPoint?.(event.clientX, event.clientY);
     const cell = target?.closest?.(".grid-cell");
     if (!cell || !this.grid.contains(cell)) return;
-    this.paintTo({ x: Number(cell.dataset.x), y: Number(cell.dataset.y) });
+    this.paintTo({ x: Number(cell.dataset.x), y: Number(cell.dataset.y) }, { clientX: event.clientX, clientY: event.clientY });
   }
 
   handlePointerUp() {
@@ -113,13 +113,13 @@ export class InputController {
     event.preventDefault();
   }
 
-  paintTo(position) {
+  paintTo(position, pointer = {}) {
     const cells = this.lastCell ? rasterizeGridLine(this.lastCell, position) : [position];
     cells.forEach((cell) => {
       const key = `${cell.x},${cell.y}`;
       if (this.visited.has(key)) return;
       this.visited.add(key);
-      this.onCell(cell.x, cell.y, { eraseOverride: this.strokeMode === "erase" });
+      this.onCell(cell.x, cell.y, { eraseOverride: this.strokeMode === "erase", ...pointer });
     });
     this.lastCell = position;
   }

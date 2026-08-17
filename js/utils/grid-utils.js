@@ -1,3 +1,7 @@
+import { normalizeCountBarrierCount, normalizeCountBarrierElement, nextCountBarrierSequence } from "../objects/count-barrier-object.js";
+import { nextTunnelSequence, normalizeTunnelDraft, normalizeTunnelElement } from "../objects/tunnel-object.js";
+import { nextOneWaySequence, normalizeOneWayDraft, normalizeOneWayElement } from "../objects/one-way-object.js";
+
 export const cellKey = (x, y) => `${x},${y}`;
 
 export const TRAY_VISUAL_DIRECTIONS = Object.freeze({
@@ -44,6 +48,57 @@ export function createFullGrassCells(grid, excludedKeys = new Set()) {
 }
 
 export function ensureTerrainState(state) {
+  if (!Number.isInteger(state.selectedBridgeAxis)) state.selectedBridgeAxis = 0;
+  if (!Number.isInteger(state.selectedGateDirection)) state.selectedGateDirection = 0;
+  state.selectedCountBarrierCount = normalizeCountBarrierCount(state.selectedCountBarrierCount);
+  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
+  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  state.tunnelDraft = normalizeTunnelDraft(state.tunnelDraft);
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  state.oneWayDraft = normalizeOneWayDraft(state.oneWayDraft);
+  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  }
+  if (state.nextBarrierId < nextCountBarrierSequence(state.countBarrierElement)) {
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  }
+  const activeBarrierExists = state.countBarrierElement.some((entry) => entry.barrierId === state.activeBarrierId);
+  const activeBarrierIsPending = Number.isInteger(state.activeBarrierId) && state.activeBarrierId >= 0 && state.activeBarrierId < state.nextBarrierId;
+  if (!Number.isInteger(state.activeBarrierId) || (!activeBarrierExists && !activeBarrierIsPending)) {
+    state.activeBarrierId = null;
+  }
+  if (!Number.isInteger(state.drawingCountBarrierId)) state.drawingCountBarrierId = null;
+  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
+    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  }
+  if (state.nextTunnelId < nextTunnelSequence(state.tunnelElement)) {
+    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  }
+  const activeTunnelExists = state.tunnelElement.some((entry) => entry.tunnelId === state.activeTunnelId);
+  const activeTunnelIsPending = Number.isInteger(state.activeTunnelId) && state.activeTunnelId >= 0 && state.activeTunnelId < state.nextTunnelId;
+  if (!Number.isInteger(state.activeTunnelId) || (!activeTunnelExists && !activeTunnelIsPending)) {
+    state.activeTunnelId = null;
+  }
+  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
+    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  }
+  if (state.nextOneWayId < nextOneWaySequence(state.oneWayElement)) {
+    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  }
+  const activeOneWayExists = state.oneWayElement.some((entry) => entry.oneWayId === state.activeOneWayId);
+  const activeOneWayIsPending = Number.isInteger(state.activeOneWayId) && state.activeOneWayId >= 0 && state.activeOneWayId < state.nextOneWayId;
+  if (!Number.isInteger(state.activeOneWayId) || (!activeOneWayExists && !activeOneWayIsPending)) {
+    state.activeOneWayId = null;
+  }
+  if (!Array.isArray(state.mysteryFruitElement)) state.mysteryFruitElement = [];
+  state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
+  state.mysteryFruitDebug = Boolean(state.mysteryFruitDebug);
+  Object.values(state.sharedCells ?? {}).forEach((cell) => {
+    if (cell.element?.kind === "bridge" && !Number.isInteger(cell.element.axis) && Number.isInteger(cell.element.direction)) {
+      cell.element.axis = cell.element.direction;
+      delete cell.element.direction;
+    }
+  });
   if (!state.grassCells) {
     const pathKeys = new Set(Object.entries(state.sharedCells ?? {}).filter(([, cell]) => cell.path).map(([key]) => key));
     state.grassCells = createFullGrassCells(state.grid, pathKeys);
@@ -53,11 +108,51 @@ export function ensureTerrainState(state) {
     state.priorityPoints = Object.fromEntries(Object.keys(merged.cells ?? {})
       .filter((key) => {
         const { x, y } = parseCellKey(key);
-        return isPathTurnpoint(merged, x, y);
+        return isPathJunction(merged, x, y);
       })
       .map((key) => [key, "auto"]));
   }
   return state;
+}
+
+export function normalizeMysteryFruitElement(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const layer = Number(entry?.layer);
+    if (!Number.isInteger(layer) || layer < 0) return;
+    const indexes = Array.isArray(entry?.index) ? entry.index : [];
+    const group = groups.get(layer) ?? new Set();
+    indexes.forEach((index) => {
+      const value = Number(index);
+      if (Number.isInteger(value) && value >= 0) group.add(value);
+    });
+    groups.set(layer, group);
+  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([layer, indexes]) => ({ layer, index: [...indexes].sort((a, b) => a - b) }))
+    .filter((entry) => entry.index.length > 0);
+}
+
+export function isMysteryFruitAt(state, layerNumber, index) {
+  return normalizeMysteryFruitElement(state?.mysteryFruitElement)
+    .some((entry) => entry.layer === layerNumber && entry.index.includes(index));
+}
+
+export function setMysteryFruitAt(state, layerNumber, index, hidden) {
+  state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
+  const current = state.mysteryFruitElement.find((entry) => entry.layer === layerNumber);
+  const indexes = new Set(current?.index ?? []);
+  const hadValue = indexes.has(index);
+  if (hidden) indexes.add(index);
+  else indexes.delete(index);
+  state.mysteryFruitElement = [
+    ...state.mysteryFruitElement.filter((entry) => entry.layer !== layerNumber),
+    ...(indexes.size > 0 ? [{ layer: layerNumber, index: [...indexes] }] : [])
+  ];
+  state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
+  return hidden ? !hadValue : hadValue;
 }
 
 export function isGrassAt(state, x, y) {

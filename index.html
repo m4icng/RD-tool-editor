@@ -40,14 +40,21 @@
             <button class="tool-btn" type="button" data-tool="item"><span class="tool-icon">✦</span><span class="tool-label">Đặt item</span><span class="shortcut">2</span></button>
             <button class="tool-btn" type="button" data-tool="select"><span class="tool-icon">↖</span><span class="tool-label">Chọn ô</span><span class="shortcut">3</span></button>
             <div class="tool-menu erase-tool-menu">
-              <button class="tool-btn" id="eraseToolBtn" type="button" data-tool="erase" aria-haspopup="menu" aria-controls="eraseOptions" aria-expanded="false"><span class="tool-icon">⌫</span><span class="tool-label">Xóa · Thông minh</span><span class="shortcut">4</span></button>
+              <button class="tool-btn" id="eraseToolBtn" type="button" data-tool="erase" aria-haspopup="menu" aria-controls="eraseOptions" aria-expanded="false"><span class="tool-icon">⌫</span><span class="tool-label">Xóa: Auto</span><span class="shortcut">4</span></button>
               <div class="erase-options" id="eraseOptions" role="menu" aria-label="Tùy chọn xóa">
                 <button class="erase-option danger" type="button" role="menuitem" data-erase-action="all"><span>🧹</span><span>Xóa toàn bộ map</span></button>
                 <div class="erase-divider" role="separator"></div>
-                <button class="erase-option active" type="button" role="menuitemradio" aria-checked="true" data-erase-mode="smart"><span>⌫</span><span>Xóa thông minh</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="path"><span>◦</span><span>Xóa đường đi</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="item"><span>✦</span><span>Xóa item</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="element"><span>◆</span><span>Xóa element</span><i>✓</i></button>
+                <button class="erase-option active" type="button" role="menuitemradio" aria-checked="true" data-erase-mode="smart"><span>⌫</span><span>Auto</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="path"><span>◦</span><span>Path</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="grass"><span>▦</span><span>Grass</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="item"><span>✦</span><span>Item</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="mystery-fruit"><span>?</span><span>Mystery Fruit</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="bridge"><span>=</span><span>Bridge</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="gate"><span>›</span><span>Gate</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="tunnel"><span>→</span><span>Tunnel</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="one-way"><span>▲</span><span>One Way</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="count-barrier"><span>#</span><span>Count Barrier</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="tray"><span>▣</span><span>Tray</span><i>✓</i></button>
               </div>
             </div>
           </div>
@@ -113,6 +120,7 @@
             <select id="layerSelect" aria-label="Layer fruit đang chọn"></select>
             <button class="btn btn-primary layer-add-btn" id="addLayerBtn" type="button">＋ <span>Thêm layer</span></button>
             <button class="layer-picker-btn" id="toggleActiveLayerVisibilityBtn" type="button" title="Ẩn hoặc hiện layer" aria-label="Ẩn hoặc hiện layer">◉</button>
+            <button class="layer-picker-btn" id="mysteryFruitDebugBtn" type="button" title="Bật Debug Mystery Fruit" aria-label="Bật hoặc tắt Debug Mystery Fruit" aria-pressed="false">?</button>
             <button class="layer-picker-btn danger" id="deleteActiveLayerBtn" type="button" title="Xóa layer đang chọn" aria-label="Xóa layer đang chọn">×</button>
           </div>
         </div>
@@ -129,7 +137,15 @@
         <article class="canvas-card">
           <header class="panel-header">
             <div class="panel-title"><span class="panel-accent"></span><div><h2>Map level</h2><p id="gridMeta"></p></div></div>
-            <span class="tool-badge" id="activeToolBadge">Vẽ đường</span>
+            <div class="map-header-actions">
+              <div class="zoom-controls" aria-label="Zoom map">
+                <button class="zoom-btn" id="zoomOutBtn" type="button" title="Zoom Out" aria-label="Zoom Out">−</button>
+                <output id="zoomValue">100%</output>
+                <button class="zoom-btn" id="zoomInBtn" type="button" title="Zoom In" aria-label="Zoom In">+</button>
+                <button class="zoom-btn reset" id="zoomResetBtn" type="button" title="Reset Zoom" aria-label="Reset Zoom">1:1</button>
+              </div>
+              <span class="tool-badge" id="activeToolBadge">Vẽ đường</span>
+            </div>
           </header>
           <div class="canvas-area" id="canvasArea"><div class="board-wrap" id="boardWrap"><div class="grid-board" id="gridBoard" role="grid" aria-label="Lưới thiết kế level"></div></div></div>
           <footer class="canvas-hint"><span>Click vào ô để thao tác</span><span><kbd>Ctrl</kbd> + <kbd>Z</kbd> hoàn tác</span><span><kbd>Delete</kbd> xóa item đã chọn</span></footer>
@@ -139,7 +155,7 @@
 
         <aside class="right-rail" id="levelRightRail">
           <section class="right-card tray-card level-rail-content">
-            <header class="panel-header"><div class="panel-title"><span class="panel-accent green"></span><div><h2>Khay chứa</h2><p>Hiển thị và setup layer của từng khay</p></div></div></header>
+            <header class="panel-header"><div class="panel-title"><span class="panel-accent green"></span><div><h2 id="contextPanelTitle">Khay chứa</h2><p id="contextPanelSubtitle">Hiển thị và setup layer của từng khay</p></div></div><button class="icon-btn hidden" id="contextPanelCloseBtn" type="button" data-deselect-cell aria-label="Bỏ chọn ô">×</button></header>
             <div class="tray-panel" id="trayPanel"></div>
           </section>
           <div class="panel-resizer panel-resizer-horizontal level-rail-content" id="rightRailResizeHandle" role="separator" aria-orientation="horizontal" aria-label="Đổi chiều cao khu vực khay và data" tabindex="0"></div>
@@ -164,7 +180,7 @@
           <article class="right-card json-card json-folder-card hidden" id="jsonFolderCard">
             <header class="panel-header"><div class="panel-title"><span class="panel-accent amber"></span><div><h2>Folder & file</h2><p>Quản lý level JSON trên ổ đĩa</p></div></div><span class="json-status" id="jsonDirtyStatus">Chưa tải xuống</span></header>
             <div class="json-toolbar json-folder-toolbar">
-              <div class="json-toolbar-actions"><button class="btn" id="chooseFolderBtn" type="button">Chọn thư mục</button><button class="btn" id="refreshFolderBtn" type="button" disabled>Làm mới</button></div>
+              <div class="json-toolbar-actions"><button class="btn" id="chooseFolderBtn" type="button">Mở thư mục</button><button class="btn hidden" id="reconnectFolderBtn" type="button">Reconnect</button><button class="btn" id="refreshFolderBtn" type="button" disabled>Làm mới</button></div>
               <p id="folderStatus">Chưa chọn thư mục. File mới sẽ được tải xuống.</p>
             </div>
             <div class="json-file-list" id="jsonFileList"></div>

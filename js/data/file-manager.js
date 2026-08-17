@@ -1,34 +1,65 @@
 import { stringifyJson } from "../utils/file-utils.js";
+import { scanDataFolder, readDataFile } from "./data-folder-scanner.js";
+import { clearDirectoryHandle, getDirectoryHandle, saveDirectoryHandle } from "./directory-handle-storage.js";
+import {
+  DIRECTORY_PERMISSION_MODE,
+  isDirectoryPickerSupported,
+  queryDirectoryPermission,
+  requestDirectoryPermission
+} from "./directory-permission-service.js";
 
 export class LevelFileManager {
   constructor() { this.directory = null; }
-  get supported() { return typeof window.showDirectoryPicker === "function"; }
+  get supported() { return isDirectoryPickerSupported(); }
   get connected() { return Boolean(this.directory); }
+  get directoryName() { return this.directory?.name ?? ""; }
+
+  setDirectory(handle) {
+    this.directory = handle ?? null;
+  }
 
   async chooseDirectory() {
     if (!this.supported) throw new Error("Trình duyệt này không hỗ trợ quản lý thư mục trực tiếp.");
-    this.directory = await window.showDirectoryPicker({ id: "railwaydash-levels", mode: "readwrite" });
-    return this.listFiles();
+    const handle = await window.showDirectoryPicker({ id: "railwaydash-levels", mode: DIRECTORY_PERMISSION_MODE });
+    this.directory = handle;
+    saveDirectoryHandle(handle).catch((error) => console.warn("Không thể lưu folder đã chọn", error));
+    return handle;
   }
 
-  async listFiles() {
+  async restoreDirectory() {
+    const handle = await getDirectoryHandle();
+    this.directory = handle ?? null;
+    return this.directory;
+  }
+
+  async forgetDirectory() {
+    this.directory = null;
+    await clearDirectoryHandle();
+  }
+
+  queryPermission() {
+    return queryDirectoryPermission(this.directory, DIRECTORY_PERMISSION_MODE);
+  }
+
+  requestPermission() {
+    return requestDirectoryPermission(this.directory, DIRECTORY_PERMISSION_MODE);
+  }
+
+  async listFiles(scanContext = {}) {
     if (!this.directory) return [];
-    const files = [];
-    for await (const [name, handle] of this.directory.entries()) {
-      if (handle.kind !== "file" || !name.toLowerCase().endsWith(".json")) continue;
-      const file = await handle.getFile();
-      files.push({ name, size: file.size, updatedAt: file.lastModified });
-    }
-    return files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const result = await scanDataFolder(this.directory, scanContext);
+    return result.cancelled ? null : result.files;
   }
 
   async read(name) {
     const handle = await this.directory.getFileHandle(name);
-    return JSON.parse(await (await handle.getFile()).text());
+    const entry = await readDataFile(handle);
+    if (entry.status !== "valid") throw new Error(entry.errorMessage ?? "File JSON không hợp lệ.");
+    return entry.data;
   }
 
   async write(name, data) {
-    const handle = await this.directory.getFileHandle(name);
+    const handle = await this.directory.getFileHandle(name, { create: true });
     const writable = await handle.createWritable();
     await writable.write(stringifyJson(data));
     await writable.close();

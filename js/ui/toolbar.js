@@ -1,15 +1,16 @@
 import { ERASE_MODE_LABELS, TOOL_LABELS } from "../core/constants.js";
 
 export function renderToolbar(editor, elements) {
+  if (!ERASE_MODE_LABELS[editor.data.eraseMode]) editor.data.eraseMode = "smart";
   document.querySelectorAll("[data-tool]").forEach((button) => button.classList.toggle("active", button.dataset.tool === editor.data.tool));
   const eraseLabel = ERASE_MODE_LABELS[editor.data.eraseMode ?? "smart"];
-  document.querySelector("#eraseToolBtn .tool-label").textContent = `Xóa · ${eraseLabel}`;
+  document.querySelector("#eraseToolBtn .tool-label").textContent = `Xóa: ${eraseLabel}`;
   document.querySelectorAll("[data-erase-mode]").forEach((button) => {
     const active = button.dataset.eraseMode === (editor.data.eraseMode ?? "smart");
     button.classList.toggle("active", active);
     button.setAttribute("aria-checked", String(active));
   });
-  elements.activeToolBadge.textContent = editor.data.tool === "erase" ? `Xóa ${eraseLabel.toLowerCase()}` : TOOL_LABELS[editor.data.tool];
+  elements.activeToolBadge.textContent = editor.data.tool === "erase" ? `Xóa: ${eraseLabel}` : TOOL_LABELS[editor.data.tool];
   elements.undoBtn.disabled = !editor.history.canUndo;
   elements.redoBtn.disabled = !editor.history.canRedo;
 }
@@ -36,9 +37,12 @@ export function activateTab(tab, editorData, elements) {
   elements.levelLayerPicker.classList.toggle("read-only", isJson);
   elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson));
   if (isJson) elements.activeToolBadge.textContent = "Chỉ xem";
-  else if (isLevel) elements.activeToolBadge.textContent = editorData.tool === "erase"
-    ? `Xóa ${(ERASE_MODE_LABELS[editorData.eraseMode ?? "smart"] ?? "").toLowerCase()}`
+  else if (isLevel) {
+    const eraseMode = ERASE_MODE_LABELS[editorData.eraseMode] ? editorData.eraseMode : "smart";
+    elements.activeToolBadge.textContent = editorData.tool === "erase"
+    ? `Xóa: ${ERASE_MODE_LABELS[eraseMode]}`
     : TOOL_LABELS[editorData.tool];
+  }
   elements.placeholderView.classList.add("hidden");
   elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
 }

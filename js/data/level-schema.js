@@ -7,6 +7,10 @@ export function createLevelDocument(editorData) {
     grid: structuredClone(editorData.grid),
     sharedCells: structuredClone(editorData.sharedCells ?? {}),
     activeLayerId: editorData.activeLayerId,
-    layers: structuredClone(editorData.layers)
+    layers: structuredClone(editorData.layers),
+    mysteryFruitElement: structuredClone(editorData.mysteryFruitElement ?? []),
+    countBarrierElement: structuredClone(editorData.countBarrierElement ?? []),
+    tunnelElement: structuredClone(editorData.tunnelElement ?? []),
+    oneWayElement: structuredClone(editorData.oneWayElement ?? [])
   };
 }

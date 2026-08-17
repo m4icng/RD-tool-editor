@@ -35,8 +35,9 @@ function trayLayerTotal(layer) {
 }
 
 export function getSelectedTrayContext(state) {
-  if (!state.selectedCell) return null;
-  const { x, y } = state.selectedCell;
+  const selectedCell = state.selectedCell ?? state.activeTrayCell;
+  if (!selectedCell) return null;
+  const { x, y } = selectedCell;
   const cell = state.sharedCells?.[cellKey(x, y)];
   if (!cell || !["tray", "truck"].includes(cell.item?.kind)) return null;
   return { cell, item: cell.item, x, y };
@@ -279,7 +280,7 @@ function createTrayEditor(context, trayIndex, width) {
   header.className = "tray-config-header";
   header.innerHTML = '<span><strong></strong><small></small></span><button class="btn btn-primary" type="button" data-tray-add-layer>＋ Layer</button>';
   header.children[0].children[0].textContent = `Khay ID ${context.item.trayId}`;
-  header.children[0].children[1].textContent = `DeliverPoint · Index ${positionToIndex(context.x, context.y, width)}`;
+  header.children[0].children[1].textContent = `Deliver Point · Index ${positionToIndex(context.x, context.y, width)}`;
   editor.appendChild(header);
 
   if (context.item.kind === "truck") {
@@ -293,17 +294,18 @@ function createTrayEditor(context, trayIndex, width) {
 
   const positionControl = document.createElement("label");
   positionControl.className = "tray-position-picker";
-  positionControl.innerHTML = '<span><strong>Vị trí visual khay</strong><small></small></span><select data-tray-position-direction aria-label="Hướng đặt visual khay"></select>';
+  positionControl.innerHTML = '<span><strong>trayPosition</strong><small></small></span><select data-tray-position-direction aria-label="Hướng đặt visual khay"></select>';
   const trayPosition = getTrayVisualPosition(context.item, context);
-  positionControl.children[0].children[1].textContent = `Index ${positionToIndex(trayPosition.x, trayPosition.y, width)} · tương đối từ deliverPoint`;
+  positionControl.children[0].children[1].textContent = `Index ${positionToIndex(trayPosition.x, trayPosition.y, width)} · +1 so với Deliver Point`;
   const directionSelect = positionControl.children[1];
+  const currentDirection = getTrayVisualDirection(context.item, context);
   Object.entries(TRAY_DIRECTION_META).forEach(([direction, label]) => {
     const option = document.createElement("option");
     option.value = direction;
     option.textContent = label;
+    if (direction === currentDirection) option.setAttribute("selected", "");
     directionSelect.appendChild(option);
   });
-  directionSelect.value = getTrayVisualDirection(context.item, context);
   editor.appendChild(positionControl);
 
   const layers = context.item.trayLayers ?? [];
@@ -321,14 +323,37 @@ function createTrayEditor(context, trayIndex, width) {
   return editor;
 }
 
+export function createTrayContextAt(state, x, y) {
+  const cell = state.sharedCells?.[cellKey(x, y)];
+  if (!cell || !["tray", "truck"].includes(cell.item?.kind)) return null;
+  return { cell, item: cell.item, x, y };
+}
+
+export function createTrayInspectorCard(context, width) {
+  const card = document.createElement("article");
+  card.className = "inspector-card tray-inspector-card";
+  card.innerHTML = '<header><span class="inspector-card-icon"></span><h3>Khay chứa</h3></header>';
+  card.querySelector(".inspector-card-icon").textContent = context.item.icon ?? "🧺";
+  card.appendChild(createTrayEditor(context, 0, width));
+
+  const deleteButton = document.createElement("button");
+  deleteButton.className = "inspector-link danger";
+  deleteButton.type = "button";
+  deleteButton.dataset.inspectorDelete = "tray";
+  deleteButton.textContent = "Xóa Tray";
+  card.appendChild(deleteButton);
+  return card;
+}
+
 export function renderTrayEditor(container, state) {
   const trays = trayEntries(state);
+  const activeTrayCell = state.activeTrayCell ?? state.selectedCell;
   container.innerHTML = "";
   if (trays.length === 0) {
     container.innerHTML = '<div class="empty-state">Chưa có khay chứa trên map. Chọn <strong>Khay chứa</strong> trong tab Item để đặt một khay trống.</div>';
     return;
   }
-  container.appendChild(createTrayList(trays, state.selectedCell, state.grid.columns));
+  container.appendChild(createTrayList(trays, activeTrayCell, state.grid.columns));
   const context = getSelectedTrayContext(state);
   if (!context) {
     const hint = document.createElement("div");

@@ -22,10 +22,17 @@ const TOOL_LABELS = Object.freeze({
 });
 
 const ERASE_MODE_LABELS = Object.freeze({
-  smart: "Thông minh",
-  path: "Đường đi",
+  smart: "Auto",
+  path: "Path",
+  grass: "Grass",
   item: "Item",
-  element: "Element"
+  "mystery-fruit": "Mystery Fruit",
+  bridge: "Bridge",
+  gate: "Gate",
+  tunnel: "Tunnel",
+  "one-way": "One Way",
+  "count-barrier": "Count Barrier",
+  tray: "Tray"
 });
 
 const TERRAIN_ASSET_IDS = Object.freeze({
@@ -33,6 +40,25 @@ const TERRAIN_ASSET_IDS = Object.freeze({
   EMPTY: "terrain-empty",
   PRIORITY_POINT: "priority-point"
 });
+
+const BRIDGE_ASSET_ID = "bridge";
+const BRIDGE_AXES = Object.freeze({
+  HORIZONTAL: 0,
+  VERTICAL: 1
+});
+
+const GATE_ASSET_ID = "gate";
+const GATE_DIRECTIONS = Object.freeze({
+  UP: 0,
+  DOWN: 1,
+  RIGHT: 2,
+  LEFT: 3
+});
+
+const MYSTERY_FRUIT_ASSET_ID = "mystery-fruit";
+const COUNT_BARRIER_ASSET_ID = "count-barrier";
+const TUNNEL_ASSET_ID = "tunnel";
+const ONE_WAY_ASSET_ID = "one-way";
 
 const FRUIT_TYPES = Object.freeze(["apple", "banana", "grape", "eggplant"]);
 const FRUIT_SHORT = Object.freeze({ apple: "T", banana: "C", grape: "N", eggplant: "CT" });
@@ -106,6 +132,42 @@ class HistoryManager {
 }
 
 
+// ---- js/core/visual-scale.js ----
+const VISUAL_SCALE = Object.freeze({
+  fruit: 0.72,
+  mysteryFruit: 0.72,
+  bridge: 0.9,
+  gate: 0.75,
+  tunnel: 0.78,
+  oneWayArrow: 0.6,
+  barrier: 0.85,
+  spawn: 0.7,
+  priorityPoint: 0.5,
+  tray: 0.72,
+  deliverPoint: 0.28
+});
+
+const CSS_VARIABLES = Object.freeze({
+  fruit: "--visual-fruit",
+  mysteryFruit: "--visual-mystery-fruit",
+  bridge: "--visual-bridge",
+  gate: "--visual-gate",
+  tunnel: "--visual-tunnel",
+  oneWayArrow: "--visual-one-way",
+  barrier: "--visual-barrier",
+  spawn: "--visual-spawn",
+  priorityPoint: "--visual-priority-point",
+  tray: "--visual-tray",
+  deliverPoint: "--visual-deliver-point"
+});
+
+function applyVisualScaleConfig(container) {
+  Object.entries(CSS_VARIABLES).forEach(([key, variable]) => {
+    container.style.setProperty(variable, `${VISUAL_SCALE[key] * 100}%`);
+  });
+}
+
+
 // ---- js/utils/id-generator.js ----
 let sequence = 0;
 
@@ -117,6 +179,9 @@ function createId(prefix = "id") {
 
 
 // ---- js/utils/grid-utils.js ----
+
+
+
 const cellKey = (x, y) => `${x},${y}`;
 
 const TRAY_VISUAL_DIRECTIONS = Object.freeze({
@@ -163,6 +228,57 @@ function createFullGrassCells(grid, excludedKeys = new Set()) {
 }
 
 function ensureTerrainState(state) {
+  if (!Number.isInteger(state.selectedBridgeAxis)) state.selectedBridgeAxis = 0;
+  if (!Number.isInteger(state.selectedGateDirection)) state.selectedGateDirection = 0;
+  state.selectedCountBarrierCount = normalizeCountBarrierCount(state.selectedCountBarrierCount);
+  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
+  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  state.tunnelDraft = normalizeTunnelDraft(state.tunnelDraft);
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  state.oneWayDraft = normalizeOneWayDraft(state.oneWayDraft);
+  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  }
+  if (state.nextBarrierId < nextCountBarrierSequence(state.countBarrierElement)) {
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  }
+  const activeBarrierExists = state.countBarrierElement.some((entry) => entry.barrierId === state.activeBarrierId);
+  const activeBarrierIsPending = Number.isInteger(state.activeBarrierId) && state.activeBarrierId >= 0 && state.activeBarrierId < state.nextBarrierId;
+  if (!Number.isInteger(state.activeBarrierId) || (!activeBarrierExists && !activeBarrierIsPending)) {
+    state.activeBarrierId = null;
+  }
+  if (!Number.isInteger(state.drawingCountBarrierId)) state.drawingCountBarrierId = null;
+  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
+    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  }
+  if (state.nextTunnelId < nextTunnelSequence(state.tunnelElement)) {
+    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  }
+  const activeTunnelExists = state.tunnelElement.some((entry) => entry.tunnelId === state.activeTunnelId);
+  const activeTunnelIsPending = Number.isInteger(state.activeTunnelId) && state.activeTunnelId >= 0 && state.activeTunnelId < state.nextTunnelId;
+  if (!Number.isInteger(state.activeTunnelId) || (!activeTunnelExists && !activeTunnelIsPending)) {
+    state.activeTunnelId = null;
+  }
+  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
+    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  }
+  if (state.nextOneWayId < nextOneWaySequence(state.oneWayElement)) {
+    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  }
+  const activeOneWayExists = state.oneWayElement.some((entry) => entry.oneWayId === state.activeOneWayId);
+  const activeOneWayIsPending = Number.isInteger(state.activeOneWayId) && state.activeOneWayId >= 0 && state.activeOneWayId < state.nextOneWayId;
+  if (!Number.isInteger(state.activeOneWayId) || (!activeOneWayExists && !activeOneWayIsPending)) {
+    state.activeOneWayId = null;
+  }
+  if (!Array.isArray(state.mysteryFruitElement)) state.mysteryFruitElement = [];
+  state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
+  state.mysteryFruitDebug = Boolean(state.mysteryFruitDebug);
+  Object.values(state.sharedCells ?? {}).forEach((cell) => {
+    if (cell.element?.kind === "bridge" && !Number.isInteger(cell.element.axis) && Number.isInteger(cell.element.direction)) {
+      cell.element.axis = cell.element.direction;
+      delete cell.element.direction;
+    }
+  });
   if (!state.grassCells) {
     const pathKeys = new Set(Object.entries(state.sharedCells ?? {}).filter(([, cell]) => cell.path).map(([key]) => key));
     state.grassCells = createFullGrassCells(state.grid, pathKeys);
@@ -172,11 +288,51 @@ function ensureTerrainState(state) {
     state.priorityPoints = Object.fromEntries(Object.keys(merged.cells ?? {})
       .filter((key) => {
         const { x, y } = parseCellKey(key);
-        return isPathTurnpoint(merged, x, y);
+        return isPathJunction(merged, x, y);
       })
       .map((key) => [key, "auto"]));
   }
   return state;
+}
+
+function normalizeMysteryFruitElement(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const layer = Number(entry?.layer);
+    if (!Number.isInteger(layer) || layer < 0) return;
+    const indexes = Array.isArray(entry?.index) ? entry.index : [];
+    const group = groups.get(layer) ?? new Set();
+    indexes.forEach((index) => {
+      const value = Number(index);
+      if (Number.isInteger(value) && value >= 0) group.add(value);
+    });
+    groups.set(layer, group);
+  });
+  return [...groups.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([layer, indexes]) => ({ layer, index: [...indexes].sort((a, b) => a - b) }))
+    .filter((entry) => entry.index.length > 0);
+}
+
+function isMysteryFruitAt(state, layerNumber, index) {
+  return normalizeMysteryFruitElement(state?.mysteryFruitElement)
+    .some((entry) => entry.layer === layerNumber && entry.index.includes(index));
+}
+
+function setMysteryFruitAt(state, layerNumber, index, hidden) {
+  state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
+  const current = state.mysteryFruitElement.find((entry) => entry.layer === layerNumber);
+  const indexes = new Set(current?.index ?? []);
+  const hadValue = indexes.has(index);
+  if (hidden) indexes.add(index);
+  else indexes.delete(index);
+  state.mysteryFruitElement = [
+    ...state.mysteryFruitElement.filter((entry) => entry.layer !== layerNumber),
+    ...(indexes.size > 0 ? [{ layer: layerNumber, index: [...indexes] }] : [])
+  ];
+  state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
+  return hidden ? !hadValue : hadValue;
 }
 
 function isGrassAt(state, x, y) {
@@ -344,7 +500,794 @@ function createObstacle(type = "rock", label = "Chướng ngại", icon = "🪨"
 }
 
 
+// ---- js/objects/bridge-object.js ----
+
+function createBridge(axis = BRIDGE_AXES.HORIZONTAL) {
+  return {
+    id: BRIDGE_ASSET_ID,
+    kind: "bridge",
+    category: "element",
+    label: "Bridge",
+    icon: "🟰",
+    axis
+  };
+}
+
+function isBridgeElement(element) {
+  return element?.kind === "bridge";
+}
+
+function normalizeBridgeAxis(value) {
+  const axis = Number(value);
+  return axis === BRIDGE_AXES.VERTICAL ? BRIDGE_AXES.VERTICAL : BRIDGE_AXES.HORIZONTAL;
+}
+
+function bridgeAxisLabel(axis) {
+  return normalizeBridgeAxis(axis) === BRIDGE_AXES.VERTICAL ? "Vertical" : "Horizontal";
+}
+
+function bridgeAxisFromDirection(direction) {
+  if (direction === "left" || direction === "right") return BRIDGE_AXES.HORIZONTAL;
+  if (direction === "up" || direction === "down") return BRIDGE_AXES.VERTICAL;
+  return null;
+}
+
+function bridgeSegmentAxis(body, segmentIndex, fallbackDirection = null) {
+  const segment = body?.[segmentIndex];
+  if (!segment) return null;
+  const neighbors = [body[segmentIndex - 1], body[segmentIndex + 1]].filter(Boolean);
+  for (const neighbor of neighbors) {
+    if (neighbor.y === segment.y && neighbor.x !== segment.x) return BRIDGE_AXES.HORIZONTAL;
+    if (neighbor.x === segment.x && neighbor.y !== segment.y) return BRIDGE_AXES.VERTICAL;
+  }
+  return bridgeAxisFromDirection(fallbackDirection);
+}
+
+function bridgeAllowsDifferentAxisOverlap(layer, snake, position, movingDirection) {
+  const cell = layer?.cells?.[`${position.x},${position.y}`];
+  if (!isBridgeElement(cell?.element)) return false;
+  const movingAxis = bridgeAxisFromDirection(movingDirection);
+  if (movingAxis === null) return false;
+  return snake.body
+    .map((part, index) => ({ part, index }))
+    .filter(({ part }) => part.x === position.x && part.y === position.y)
+    .every(({ index }) => bridgeSegmentAxis(snake.body, index, snake.direction) !== movingAxis);
+}
+
+
+// ---- js/objects/gate-object.js ----
+
+const GATE_DIRECTION_META = Object.freeze({
+  [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up" },
+  [GATE_DIRECTIONS.DOWN]: { key: "down", label: "Down", className: "down" },
+  [GATE_DIRECTIONS.RIGHT]: { key: "right", label: "Right", className: "right" },
+  [GATE_DIRECTIONS.LEFT]: { key: "left", label: "Left", className: "left" }
+});
+
+function createGate(direction = GATE_DIRECTIONS.UP) {
+  return {
+    id: GATE_ASSET_ID,
+    kind: "gate",
+    category: "element",
+    label: "Gate",
+    icon: ">",
+    direction: normalizeGateDirection(direction)
+  };
+}
+
+function isGateElement(element) {
+  return element?.kind === "gate";
+}
+
+function normalizeGateDirection(value) {
+  const direction = Number(value);
+  return Object.hasOwn(GATE_DIRECTION_META, direction) ? direction : GATE_DIRECTIONS.UP;
+}
+
+function isValidGateDirection(value) {
+  return Number.isInteger(value) && Object.hasOwn(GATE_DIRECTION_META, value);
+}
+
+function gateDirectionLabel(direction) {
+  return GATE_DIRECTION_META[normalizeGateDirection(direction)].label;
+}
+
+function gateDirectionClass(direction) {
+  return GATE_DIRECTION_META[normalizeGateDirection(direction)].className;
+}
+
+function gateDirectionFromMovement(direction) {
+  const entry = Object.entries(GATE_DIRECTION_META).find(([, meta]) => meta.key === direction);
+  return entry ? Number(entry[0]) : null;
+}
+
+
+// ---- js/objects/count-barrier-object.js ----
+
+function createCountBarrierTool() {
+  return {
+    id: COUNT_BARRIER_ASSET_ID,
+    kind: "count-barrier",
+    category: "element",
+    label: "Count Barrier",
+    icon: "#"
+  };
+}
+
+function isCountBarrierTool(object) {
+  return object?.kind === "count-barrier" || object?.id === COUNT_BARRIER_ASSET_ID;
+}
+
+function normalizeCountBarrierCount(value) {
+  const count = Math.floor(Number(value));
+  return Number.isInteger(count) && count > 0 ? count : 1;
+}
+
+function normalizeCountBarrierElement(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const usedIds = new Set();
+  let nextId = 0;
+  return entries.flatMap((entry) => {
+    const indexes = new Set();
+    (Array.isArray(entry?.index) ? entry.index : []).forEach((rawIndex) => {
+      const index = Number(rawIndex);
+      if (Number.isInteger(index) && index >= 0) indexes.add(index);
+    });
+
+    const rawStart = Number(entry?.startIndex);
+    const rawEnd = Number(entry?.endIndex);
+    if (Number.isInteger(rawStart) && rawStart >= 0) indexes.add(rawStart);
+    if (Number.isInteger(rawEnd) && rawEnd >= 0) indexes.add(rawEnd);
+    if (indexes.size === 0) return [];
+
+    let barrierId = Number(entry?.barrierId);
+    if (!Number.isInteger(barrierId) || barrierId < 0 || usedIds.has(barrierId)) {
+      while (usedIds.has(nextId)) nextId += 1;
+      barrierId = nextId;
+    }
+    usedIds.add(barrierId);
+
+    const index = [...indexes].sort((a, b) => a - b);
+    const startIndex = Number.isInteger(rawStart) && rawStart >= 0 ? rawStart : index[0];
+    const endIndex = Number.isInteger(rawEnd) && rawEnd >= 0 ? rawEnd : index[index.length - 1];
+    return [{
+      barrierId,
+      count: normalizeCountBarrierCount(entry?.count),
+      startIndex,
+      endIndex,
+      index
+    }];
+  }).sort((a, b) => a.barrierId - b.barrierId);
+}
+
+function nextCountBarrierId(entries = []) {
+  const used = new Set(normalizeCountBarrierElement(entries).map((entry) => entry.barrierId));
+  let barrierId = 0;
+  while (used.has(barrierId)) barrierId += 1;
+  return barrierId;
+}
+
+function nextCountBarrierSequence(entries = []) {
+  const ids = normalizeCountBarrierElement(entries).map((entry) => entry.barrierId);
+  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+}
+
+function createNewActiveCountBarrier(state) {
+  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
+  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  }
+  const barrierId = state.nextBarrierId;
+  state.activeBarrierId = barrierId;
+  state.nextBarrierId += 1;
+  state.drawingCountBarrierId = null;
+  return barrierId;
+}
+
+function findCountBarrierAtIndex(state, index) {
+  return normalizeCountBarrierElement(state?.countBarrierElement)
+    .find((entry) => entry.index.includes(index)) ?? null;
+}
+
+function findCountBarrierById(state, barrierId) {
+  return normalizeCountBarrierElement(state?.countBarrierElement)
+    .find((entry) => Number(entry.barrierId) === Number(barrierId)) ?? null;
+}
+
+function removeCountBarrierAtIndex(state, index) {
+  const barrier = findCountBarrierAtIndex(state, index);
+  if (!barrier) return false;
+  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement)
+    .filter((entry) => entry.barrierId !== barrier.barrierId);
+  if (state.activeBarrierId === barrier.barrierId) state.activeBarrierId = null;
+  if (state.drawingCountBarrierId === barrier.barrierId) state.drawingCountBarrierId = null;
+  return true;
+}
+
+function removeCountBarrierById(state, barrierId) {
+  const before = normalizeCountBarrierElement(state.countBarrierElement);
+  state.countBarrierElement = before.filter((entry) => Number(entry.barrierId) !== Number(barrierId));
+  if (state.activeBarrierId === Number(barrierId)) state.activeBarrierId = null;
+  if (state.drawingCountBarrierId === Number(barrierId)) state.drawingCountBarrierId = null;
+  return before.length !== state.countBarrierElement.length;
+}
+
+function removeCountBarrierCell(state, barrierId, index) {
+  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
+  const barrier = state.countBarrierElement.find((entry) => Number(entry.barrierId) === Number(barrierId));
+  if (!barrier || !barrier.index.includes(index)) return false;
+  barrier.index = barrier.index.filter((entryIndex) => entryIndex !== index);
+  if (barrier.index.length < 2) {
+    state.countBarrierElement = state.countBarrierElement.filter((entry) => entry.barrierId !== barrier.barrierId);
+    if (state.activeBarrierId === barrier.barrierId) state.activeBarrierId = null;
+    return true;
+  }
+  if (barrier.startIndex === index) barrier.startIndex = barrier.index[0];
+  if (barrier.endIndex === index) barrier.endIndex = barrier.index[barrier.index.length - 1];
+  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
+  return true;
+}
+
+function remapCountBarrierIndexes(entries = [], fromWidth, toWidth) {
+  if (!Number.isInteger(fromWidth) || fromWidth < 1 || !Number.isInteger(toWidth) || toWidth < 1) {
+    return normalizeCountBarrierElement(entries);
+  }
+  return normalizeCountBarrierElement(entries).map((entry) => {
+    const remap = (index) => {
+      const x = index % fromWidth;
+      const y = Math.floor(index / fromWidth);
+      return (y * toWidth) + x;
+    };
+    return {
+      ...entry,
+      startIndex: remap(entry.startIndex),
+      endIndex: remap(entry.endIndex),
+      index: [...new Set(entry.index.map(remap))].sort((a, b) => a - b)
+    };
+  });
+}
+
+
+// ---- js/objects/tunnel-object.js ----
+
+const TUNNEL_DIRECTION_META = Object.freeze({
+  [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up", icon: "↑" },
+  [GATE_DIRECTIONS.DOWN]: { key: "down", label: "Down", className: "down", icon: "↓" },
+  [GATE_DIRECTIONS.RIGHT]: { key: "right", label: "Right", className: "right", icon: "→" },
+  [GATE_DIRECTIONS.LEFT]: { key: "left", label: "Left", className: "left", icon: "←" }
+});
+
+const TUNNEL_COLORS = Object.freeze(["#3268f5", "#d45b8c", "#1c9b6a", "#d88b12", "#7a56d9", "#238aa6"]);
+
+function createTunnelTool() {
+  return {
+    id: TUNNEL_ASSET_ID,
+    kind: "tunnel",
+    category: "element",
+    label: "Tunnel",
+    icon: "⏭"
+  };
+}
+
+function isTunnelTool(object) {
+  return object?.kind === "tunnel" || object?.id === TUNNEL_ASSET_ID;
+}
+
+function normalizeTunnelDirection(value) {
+  const direction = Number(value);
+  return Object.hasOwn(TUNNEL_DIRECTION_META, direction) ? direction : GATE_DIRECTIONS.RIGHT;
+}
+
+function isValidTunnelDirection(value) {
+  return Number.isInteger(value) && Object.hasOwn(TUNNEL_DIRECTION_META, value);
+}
+
+function tunnelDirectionLabel(direction) {
+  return TUNNEL_DIRECTION_META[normalizeTunnelDirection(direction)].label;
+}
+
+function tunnelDirectionClass(direction) {
+  return TUNNEL_DIRECTION_META[normalizeTunnelDirection(direction)].className;
+}
+
+function tunnelDirectionKey(direction) {
+  return TUNNEL_DIRECTION_META[normalizeTunnelDirection(direction)].key;
+}
+
+function tunnelDirectionAxis(direction) {
+  return [GATE_DIRECTIONS.LEFT, GATE_DIRECTIONS.RIGHT].includes(normalizeTunnelDirection(direction)) ? "horizontal" : "vertical";
+}
+
+function tunnelDirectionIcon(direction) {
+  return "⏭";
+}
+
+function tunnelColor(tunnelId) {
+  return TUNNEL_COLORS[Math.abs(Number(tunnelId) || 0) % TUNNEL_COLORS.length];
+}
+
+function normalizeTunnelElement(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const usedIds = new Set();
+  let nextId = 0;
+  return entries.flatMap((entry) => {
+    const points = Array.isArray(entry?.entryPoints) ? entry.entryPoints.slice(0, 2) : [];
+    if (points.length !== 2) return [];
+    const entryPoints = points.map((point) => ({
+      index: Math.floor(Number(point?.index)),
+      direction: normalizeTunnelDirection(point?.direction)
+    }));
+    if (entryPoints.some((point) => !Number.isInteger(point.index) || point.index < 0)) return [];
+
+    let tunnelId = Number(entry?.tunnelId);
+    if (!Number.isInteger(tunnelId) || tunnelId < 0 || usedIds.has(tunnelId)) {
+      while (usedIds.has(nextId)) nextId += 1;
+      tunnelId = nextId;
+    }
+    usedIds.add(tunnelId);
+    return [{ tunnelId, entryPoints }];
+  }).sort((a, b) => a.tunnelId - b.tunnelId);
+}
+
+function nextTunnelSequence(entries = []) {
+  const ids = normalizeTunnelElement(entries).map((entry) => entry.tunnelId);
+  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+}
+
+function findTunnelById(state, tunnelId) {
+  return normalizeTunnelElement(state?.tunnelElement)
+    .find((entry) => Number(entry.tunnelId) === Number(tunnelId)) ?? null;
+}
+
+function findTunnelAtIndex(state, index) {
+  return normalizeTunnelElement(state?.tunnelElement)
+    .find((entry) => entry.entryPoints.some((point) => point.index === Number(index))) ?? null;
+}
+
+function findTunnelEntryAtIndex(state, index) {
+  const tunnel = findTunnelAtIndex(state, index);
+  if (!tunnel) return null;
+  const entryIndex = tunnel.entryPoints.findIndex((point) => point.index === Number(index));
+  return { tunnel, entryIndex, entryPoint: tunnel.entryPoints[entryIndex] };
+}
+
+function otherTunnelEntry(tunnel, entryIndex) {
+  if (!tunnel || ![0, 1].includes(entryIndex)) return null;
+  return tunnel.entryPoints[entryIndex === 0 ? 1 : 0] ?? null;
+}
+
+function usedTunnelIndexes(state, excludeTunnelId = null) {
+  const used = new Set();
+  normalizeTunnelElement(state?.tunnelElement).forEach((tunnel) => {
+    if (Number(tunnel.tunnelId) === Number(excludeTunnelId)) return;
+    tunnel.entryPoints.forEach((point) => used.add(point.index));
+  });
+  return used;
+}
+
+function normalizeTunnelDraft(draft) {
+  if (!draft || typeof draft !== "object") return null;
+  const tunnelId = Number(draft.tunnelId);
+  if (!Number.isInteger(tunnelId) || tunnelId < 0) return null;
+  const allowedSteps = new Set(["direction-a", "point-b", "direction-b"]);
+  const step = allowedSteps.has(draft.step) ? draft.step : "direction-a";
+  const rawPoints = Array.isArray(draft.entryPoints) ? draft.entryPoints.slice(0, 2) : [];
+  const entryPoints = rawPoints.flatMap((point) => {
+    const index = Math.floor(Number(point?.index));
+    if (!Number.isInteger(index) || index < 0) return [];
+    return [{
+      index,
+      direction: point?.direction === null || point?.direction === undefined ? null : normalizeTunnelDirection(point.direction)
+    }];
+  });
+  if (entryPoints.length === 0) return null;
+  if (step === "direction-a") return { tunnelId, step, entryPoints: entryPoints.slice(0, 1) };
+  if (step === "point-b") {
+    if (!Number.isInteger(entryPoints[0].direction)) return { tunnelId, step: "direction-a", entryPoints: entryPoints.slice(0, 1) };
+    return { tunnelId, step, entryPoints: entryPoints.slice(0, 1) };
+  }
+  if (entryPoints.length < 2) return { tunnelId, step: "point-b", entryPoints: entryPoints.slice(0, 1) };
+  return { tunnelId, step, entryPoints };
+}
+
+function findTunnelDraftEntryAtIndex(state, index) {
+  const draft = normalizeTunnelDraft(state?.tunnelDraft);
+  if (!draft) return null;
+  const entryIndex = draft.entryPoints.findIndex((point) => point.index === Number(index));
+  if (entryIndex < 0) return null;
+  return { draft, entryIndex, entryPoint: draft.entryPoints[entryIndex] };
+}
+
+function draftUsesIndex(state, index) {
+  return normalizeTunnelDraft(state?.tunnelDraft)?.entryPoints.some((point) => point.index === Number(index)) ?? false;
+}
+
+function startTunnelDraftAt(state, index) {
+  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  if (usedTunnelIndexes(state).has(Number(index))) return { changed: false, reason: "tunnel-overlap" };
+  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
+    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  }
+  state.tunnelDraft = {
+    tunnelId: state.nextTunnelId,
+    step: "direction-a",
+    entryPoints: [{ index: Number(index), direction: null }]
+  };
+  state.activeTunnelId = null;
+  return { changed: true, action: "tunnel-point-a-selected", tunnelId: state.nextTunnelId };
+}
+
+function placeTunnelDraftPointB(state, index) {
+  const draft = normalizeTunnelDraft(state.tunnelDraft);
+  if (!draft || draft.step !== "point-b") return { changed: false, reason: "tunnel-needs-direction-a" };
+  if (draft.entryPoints[0].index === Number(index)) return { changed: false, reason: "tunnel-same-point" };
+  if (usedTunnelIndexes(state).has(Number(index)) || draftUsesIndex(state, index)) return { changed: false, reason: "tunnel-overlap" };
+  state.tunnelDraft = {
+    ...draft,
+    step: "direction-b",
+    entryPoints: [...draft.entryPoints, { index: Number(index), direction: null }]
+  };
+  return { changed: true, action: "tunnel-point-b-selected", tunnelId: draft.tunnelId };
+}
+
+function setTunnelDraftDirection(state, direction) {
+  const draft = normalizeTunnelDraft(state.tunnelDraft);
+  if (!draft) return { changed: false, reason: "tunnel-draft-missing" };
+  if (draft.step === "direction-a") {
+    state.tunnelDraft = {
+      ...draft,
+      step: "point-b",
+      entryPoints: [{ ...draft.entryPoints[0], direction: normalizeTunnelDirection(direction) }]
+    };
+    return { changed: true, action: "tunnel-direction-a-selected", tunnelId: draft.tunnelId };
+  }
+  if (draft.step !== "direction-b" || draft.entryPoints.length !== 2) return { changed: false, reason: "tunnel-needs-point-b" };
+  const tunnel = {
+    tunnelId: draft.tunnelId,
+    entryPoints: [
+      { ...draft.entryPoints[0], direction: normalizeTunnelDirection(draft.entryPoints[0].direction) },
+      { ...draft.entryPoints[1], direction: normalizeTunnelDirection(direction) }
+    ]
+  };
+  state.tunnelElement = [...normalizeTunnelElement(state.tunnelElement), tunnel];
+  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  state.activeTunnelId = tunnel.tunnelId;
+  state.nextTunnelId = Math.max(Number(state.nextTunnelId) || 0, tunnel.tunnelId + 1, nextTunnelSequence(state.tunnelElement));
+  state.tunnelDraft = null;
+  return { changed: true, action: "tunnel-created", tunnelId: tunnel.tunnelId };
+}
+
+function cancelTunnelDraft(state) {
+  const changed = Boolean(state.tunnelDraft);
+  state.tunnelDraft = null;
+  return changed;
+}
+
+function setTunnelEntryIndex(state, tunnelId, entryIndex, index) {
+  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  const tunnel = state.tunnelElement.find((entry) => entry.tunnelId === Number(tunnelId));
+  if (!tunnel || ![0, 1].includes(Number(entryIndex))) return false;
+  const duplicate = tunnel.entryPoints.some((point, pointIndex) => pointIndex !== Number(entryIndex) && point.index === Number(index));
+  if (duplicate || usedTunnelIndexes(state, tunnel.tunnelId).has(Number(index))) return false;
+  tunnel.entryPoints[Number(entryIndex)].index = Number(index);
+  state.activeTunnelId = tunnel.tunnelId;
+  return true;
+}
+
+function setTunnelEntryDirection(state, tunnelId, entryIndex, direction) {
+  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  const tunnel = state.tunnelElement.find((entry) => entry.tunnelId === Number(tunnelId));
+  if (!tunnel || ![0, 1].includes(Number(entryIndex))) return false;
+  tunnel.entryPoints[Number(entryIndex)].direction = normalizeTunnelDirection(direction);
+  state.activeTunnelId = tunnel.tunnelId;
+  return true;
+}
+
+function removeTunnelById(state, tunnelId) {
+  const before = normalizeTunnelElement(state.tunnelElement);
+  state.tunnelElement = before.filter((entry) => Number(entry.tunnelId) !== Number(tunnelId));
+  if (state.activeTunnelId === Number(tunnelId)) state.activeTunnelId = null;
+  return before.length !== state.tunnelElement.length;
+}
+
+function removeTunnelAtIndex(state, index) {
+  const tunnel = findTunnelAtIndex(state, index);
+  return tunnel ? removeTunnelById(state, tunnel.tunnelId) : false;
+}
+
+function remapTunnelIndexes(entries = [], fromWidth, toWidth) {
+  if (!Number.isInteger(fromWidth) || fromWidth < 1 || !Number.isInteger(toWidth) || toWidth < 1) {
+    return normalizeTunnelElement(entries);
+  }
+  return normalizeTunnelElement(entries).map((entry) => ({
+    ...entry,
+    entryPoints: entry.entryPoints.map((point) => {
+      const x = point.index % fromWidth;
+      const y = Math.floor(point.index / fromWidth);
+      return { ...point, index: (y * toWidth) + x };
+    })
+  }));
+}
+
+
+// ---- js/objects/one-way-object.js ----
+
+const ONE_WAY_DIRECTION_META = Object.freeze({
+  [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up", icon: "▲" },
+  [GATE_DIRECTIONS.DOWN]: { key: "down", label: "Down", className: "down", icon: "▼" },
+  [GATE_DIRECTIONS.RIGHT]: { key: "right", label: "Right", className: "right", icon: "▶" },
+  [GATE_DIRECTIONS.LEFT]: { key: "left", label: "Left", className: "left", icon: "◀" }
+});
+
+const ONE_WAY_COLORS = Object.freeze(["#d44f3a", "#1d8f78", "#7357d8", "#c48612", "#2673c7", "#b84f90"]);
+
+function createOneWayTool() {
+  return {
+    id: ONE_WAY_ASSET_ID,
+    kind: "one-way",
+    category: "element",
+    label: "One Way",
+    icon: "▲"
+  };
+}
+
+function isOneWayTool(object) {
+  return object?.kind === "one-way" || object?.id === ONE_WAY_ASSET_ID;
+}
+
+function normalizeOneWayDirection(value) {
+  const direction = Number(value);
+  return Object.hasOwn(ONE_WAY_DIRECTION_META, direction) ? direction : GATE_DIRECTIONS.UP;
+}
+
+function isValidOneWayDirection(value) {
+  return Number.isInteger(value) && Object.hasOwn(ONE_WAY_DIRECTION_META, value);
+}
+
+function oneWayDirectionLabel(direction) {
+  return ONE_WAY_DIRECTION_META[normalizeOneWayDirection(direction)].label;
+}
+
+function oneWayDirectionClass(direction) {
+  return ONE_WAY_DIRECTION_META[normalizeOneWayDirection(direction)].className;
+}
+
+function oneWayDirectionKey(direction) {
+  return ONE_WAY_DIRECTION_META[normalizeOneWayDirection(direction)].key;
+}
+
+function oneWayDirectionIcon(direction) {
+  return ONE_WAY_DIRECTION_META[normalizeOneWayDirection(direction)].icon;
+}
+
+function reverseOneWayDirection(direction) {
+  return {
+    [GATE_DIRECTIONS.UP]: GATE_DIRECTIONS.DOWN,
+    [GATE_DIRECTIONS.DOWN]: GATE_DIRECTIONS.UP,
+    [GATE_DIRECTIONS.RIGHT]: GATE_DIRECTIONS.LEFT,
+    [GATE_DIRECTIONS.LEFT]: GATE_DIRECTIONS.RIGHT
+  }[normalizeOneWayDirection(direction)];
+}
+
+function oneWayColor(oneWayId) {
+  return ONE_WAY_COLORS[Math.abs(Number(oneWayId) || 0) % ONE_WAY_COLORS.length];
+}
+
+function normalizeOneWayElement(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  const usedIds = new Set();
+  let nextId = 0;
+  return entries.flatMap((entry) => {
+    const points = Array.isArray(entry?.entryPoints) ? entry.entryPoints.slice(0, 2) : [];
+    if (points.length !== 2) return [];
+    const entryPoints = points.map((point) => ({
+      index: Math.floor(Number(point?.index)),
+      direction: normalizeOneWayDirection(point?.direction)
+    }));
+    if (entryPoints.some((point) => !Number.isInteger(point.index) || point.index < 0)) return [];
+
+    let oneWayId = Number(entry?.oneWayId);
+    if (!Number.isInteger(oneWayId) || oneWayId < 0 || usedIds.has(oneWayId)) {
+      while (usedIds.has(nextId)) nextId += 1;
+      oneWayId = nextId;
+    }
+    usedIds.add(oneWayId);
+    return [{ oneWayId, entryPoints }];
+  }).sort((a, b) => a.oneWayId - b.oneWayId);
+}
+
+function nextOneWaySequence(entries = []) {
+  const ids = normalizeOneWayElement(entries).map((entry) => entry.oneWayId);
+  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+}
+
+function findOneWayById(state, oneWayId) {
+  return normalizeOneWayElement(state?.oneWayElement)
+    .find((entry) => Number(entry.oneWayId) === Number(oneWayId)) ?? null;
+}
+
+function findOneWayAtIndex(state, index) {
+  return normalizeOneWayElement(state?.oneWayElement)
+    .find((entry) => entry.entryPoints.some((point) => point.index === Number(index))) ?? null;
+}
+
+function findOneWayEntryAtIndex(state, index) {
+  const oneWay = findOneWayAtIndex(state, index);
+  if (!oneWay) return null;
+  const entryIndex = oneWay.entryPoints.findIndex((point) => point.index === Number(index));
+  return { oneWay, entryIndex, entryPoint: oneWay.entryPoints[entryIndex] };
+}
+
+function usedOneWayIndexes(state, excludeOneWayId = null) {
+  const used = new Set();
+  normalizeOneWayElement(state?.oneWayElement).forEach((oneWay) => {
+    if (Number(oneWay.oneWayId) === Number(excludeOneWayId)) return;
+    oneWay.entryPoints.forEach((point) => used.add(point.index));
+  });
+  return used;
+}
+
+function normalizeOneWayDraft(draft) {
+  if (!draft || typeof draft !== "object") return null;
+  const oneWayId = Number(draft.oneWayId);
+  if (!Number.isInteger(oneWayId) || oneWayId < 0) return null;
+  const allowedSteps = new Set(["direction-a", "point-b", "direction-b"]);
+  const step = allowedSteps.has(draft.step) ? draft.step : "direction-a";
+  const rawPoints = Array.isArray(draft.entryPoints) ? draft.entryPoints.slice(0, 2) : [];
+  const entryPoints = rawPoints.flatMap((point) => {
+    const index = Math.floor(Number(point?.index));
+    if (!Number.isInteger(index) || index < 0) return [];
+    return [{
+      index,
+      direction: point?.direction === null || point?.direction === undefined ? null : normalizeOneWayDirection(point.direction)
+    }];
+  });
+  if (entryPoints.length === 0) return null;
+  if (step === "direction-a") return { oneWayId, step, entryPoints: entryPoints.slice(0, 1) };
+  if (step === "point-b") {
+    if (!Number.isInteger(entryPoints[0].direction)) return { oneWayId, step: "direction-a", entryPoints: entryPoints.slice(0, 1) };
+    return { oneWayId, step, entryPoints: entryPoints.slice(0, 1) };
+  }
+  if (entryPoints.length < 2) return { oneWayId, step: "point-b", entryPoints: entryPoints.slice(0, 1) };
+  return { oneWayId, step, entryPoints };
+}
+
+function findOneWayDraftEntryAtIndex(state, index) {
+  const draft = normalizeOneWayDraft(state?.oneWayDraft);
+  if (!draft) return null;
+  const entryIndex = draft.entryPoints.findIndex((point) => point.index === Number(index));
+  if (entryIndex < 0) return null;
+  return { draft, entryIndex, entryPoint: draft.entryPoints[entryIndex] };
+}
+
+function draftUsesIndex(state, index) {
+  return normalizeOneWayDraft(state?.oneWayDraft)?.entryPoints.some((point) => point.index === Number(index)) ?? false;
+}
+
+function startOneWayDraftAt(state, index) {
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  if (usedOneWayIndexes(state).has(Number(index))) return { changed: false, reason: "one-way-overlap" };
+  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
+    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  }
+  state.oneWayDraft = {
+    oneWayId: state.nextOneWayId,
+    step: "direction-a",
+    entryPoints: [{ index: Number(index), direction: null }]
+  };
+  state.activeOneWayId = null;
+  return { changed: true, action: "one-way-point-a-selected", oneWayId: state.nextOneWayId };
+}
+
+function placeOneWayDraftPointB(state, index) {
+  const draft = normalizeOneWayDraft(state.oneWayDraft);
+  if (!draft || draft.step !== "point-b") return { changed: false, reason: "one-way-needs-direction-a" };
+  if (draft.entryPoints[0].index === Number(index)) return { changed: false, reason: "one-way-same-point" };
+  if (usedOneWayIndexes(state).has(Number(index)) || draftUsesIndex(state, index)) return { changed: false, reason: "one-way-overlap" };
+  state.oneWayDraft = {
+    ...draft,
+    step: "direction-b",
+    entryPoints: [...draft.entryPoints, { index: Number(index), direction: null }]
+  };
+  return { changed: true, action: "one-way-point-b-selected", oneWayId: draft.oneWayId };
+}
+
+function setOneWayDraftDirection(state, direction) {
+  const draft = normalizeOneWayDraft(state.oneWayDraft);
+  if (!draft) return { changed: false, reason: "one-way-draft-missing" };
+  if (draft.step === "direction-a") {
+    state.oneWayDraft = {
+      ...draft,
+      step: "point-b",
+      entryPoints: [{ ...draft.entryPoints[0], direction: normalizeOneWayDirection(direction) }]
+    };
+    return { changed: true, action: "one-way-direction-a-selected", oneWayId: draft.oneWayId };
+  }
+  if (draft.step !== "direction-b" || draft.entryPoints.length !== 2) return { changed: false, reason: "one-way-needs-point-b" };
+  const oneWay = {
+    oneWayId: draft.oneWayId,
+    entryPoints: [
+      { ...draft.entryPoints[0], direction: normalizeOneWayDirection(draft.entryPoints[0].direction) },
+      { ...draft.entryPoints[1], direction: normalizeOneWayDirection(direction) }
+    ]
+  };
+  state.oneWayElement = [...normalizeOneWayElement(state.oneWayElement), oneWay];
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  state.activeOneWayId = oneWay.oneWayId;
+  state.nextOneWayId = Math.max(Number(state.nextOneWayId) || 0, oneWay.oneWayId + 1, nextOneWaySequence(state.oneWayElement));
+  state.oneWayDraft = null;
+  return { changed: true, action: "one-way-created", oneWayId: oneWay.oneWayId };
+}
+
+function cancelOneWayDraft(state) {
+  const changed = Boolean(state.oneWayDraft);
+  state.oneWayDraft = null;
+  return changed;
+}
+
+function setOneWayEntryIndex(state, oneWayId, entryIndex, index) {
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  const oneWay = state.oneWayElement.find((entry) => entry.oneWayId === Number(oneWayId));
+  if (!oneWay || ![0, 1].includes(Number(entryIndex))) return false;
+  const duplicate = oneWay.entryPoints.some((point, pointIndex) => pointIndex !== Number(entryIndex) && point.index === Number(index));
+  if (duplicate || usedOneWayIndexes(state, oneWay.oneWayId).has(Number(index))) return false;
+  oneWay.entryPoints[Number(entryIndex)].index = Number(index);
+  state.activeOneWayId = oneWay.oneWayId;
+  return true;
+}
+
+function setOneWayDirection(state, oneWayId, direction) {
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  const oneWay = state.oneWayElement.find((entry) => entry.oneWayId === Number(oneWayId));
+  if (!oneWay) return false;
+  const nextDirection = normalizeOneWayDirection(direction);
+  oneWay.entryPoints = oneWay.entryPoints.map((point) => ({ ...point, direction: nextDirection }));
+  state.activeOneWayId = oneWay.oneWayId;
+  return true;
+}
+
+function setOneWayEntryDirection(state, oneWayId, entryIndex, direction) {
+  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  const oneWay = state.oneWayElement.find((entry) => entry.oneWayId === Number(oneWayId));
+  if (!oneWay || ![0, 1].includes(Number(entryIndex))) return false;
+  oneWay.entryPoints[Number(entryIndex)].direction = normalizeOneWayDirection(direction);
+  state.activeOneWayId = oneWay.oneWayId;
+  return true;
+}
+
+function removeOneWayById(state, oneWayId) {
+  const before = normalizeOneWayElement(state.oneWayElement);
+  state.oneWayElement = before.filter((entry) => Number(entry.oneWayId) !== Number(oneWayId));
+  if (state.activeOneWayId === Number(oneWayId)) state.activeOneWayId = null;
+  return before.length !== state.oneWayElement.length;
+}
+
+function removeOneWayAtIndex(state, index) {
+  const oneWay = findOneWayAtIndex(state, index);
+  return oneWay ? removeOneWayById(state, oneWay.oneWayId) : false;
+}
+
+function remapOneWayIndexes(entries = [], fromWidth, toWidth) {
+  if (!Number.isInteger(fromWidth) || fromWidth < 1 || !Number.isInteger(toWidth) || toWidth < 1) {
+    return normalizeOneWayElement(entries);
+  }
+  return normalizeOneWayElement(entries).map((entry) => ({
+    ...entry,
+    entryPoints: entry.entryPoints.map((point) => {
+      const x = point.index % fromWidth;
+      const y = Math.floor(point.index / fromWidth);
+      return { ...point, index: (y * toWidth) + x };
+    })
+  }));
+}
+
+
 // ---- js/objects/object-registry.js ----
+
+
+
+
+
 
 
 
@@ -355,6 +1298,12 @@ const objects = [
   createFruit("banana", "Chuối", "🍌"),
   createFruit("grape", "Nho", "🍇"),
   createFruit("eggplant", "Cà tím", "🍆"),
+  createBridge(),
+  createGate(),
+  createCountBarrierTool(),
+  createTunnelTool(),
+  createOneWayTool(),
+  { id: MYSTERY_FRUIT_ASSET_ID, kind: "mystery-fruit", category: "element", label: "Mystery Fruit", icon: "?" },
   { id: TERRAIN_ASSET_IDS.GRASS, kind: "terrain", category: "terrain", label: "Grass", icon: "▦" },
   { id: TERRAIN_ASSET_IDS.EMPTY, kind: "terrain", category: "terrain", label: "Terrain trống", icon: "□" },
   { id: TERRAIN_ASSET_IDS.PRIORITY_POINT, kind: "priority-point", category: "terrain", label: "PriorityPoint", icon: "•" }
@@ -409,10 +1358,28 @@ function createInitialState() {
     sharedCells: {},
     grassCells: createFullGrassCells(grid),
     priorityPoints: {},
+    mysteryFruitElement: [],
+    mysteryFruitDebug: false,
+    countBarrierElement: [],
+    selectedCountBarrierCount: 1,
+    activeBarrierId: null,
+    nextBarrierId: 0,
+    drawingCountBarrierId: null,
+    tunnelElement: [],
+    activeTunnelId: null,
+    nextTunnelId: 0,
+    tunnelDraft: null,
+    oneWayElement: [],
+    activeOneWayId: null,
+    nextOneWayId: 0,
+    oneWayDraft: null,
     layers: [firstLayer],
     activeLayerId: firstLayer.id,
     selectedCell: null,
+    activeTrayCell: null,
     selectedAssetId: "snake-start",
+    selectedBridgeAxis: 0,
+    selectedGateDirection: 0,
     tool: "path",
     eraseMode: "smart",
     tab: "level",
@@ -484,7 +1451,11 @@ function createLevelDocument(editorData) {
     grid: structuredClone(editorData.grid),
     sharedCells: structuredClone(editorData.sharedCells ?? {}),
     activeLayerId: editorData.activeLayerId,
-    layers: structuredClone(editorData.layers)
+    layers: structuredClone(editorData.layers),
+    mysteryFruitElement: structuredClone(editorData.mysteryFruitElement ?? []),
+    countBarrierElement: structuredClone(editorData.countBarrierElement ?? []),
+    tunnelElement: structuredClone(editorData.tunnelElement ?? []),
+    oneWayElement: structuredClone(editorData.oneWayElement ?? [])
   };
 }
 
@@ -548,6 +1519,11 @@ function migrateLevel(input) {
 
 
 
+
+
+
+
+
 const TYPE_BY_ITEM_ID = Object.freeze(Object.fromEntries(Object.entries(FRUIT_ITEM_IDS).map(([type, id]) => [String(id), type])));
 const GAME_FORMAT_FRUIT_META = Object.freeze({
   apple: { label: "Táo", icon: "🍎" }, banana: { label: "Chuối", icon: "🍌" },
@@ -603,8 +1579,16 @@ function validateStructure(raw) {
   assertArray(raw.spawns, "spawns");
   assertArray(raw.itemLayers, "itemLayers");
   assertArray(raw.trays, "trays");
-  if (!raw.elements || typeof raw.elements !== "object" || Array.isArray(raw.elements)) throw new Error("elements phải là object.");
-  if (Object.keys(raw.elements).length > 0) throw new Error("Format element chưa được hỗ trợ; elements hiện phải là object rỗng.");
+  if (raw.bridgeElement !== undefined) assertArray(raw.bridgeElement, "bridgeElement");
+  if (raw.gateElement !== undefined) assertArray(raw.gateElement, "gateElement");
+  if (raw.tunnelElement !== undefined) assertArray(raw.tunnelElement, "tunnelElement");
+  if (raw.oneWayElement !== undefined) assertArray(raw.oneWayElement, "oneWayElement");
+  if (raw.mysteryFruitElement !== undefined) assertArray(raw.mysteryFruitElement, "mysteryFruitElement");
+  if (raw.countBarrierElement !== undefined) assertArray(raw.countBarrierElement, "countBarrierElement");
+  if (raw.elements !== undefined) {
+    if (typeof raw.elements !== "object" || Array.isArray(raw.elements)) throw new Error("elements phải là object.");
+    if (Object.keys(raw.elements).length > 0) throw new Error("Format element chưa được hỗ trợ; elements hiện phải là object rỗng.");
+  }
   const total = width * height;
   raw.Path.index.forEach((index, i) => assertIndex(index, total, `Path.index[${i}]`));
   raw.Grass.index.forEach((index, i) => assertIndex(index, total, `Grass.index[${i}]`));
@@ -620,14 +1604,111 @@ function validateStructure(raw) {
   raw.PriorityPoint.index.forEach((index, i) => {
     if (!pathIndexes.has(index)) throw new Error(`PriorityPoint.index[${i}] phải thuộc Path.index.`);
   });
+  const bridgeIndexes = new Set();
+  (raw.bridgeElement ?? []).forEach((bridge, i) => {
+    assertIndex(bridge?.index, total, `bridgeElement[${i}]`);
+    if (![0, 1].includes(bridge?.axis)) throw new Error(`bridgeElement[${i}].axis phải là 0 hoặc 1.`);
+    if (bridgeIndexes.has(bridge.index)) throw new Error(`bridgeElement index ${bridge.index} bị trùng.`);
+    bridgeIndexes.add(bridge.index);
+  });
+  const gateIndexes = new Set();
+  (raw.gateElement ?? []).forEach((gate, i) => {
+    assertIndex(gate?.index, total, `gateElement[${i}]`);
+    if (!isValidGateDirection(gate?.direction)) throw new Error(`gateElement[${i}].direction phải là 0, 1, 2 hoặc 3.`);
+    if (gateIndexes.has(gate.index)) throw new Error(`gateElement index ${gate.index} bị trùng.`);
+    if (bridgeIndexes.has(gate.index)) throw new Error(`Gate và Bridge không được trùng index ${gate.index}.`);
+    if (!pathIndexes.has(gate.index)) throw new Error(`gateElement[${i}].index phải thuộc Path.index.`);
+    gateIndexes.add(gate.index);
+  });
+  const barrierIds = new Set();
+  const barrierIndexes = new Set();
+  (raw.countBarrierElement ?? []).forEach((barrier, i) => {
+    if (!Number.isInteger(barrier?.barrierId) || barrier.barrierId < 0) throw new Error(`countBarrierElement[${i}].barrierId phải là số nguyên không âm.`);
+    if (barrierIds.has(barrier.barrierId)) throw new Error(`countBarrierElement barrierId ${barrier.barrierId} bị trùng.`);
+    barrierIds.add(barrier.barrierId);
+    if (!Number.isInteger(barrier?.count) || barrier.count < 1) throw new Error(`countBarrierElement[${i}].count phải là số nguyên dương.`);
+    assertIndex(barrier?.startIndex, total, `countBarrierElement[${i}].startIndex`);
+    assertIndex(barrier?.endIndex, total, `countBarrierElement[${i}].endIndex`);
+    if (barrier.startIndex === barrier.endIndex) throw new Error(`countBarrierElement[${i}] phải có startIndex và endIndex khác nhau.`);
+    assertArray(barrier.index, `countBarrierElement[${i}].index`);
+    if (barrier.index.length < 2) throw new Error(`countBarrierElement[${i}].index phải có ít nhất 2 ô Path.`);
+    const localIndexes = new Set();
+    barrier.index.forEach((index, j) => {
+      assertIndex(index, total, `countBarrierElement[${i}].index[${j}]`);
+      if (!pathIndexes.has(index)) throw new Error(`countBarrierElement[${i}].index[${j}] phải thuộc Path.index.`);
+      if (localIndexes.has(index)) throw new Error(`countBarrierElement[${i}].index không được chứa index trùng.`);
+      if (barrierIndexes.has(index)) throw new Error(`Count Barrier không được chồng index ${index}.`);
+      localIndexes.add(index);
+      barrierIndexes.add(index);
+    });
+    if (!localIndexes.has(barrier.startIndex)) throw new Error(`countBarrierElement[${i}].startIndex phải nằm trong index.`);
+    if (!localIndexes.has(barrier.endIndex)) throw new Error(`countBarrierElement[${i}].endIndex phải nằm trong index.`);
+  });
+  const tunnelIds = new Set();
+  const tunnelIndexes = new Set();
+  (raw.tunnelElement ?? []).forEach((tunnel, i) => {
+    if (!Number.isInteger(tunnel?.tunnelId) || tunnel.tunnelId < 0) throw new Error(`tunnelElement[${i}].tunnelId phải là số nguyên không âm.`);
+    if (tunnelIds.has(tunnel.tunnelId)) throw new Error(`tunnelElement tunnelId ${tunnel.tunnelId} bị trùng.`);
+    tunnelIds.add(tunnel.tunnelId);
+    assertArray(tunnel.entryPoints, `tunnelElement[${i}].entryPoints`);
+    if (tunnel.entryPoints.length !== 2) throw new Error(`tunnelElement[${i}].entryPoints phải có đúng 2 điểm.`);
+    const localIndexes = new Set();
+    tunnel.entryPoints.forEach((point, j) => {
+      assertIndex(point?.index, total, `tunnelElement[${i}].entryPoints[${j}].index`);
+      if (!pathIndexes.has(point.index)) throw new Error(`tunnelElement[${i}].entryPoints[${j}].index phải thuộc Path.index.`);
+      if (!isValidTunnelDirection(point?.direction)) throw new Error(`tunnelElement[${i}].entryPoints[${j}].direction phải là 0, 1, 2 hoặc 3.`);
+      if (localIndexes.has(point.index)) throw new Error(`tunnelElement[${i}].entryPoints không được chứa index trùng.`);
+      if (tunnelIndexes.has(point.index)) throw new Error(`Tunnel không được chồng index ${point.index}.`);
+      localIndexes.add(point.index);
+      tunnelIndexes.add(point.index);
+    });
+  });
+  const oneWayIds = new Set();
+  const oneWayIndexes = new Set();
+  (raw.oneWayElement ?? []).forEach((oneWay, i) => {
+    if (!Number.isInteger(oneWay?.oneWayId) || oneWay.oneWayId < 0) throw new Error(`oneWayElement[${i}].oneWayId phải là số nguyên không âm.`);
+    if (oneWayIds.has(oneWay.oneWayId)) throw new Error(`oneWayElement oneWayId ${oneWay.oneWayId} bị trùng.`);
+    oneWayIds.add(oneWay.oneWayId);
+    assertArray(oneWay.entryPoints, `oneWayElement[${i}].entryPoints`);
+    if (oneWay.entryPoints.length !== 2) throw new Error(`oneWayElement[${i}].entryPoints phải có đúng 2 điểm.`);
+    const localIndexes = new Set();
+    oneWay.entryPoints.forEach((point, j) => {
+      assertIndex(point?.index, total, `oneWayElement[${i}].entryPoints[${j}].index`);
+      if (!pathIndexes.has(point.index)) throw new Error(`oneWayElement[${i}].entryPoints[${j}].index phải thuộc Path.index.`);
+      if (!isValidOneWayDirection(point?.direction)) throw new Error(`oneWayElement[${i}].entryPoints[${j}].direction phải là 0, 1, 2 hoặc 3.`);
+      if (localIndexes.has(point.index)) throw new Error(`oneWayElement[${i}].entryPoints không được chứa index trùng.`);
+      if (oneWayIndexes.has(point.index)) throw new Error(`One Way không được chồng index ${point.index}.`);
+      localIndexes.add(point.index);
+      oneWayIndexes.add(point.index);
+    });
+  });
   raw.spawns.forEach((spawn, i) => assertIndex(spawn?.index, total, `spawns[${i}]`));
+  const fruitIndexesByLayer = new Map();
   raw.itemLayers.forEach((layer, i) => {
     if (!Number.isInteger(layer?.layer) || layer.layer < 0) throw new Error(`itemLayers[${i}].layer phải là số nguyên không âm.`);
     assertArray(layer.items, `itemLayers[${i}].items`);
+    const layerFruitIndexes = fruitIndexesByLayer.get(layer.layer) ?? new Set();
     layer.items.forEach((item, j) => {
       if (!Number.isInteger(item?.itemId) || item.itemId < 0) throw new Error(`itemLayers[${i}].items[${j}].itemId không hợp lệ.`);
       assertArray(item.index, `itemLayers[${i}].items[${j}].index`);
-      item.index.forEach((index, k) => assertIndex(index, total, `itemLayers[${i}].items[${j}].index[${k}]`));
+      item.index.forEach((index, k) => {
+        assertIndex(index, total, `itemLayers[${i}].items[${j}].index[${k}]`);
+        layerFruitIndexes.add(index);
+      });
+    });
+    fruitIndexesByLayer.set(layer.layer, layerFruitIndexes);
+  });
+  const mysteryLayers = new Set();
+  (raw.mysteryFruitElement ?? []).forEach((entry, i) => {
+    if (!Number.isInteger(entry?.layer) || entry.layer < 0) throw new Error(`mysteryFruitElement[${i}].layer phải là số nguyên không âm.`);
+    if (mysteryLayers.has(entry.layer)) throw new Error(`mysteryFruitElement layer ${entry.layer} bị trùng.`);
+    mysteryLayers.add(entry.layer);
+    assertArray(entry.index, `mysteryFruitElement[${i}].index`);
+    if (new Set(entry.index).size !== entry.index.length) throw new Error(`mysteryFruitElement[${i}].index không được chứa index trùng.`);
+    const fruitIndexes = fruitIndexesByLayer.get(entry.layer);
+    entry.index.forEach((index, j) => {
+      assertIndex(index, total, `mysteryFruitElement[${i}].index[${j}]`);
+      if (!fruitIndexes?.has(index)) throw new Error(`mysteryFruitElement[${i}].index[${j}] phải trỏ tới Fruit thật trong itemLayers layer ${entry.layer}.`);
     });
   });
   const trayIds = new Set();
@@ -673,14 +1754,24 @@ function deserializeLevel(rawData, { fileName = "untitled-level.json" } = {}) {
     const { x, y } = indexToPosition(index, width);
     return [cellKey(x, y), "manual"];
   }));
+  (raw.bridgeElement ?? []).forEach((bridge) => {
+    const { x, y } = indexToPosition(bridge.index, width);
+    ensureShared(cellKey(x, y)).element = createBridge(bridge.axis);
+  });
+  (raw.gateElement ?? []).forEach((gate) => {
+    const { x, y } = indexToPosition(gate.index, width);
+    ensureShared(cellKey(x, y)).element = createGate(gate.direction);
+  });
   raw.spawns.forEach((spawn) => {
     const { x, y } = indexToPosition(spawn.index, width);
     ensureShared(cellKey(x, y)).item = { id: "snake-start", kind: "snake", category: "item", label: "Đầu rắn", icon: "🐍", direction: "right" };
   });
 
-  const layers = raw.itemLayers
-    .slice().sort((a, b) => a.layer - b.layer)
+  const sortedItemLayers = raw.itemLayers.slice().sort((a, b) => a.layer - b.layer);
+  const sourceLayerToEditorLayer = new Map();
+  const layers = sortedItemLayers
     .map((source, index) => {
+      sourceLayerToEditorLayer.set(source.layer, index);
       const layer = createLayer(index);
       source.items.forEach((group) => group.index.forEach((idx) => {
         const { x, y } = indexToPosition(idx, width);
@@ -710,9 +1801,27 @@ function deserializeLevel(rawData, { fileName = "untitled-level.json" } = {}) {
     };
   });
 
+  const mysteryFruitElement = normalizeMysteryFruitElement((raw.mysteryFruitElement ?? []).map((entry) => ({
+    layer: sourceLayerToEditorLayer.get(entry.layer),
+    index: entry.index
+  })));
+
   return {
     grid: { columns: width, rows: height }, sharedCells, grassCells, priorityPoints, layers, activeLayerId: layers[0].id,
-    selectedCell: null, selectedAssetId: "snake-start", tool: "path", eraseMode: "smart", tab: "level",
+    mysteryFruitElement,
+    mysteryFruitDebug: false,
+    countBarrierElement: normalizeCountBarrierElement(raw.countBarrierElement ?? []),
+    selectedCountBarrierCount: 1,
+    activeBarrierId: null,
+    nextBarrierId: nextCountBarrierSequence(raw.countBarrierElement ?? []),
+    drawingCountBarrierId: null,
+    tunnelElement: normalizeTunnelElement(raw.tunnelElement ?? []),
+    activeTunnelId: null,
+    nextTunnelId: nextTunnelSequence(raw.tunnelElement ?? []),
+    oneWayElement: normalizeOneWayElement(raw.oneWayElement ?? []),
+    activeOneWayId: null,
+    nextOneWayId: nextOneWaySequence(raw.oneWayElement ?? []),
+    selectedCell: null, activeTrayCell: null, selectedAssetId: "snake-start", selectedBridgeAxis: 0, selectedGateDirection: 0, tool: "path", eraseMode: "smart", tab: "level",
     fileName: normalizeFileName(fileName), sourceFileName: normalizeFileName(fileName), fileDirty: false
   };
 }
@@ -725,10 +1834,20 @@ function serializeLevel(editorData) {
   const road = [];
   const spawns = [];
   const trays = [];
+  const bridgeElement = [];
+  const gateElement = [];
+  const tunnelElement = [];
+  const oneWayElement = [];
+  const pathIndexes = new Set();
   Object.entries(editorData.sharedCells ?? {}).forEach(([key, cell]) => {
     const { x, y } = parseCellKey(key);
     const index = positionToIndex(x, y, width);
-    if (cell.path) road.push(index);
+    if (cell.path) {
+      road.push(index);
+      pathIndexes.add(index);
+    }
+    if (isBridgeElement(cell.element)) bridgeElement.push({ index, axis: normalizeBridgeAxis(cell.element.axis) });
+    if (isGateElement(cell.element)) gateElement.push({ index, direction: normalizeGateDirection(cell.element.direction) });
     if (cell.item?.kind === "snake") spawns.push({ index });
     if (cell.item?.kind === "tray") {
       const trayId = Number(cell.item.trayId);
@@ -748,7 +1867,8 @@ function serializeLevel(editorData) {
       });
     }
   });
-  const itemLayers = (editorData.layers ?? []).map((layer, order) => {
+  const fruitIndexesByLayer = new Map();
+  const itemLayerEntries = (editorData.layers ?? []).map((layer, order) => {
     const groups = new Map();
     Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
       if (cell.item?.kind !== "fruit") return;
@@ -758,16 +1878,54 @@ function serializeLevel(editorData) {
       indexes.push(positionToIndex(x, y, width));
       groups.set(id, indexes);
     });
+    const sourceLayer = Number.isInteger(layer.layer) ? layer.layer : order;
+    fruitIndexesByLayer.set(sourceLayer, new Set([...groups.values()].flat()));
     return {
-      layer: Number.isInteger(layer.layer) ? layer.layer : order,
+      layer: sourceLayer,
       items: [...groups.entries()].sort(([a], [b]) => a - b).map(([itemId, index]) => ({ itemId, index: [...new Set(index)].sort((a, b) => a - b) }))
     };
   }).filter((layer) => layer.items.length > 0)
-    .sort((a, b) => a.layer - b.layer)
-    .map((layer, index) => ({
-      ...layer,
-      layer: index
-    }));
+    .sort((a, b) => a.layer - b.layer);
+  const exportLayerBySourceLayer = new Map();
+  const itemLayers = itemLayerEntries.map((layer, index) => {
+    exportLayerBySourceLayer.set(layer.layer, index);
+    return { ...layer, layer: index };
+  });
+  const mysteryFruitElement = normalizeMysteryFruitElement(editorData.mysteryFruitElement)
+    .map((entry) => {
+      const exportedLayer = exportLayerBySourceLayer.get(entry.layer);
+      const fruitIndexes = fruitIndexesByLayer.get(entry.layer) ?? new Set();
+      if (!Number.isInteger(exportedLayer)) return null;
+      return {
+        layer: exportedLayer,
+        index: entry.index.filter((index) => fruitIndexes.has(index))
+      };
+    })
+    .filter((entry) => entry?.index.length > 0);
+  const countBarrierElement = normalizeCountBarrierElement(editorData.countBarrierElement)
+    .map((entry) => ({
+      ...entry,
+      index: entry.index.filter((index) => pathIndexes.has(index)).sort((a, b) => a - b)
+    }))
+    .filter((entry) => entry.index.length > 0 && entry.index.includes(entry.startIndex) && entry.index.includes(entry.endIndex));
+  normalizeTunnelElement(editorData.tunnelElement)
+    .forEach((entry) => {
+      const points = entry.entryPoints
+        .filter((point) => pathIndexes.has(point.index))
+        .map((point) => ({ index: point.index, direction: normalizeTunnelDirection(point.direction) }));
+      if (points.length === 2 && points[0].index !== points[1].index) {
+        tunnelElement.push({ tunnelId: entry.tunnelId, entryPoints: points });
+      }
+    });
+  normalizeOneWayElement(editorData.oneWayElement)
+    .forEach((entry) => {
+      const points = entry.entryPoints
+        .filter((point) => pathIndexes.has(point.index))
+        .map((point) => ({ index: point.index, direction: normalizeOneWayDirection(point.direction) }));
+      if (points.length === 2 && points[0].index !== points[1].index) {
+        oneWayElement.push({ oneWayId: entry.oneWayId, entryPoints: points });
+      }
+    });
   const grass = Object.keys(editorData.grassCells ?? {}).map((key) => {
     const { x, y } = parseCellKey(key);
     return positionToIndex(x, y, width);
@@ -783,7 +1941,12 @@ function serializeLevel(editorData) {
     PriorityPoint: { index: [...new Set(priorityPoints)] },
     spawns: spawns.sort((a, b) => a.index - b.index), itemLayers,
     trays: trays.sort((a, b) => a.trayId - b.trayId),
-    elements: {}
+    bridgeElement: bridgeElement.sort((a, b) => a.index - b.index),
+    gateElement: gateElement.sort((a, b) => a.index - b.index),
+    mysteryFruitElement,
+    countBarrierElement,
+    tunnelElement: tunnelElement.sort((a, b) => a.tunnelId - b.tunnelId),
+    oneWayElement: oneWayElement.sort((a, b) => a.oneWayId - b.oneWayId)
   };
 }
 
@@ -803,6 +1966,11 @@ function normalizeFileName(value) {
 // ---- js/data/validator.js ----
 
 
+
+
+
+
+
 function collectStats(layer) {
   const stats = {
     paths: 0, items: 0, snake: 0, fruits: 0, capacity: 0,
@@ -810,10 +1978,19 @@ function collectStats(layer) {
     allFruits: 0, fruitLayers: 0,
     fruitsByType: Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0])),
     allFruitsByType: Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0])),
-    capacityByType: Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0]))
+    capacityByType: Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0])),
+    bridges: 0,
+    gates: 0,
+    mysteryFruits: 0,
+    countBarriers: 0,
+    countBarrierCells: 0,
+    tunnels: 0,
+    oneWays: 0
   };
   Object.values(layer?.cells ?? {}).forEach((cell) => {
     if (cell.path) stats.paths += 1;
+    if (isBridgeElement(cell.element)) stats.bridges += 1;
+    if (isGateElement(cell.element)) stats.gates += 1;
     if (!cell.item) return;
     stats.items += 1;
     if (cell.item.kind === "snake") stats.snake += 1;
@@ -884,6 +2061,13 @@ function validateLevel(level) {
       stats.allFruitsByType[cell.item.fruitType] = (stats.allFruitsByType[cell.item.fruitType] ?? 0) + 1;
     });
   });
+  (level?.mysteryFruitElement ?? []).forEach((entry) => { stats.mysteryFruits += entry.index?.length ?? 0; });
+  normalizeCountBarrierElement(level?.countBarrierElement).forEach((entry) => {
+    stats.countBarriers += 1;
+    stats.countBarrierCells += entry.index.length;
+  });
+  stats.tunnels = normalizeTunnelElement(level?.tunnelElement).length;
+  stats.oneWays = normalizeOneWayElement(level?.oneWayElement).length;
   if (!level?.sharedCells) {
     stats.allFruits = stats.fruits;
     stats.allFruitsByType = { ...stats.fruitsByType };
@@ -897,6 +2081,28 @@ function validateLevel(level) {
   const balanced = FRUIT_TYPES.every((type) => stats.allFruitsByType[type] === stats.capacityByType[type]);
   if (!balanced || stats.allFruits === 0) warnings.push("Tổng trái cây của các layer và recipe khay chưa khớp.");
   const roadKeys = new Set(Object.entries(level?.sharedCells ?? {}).filter(([, cell]) => cell.path).map(([key]) => key));
+  const roadIndexes = new Set([...roadKeys].map(indexOfKey));
+  const countBarrierEndpointIndexes = new Set();
+  normalizeCountBarrierElement(level?.countBarrierElement).forEach((barrier) => {
+    countBarrierEndpointIndexes.add(barrier.startIndex);
+    countBarrierEndpointIndexes.add(barrier.endIndex);
+  });
+  Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
+    if (!isBridgeElement(cell.element)) return;
+    const index = indexOfKey(key);
+    if (![0, 1].includes(cell.element.axis)) errors.push(`Bridge tại Index ${index} có axis không hợp lệ.`);
+    else cell.element.axis = normalizeBridgeAxis(cell.element.axis);
+  });
+  Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
+    if (!isGateElement(cell.element)) return;
+    const index = indexOfKey(key);
+    if (!cell.path) errors.push(`Gate tại Index ${index} phải nằm trên Path.`);
+    if (!isValidGateDirection(cell.element.direction)) {
+      errors.push(`Gate tại Index ${index} có direction không hợp lệ.`);
+      return;
+    }
+    cell.element.direction = normalizeGateDirection(cell.element.direction);
+  });
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind === "snake" && !cell.path) warnings.push(`Spawn tại Index ${indexOfKey(key)} phải nằm trên Path.`);
     if (cell.item?.kind === "tray") {
@@ -925,45 +2131,301 @@ function validateLevel(level) {
   });
   (level?.layers ?? []).forEach((layer) => Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind !== "fruit") return;
-    if (!roadKeys.has(key)) warnings.push(`Fruit tại Index ${indexOfKey(key)} trong layer ${layer.layer ?? layer.name} phải nằm trên Path.`);
+    const index = indexOfKey(key);
+    if (!roadKeys.has(key)) warnings.push(`Fruit tại Index ${index} trong layer ${layer.layer ?? layer.name} phải nằm trên Path.`);
+    if (countBarrierEndpointIndexes.has(index)) errors.push(`Fruit tại Index ${index} không được đặt tại startIndex/endIndex của Count Barrier.`);
     if (cell.item.unknown) warnings.push(`Layer ${layer.layer ?? layer.name} còn Unknown #${cell.item.itemId ?? cell.item.id}.`);
-    if (level.sharedCells?.[key]?.item?.kind === "tray") warnings.push(`Fruit tại Index ${indexOfKey(key)} trùng checkpoint khay.`);
+    if (level.sharedCells?.[key]?.item?.kind === "tray") warnings.push(`Fruit tại Index ${index} trùng checkpoint khay.`);
   }));
+  (level?.mysteryFruitElement ?? []).forEach((entry) => {
+    const layer = (level.layers ?? []).find((candidate, index) => (Number.isInteger(candidate.layer) ? candidate.layer : index) === entry.layer);
+    if (!layer) {
+      errors.push(`Mystery Fruit layer ${entry.layer} không tồn tại.`);
+      return;
+    }
+    (entry.index ?? []).forEach((index) => {
+      const { x, y } = indexToPosition(index, level.grid.columns);
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`Mystery Fruit layer ${entry.layer} Index ${index} nằm ngoài grid.`);
+        return;
+      }
+      if (layer.cells?.[`${x},${y}`]?.item?.kind !== "fruit") errors.push(`Mystery Fruit layer ${entry.layer} Index ${index} phải trỏ tới Fruit thật.`);
+    });
+  });
+  const barrierIds = new Set();
+  const barrierIndexes = new Set();
+  normalizeCountBarrierElement(level?.countBarrierElement).forEach((barrier) => {
+    const label = `Count Barrier ${barrier.barrierId}`;
+    if (barrierIds.has(barrier.barrierId)) errors.push(`${label} bị trùng barrierId.`);
+    barrierIds.add(barrier.barrierId);
+    if (!Number.isInteger(barrier.count) || barrier.count < 1) errors.push(`${label} phải có count là số nguyên dương.`);
+    if (barrier.index.length < 2) errors.push(`${label} phải khóa ít nhất 2 ô Path.`);
+    if (barrier.startIndex === barrier.endIndex) errors.push(`${label} phải có startIndex và endIndex khác nhau.`);
+    const localIndexes = new Set();
+    barrier.index.forEach((index) => {
+      const { x, y } = indexToPosition(index, level.grid.columns);
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`${label} Index ${index} nằm ngoài grid.`);
+        return;
+      }
+      if (!roadIndexes.has(index)) errors.push(`${label} Index ${index} phải thuộc Path.`);
+      if (localIndexes.has(index)) errors.push(`${label} không được chứa index trùng.`);
+      if (barrierIndexes.has(index)) errors.push(`Count Barrier không được chồng index ${index}.`);
+      localIndexes.add(index);
+      barrierIndexes.add(index);
+    });
+    [barrier.startIndex, barrier.endIndex].forEach((index, endpointOrder) => {
+      const name = endpointOrder === 0 ? "startIndex" : "endIndex";
+      const { x, y } = indexToPosition(index, level.grid.columns);
+      if (!isInsideGrid(level.grid, x, y)) errors.push(`${label} ${name} ${index} nằm ngoài grid.`);
+      else if (!roadIndexes.has(index)) errors.push(`${label} ${name} ${index} phải thuộc Path.`);
+      if (!localIndexes.has(index)) errors.push(`${label} ${name} phải nằm trong index.`);
+    });
+  });
+  const tunnelIds = new Set();
+  const tunnelIndexes = new Set();
+  normalizeTunnelElement(level?.tunnelElement).forEach((tunnel) => {
+    const label = `Tunnel ${tunnel.tunnelId}`;
+    if (tunnelIds.has(tunnel.tunnelId)) errors.push(`${label} bị trùng tunnelId.`);
+    tunnelIds.add(tunnel.tunnelId);
+    if (tunnel.entryPoints.length !== 2) errors.push(`${label} phải có đúng 2 entryPoint.`);
+    const localIndexes = new Set();
+    tunnel.entryPoints.forEach((point, entryIndex) => {
+      const name = entryIndex === 0 ? "A" : "B";
+      const { x, y } = indexToPosition(point.index, level.grid.columns);
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`${label} Entry ${name} Index ${point.index} nằm ngoài grid.`);
+        return;
+      }
+      if (!roadIndexes.has(point.index)) errors.push(`${label} Entry ${name} Index ${point.index} phải thuộc Path.`);
+      if (!isValidTunnelDirection(point.direction)) errors.push(`${label} Entry ${name} direction không hợp lệ.`);
+      else point.direction = normalizeTunnelDirection(point.direction);
+      if (localIndexes.has(point.index)) errors.push(`${label} không được dùng cùng index cho hai entryPoint.`);
+      if (tunnelIndexes.has(point.index)) errors.push(`Tunnel không được chồng index ${point.index}.`);
+      localIndexes.add(point.index);
+      tunnelIndexes.add(point.index);
+    });
+  });
+  const oneWayIds = new Set();
+  const oneWayIndexes = new Set();
+  normalizeOneWayElement(level?.oneWayElement).forEach((oneWay) => {
+    const label = `One Way ${oneWay.oneWayId}`;
+    if (oneWayIds.has(oneWay.oneWayId)) errors.push(`${label} bị trùng oneWayId.`);
+    oneWayIds.add(oneWay.oneWayId);
+    if (oneWay.entryPoints.length !== 2) errors.push(`${label} phải có đúng 2 entryPoint.`);
+    const localIndexes = new Set();
+    oneWay.entryPoints.forEach((point, entryIndex) => {
+      const name = entryIndex === 0 ? "A" : "B";
+      const { x, y } = indexToPosition(point.index, level.grid.columns);
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`${label} Entry ${name} Index ${point.index} nằm ngoài grid.`);
+        return;
+      }
+      if (!roadIndexes.has(point.index)) errors.push(`${label} Entry ${name} Index ${point.index} phải thuộc Path.`);
+      if (!isValidOneWayDirection(point.direction)) errors.push(`${label} Entry ${name} direction không hợp lệ.`);
+      else point.direction = normalizeOneWayDirection(point.direction);
+      if (localIndexes.has(point.index)) errors.push(`${label} không được dùng cùng index cho hai entryPoint.`);
+      if (oneWayIndexes.has(point.index)) errors.push(`One Way không được chồng index ${point.index}.`);
+      localIndexes.add(point.index);
+      oneWayIndexes.add(point.index);
+    });
+  });
   return { valid: errors.length === 0, exportable: errors.length === 0 && warnings.length === 0, errors, warnings: [...new Set(warnings)], stats };
+}
+
+
+// ---- js/data/directory-handle-storage.js ----
+const DIRECTORY_HANDLE_DB = "railwaydash-folder-file";
+const DIRECTORY_HANDLE_STORE = "handles";
+const LAST_DATA_FOLDER_KEY = "lastDataFolder";
+
+function openDirectoryHandleDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB không khả dụng."));
+      return;
+    }
+    const request = indexedDB.open(DIRECTORY_HANDLE_DB, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(DIRECTORY_HANDLE_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Không thể mở IndexedDB."));
+  });
+}
+
+function runDirectoryHandleTransaction(mode, action) {
+  return openDirectoryHandleDb().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction(DIRECTORY_HANDLE_STORE, mode);
+    const store = transaction.objectStore(DIRECTORY_HANDLE_STORE);
+    const request = action(store);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("IndexedDB transaction lỗi."));
+    transaction.oncomplete = () => db.close();
+    transaction.onerror = () => {
+      db.close();
+      reject(transaction.error ?? new Error("IndexedDB transaction lỗi."));
+    };
+  }));
+}
+
+function saveDirectoryHandle(handle) {
+  return runDirectoryHandleTransaction("readwrite", (store) => store.put(handle, LAST_DATA_FOLDER_KEY));
+}
+
+function getDirectoryHandle() {
+  return runDirectoryHandleTransaction("readonly", (store) => store.get(LAST_DATA_FOLDER_KEY));
+}
+
+function clearDirectoryHandle() {
+  return runDirectoryHandleTransaction("readwrite", (store) => store.delete(LAST_DATA_FOLDER_KEY));
+}
+
+
+// ---- js/data/directory-permission-service.js ----
+const DIRECTORY_PERMISSION_MODE = "readwrite";
+
+function normalizePermission(value) {
+  return ["granted", "prompt", "denied"].includes(value) ? value : "unknown";
+}
+
+function isDirectoryPickerSupported() {
+  return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
+}
+
+async function queryDirectoryPermission(handle, mode = DIRECTORY_PERMISSION_MODE) {
+  if (!handle) return "unknown";
+  if (!isDirectoryPickerSupported()) return "unsupported";
+  if (typeof handle.queryPermission !== "function") return "unknown";
+  return normalizePermission(await handle.queryPermission({ mode }));
+}
+
+async function requestDirectoryPermission(handle, mode = DIRECTORY_PERMISSION_MODE) {
+  if (!handle) return "unknown";
+  if (!isDirectoryPickerSupported()) return "unsupported";
+  if (typeof handle.requestPermission !== "function") return "unknown";
+  return normalizePermission(await handle.requestPermission({ mode }));
+}
+
+
+// ---- js/data/data-folder-scanner.js ----
+function isSupportedDataFile(fileName) {
+  return String(fileName ?? "").toLowerCase().endsWith(".json");
+}
+
+async function readDataFile(fileHandle) {
+  const name = fileHandle?.name ?? "";
+  try {
+    const file = await fileHandle.getFile();
+    const rawText = await file.text();
+    try {
+      const data = JSON.parse(rawText);
+      const validRoot = data !== null && typeof data === "object";
+      return {
+        name,
+        handle: fileHandle,
+        rawText,
+        data: validRoot ? data : null,
+        status: validRoot ? "valid" : "invalid",
+        errorMessage: validRoot ? null : "Root JSON phải là object hoặc array.",
+        lastModified: file.lastModified,
+        size: file.size
+      };
+    } catch (error) {
+      return {
+        name,
+        handle: fileHandle,
+        rawText,
+        data: null,
+        status: "invalid",
+        errorMessage: error.message,
+        lastModified: file.lastModified,
+        size: file.size
+      };
+    }
+  } catch (error) {
+    return {
+      name,
+      handle: fileHandle,
+      rawText: null,
+      data: null,
+      status: "unreadable",
+      errorMessage: error.message,
+      lastModified: 0,
+      size: 0
+    };
+  }
+}
+
+async function scanDataFolder(directoryHandle, scanContext = {}) {
+  const files = [];
+  for await (const [name, handle] of directoryHandle.entries()) {
+    if (typeof scanContext.isCurrent === "function" && !scanContext.isCurrent()) return { cancelled: true, files: [] };
+    if (handle.kind !== "file" || !isSupportedDataFile(name)) continue;
+    files.push(await readDataFile(handle));
+  }
+  files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }));
+  return { cancelled: false, files };
 }
 
 
 // ---- js/data/file-manager.js ----
 
+
+
+
 class LevelFileManager {
   constructor() { this.directory = null; }
-  get supported() { return typeof window.showDirectoryPicker === "function"; }
+  get supported() { return isDirectoryPickerSupported(); }
   get connected() { return Boolean(this.directory); }
+  get directoryName() { return this.directory?.name ?? ""; }
+
+  setDirectory(handle) {
+    this.directory = handle ?? null;
+  }
 
   async chooseDirectory() {
     if (!this.supported) throw new Error("Trình duyệt này không hỗ trợ quản lý thư mục trực tiếp.");
-    this.directory = await window.showDirectoryPicker({ id: "railwaydash-levels", mode: "readwrite" });
-    return this.listFiles();
+    const handle = await window.showDirectoryPicker({ id: "railwaydash-levels", mode: DIRECTORY_PERMISSION_MODE });
+    this.directory = handle;
+    saveDirectoryHandle(handle).catch((error) => console.warn("Không thể lưu folder đã chọn", error));
+    return handle;
   }
 
-  async listFiles() {
+  async restoreDirectory() {
+    const handle = await getDirectoryHandle();
+    this.directory = handle ?? null;
+    return this.directory;
+  }
+
+  async forgetDirectory() {
+    this.directory = null;
+    await clearDirectoryHandle();
+  }
+
+  queryPermission() {
+    return queryDirectoryPermission(this.directory, DIRECTORY_PERMISSION_MODE);
+  }
+
+  requestPermission() {
+    return requestDirectoryPermission(this.directory, DIRECTORY_PERMISSION_MODE);
+  }
+
+  async listFiles(scanContext = {}) {
     if (!this.directory) return [];
-    const files = [];
-    for await (const [name, handle] of this.directory.entries()) {
-      if (handle.kind !== "file" || !name.toLowerCase().endsWith(".json")) continue;
-      const file = await handle.getFile();
-      files.push({ name, size: file.size, updatedAt: file.lastModified });
-    }
-    return files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const result = await scanDataFolder(this.directory, scanContext);
+    return result.cancelled ? null : result.files;
   }
 
   async read(name) {
     const handle = await this.directory.getFileHandle(name);
-    return JSON.parse(await (await handle.getFile()).text());
+    const entry = await readDataFile(handle);
+    if (entry.status !== "valid") throw new Error(entry.errorMessage ?? "File JSON không hợp lệ.");
+    return entry.data;
   }
 
   async write(name, data) {
-    const handle = await this.directory.getFileHandle(name);
+    const handle = await this.directory.getFileHandle(name, { create: true });
     const writable = await handle.createWritable();
     await writable.write(stringifyJson(data));
     await writable.close();
@@ -987,21 +2449,27 @@ class LevelFileManager {
 
 
 
-function cornerKeys(state) {
+
+
+
+
+
+function junctionKeys(state) {
   const layer = createMergedLayer(state);
   return new Set(Object.keys(layer.cells ?? {}).filter((key) => {
+    if (isBridgeElement(state.sharedCells?.[key]?.element)) return false;
     const { x, y } = parseCellKey(key);
-    return isPathTurnpoint(layer, x, y);
+    return isPathJunction(layer, x, y);
   }));
 }
 
-function syncAutoPriorityPoints(state, beforeCorners) {
-  const afterCorners = cornerKeys(state);
+function syncAutoPriorityPoints(state, beforeJunctions) {
+  const afterJunctions = junctionKeys(state);
   Object.entries(state.priorityPoints).forEach(([key, source]) => {
-    if (source === "auto" && !afterCorners.has(key)) delete state.priorityPoints[key];
+    if (source === "auto" && !afterJunctions.has(key)) delete state.priorityPoints[key];
   });
-  afterCorners.forEach((key) => {
-    if (!beforeCorners.has(key) && !state.priorityPoints[key]) state.priorityPoints[key] = "auto";
+  afterJunctions.forEach((key) => {
+    if (!beforeJunctions.has(key) && !state.priorityPoints[key]) state.priorityPoints[key] = "auto";
   });
 }
 
@@ -1025,6 +2493,59 @@ function objectCategory(object) {
   return ["snake", "fruit", "tray", "truck"].includes(object?.kind) ? "item" : "element";
 }
 
+function activeLayerContext(state, position) {
+  const layer = state.layers.find((candidate) => candidate.id === state.activeLayerId);
+  if (!layer || !position) return null;
+  const key = cellKey(position.x, position.y);
+  return {
+    layer,
+    key,
+    layerNumber: Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer),
+    shared: state.sharedCells?.[key] ?? { path: false, item: null, element: null },
+    layerCell: layer.cells?.[key] ?? { item: null },
+    index: positionToIndex(position.x, position.y, state.grid.columns)
+  };
+}
+
+function targetLabel(target) {
+  return {
+    priority: "PriorityPoint",
+    path: "Path",
+    grass: "Grass",
+    item: "Item",
+    "mystery-fruit": "Mystery Fruit",
+    bridge: "Bridge",
+    gate: "Gate",
+    tunnel: "Tunnel",
+    "one-way": "One Way",
+    "count-barrier": "Count Barrier",
+    tray: "Tray"
+  }[target] ?? target;
+}
+
+function getEraseTargets(state, position) {
+  ensureTerrainState(state);
+  const context = activeLayerContext(state, position);
+  if (!context) return [];
+  const targets = [];
+  if (state.priorityPoints?.[context.key]) targets.push({ mode: "priority", label: targetLabel("priority") });
+  if (isBridgeElement(context.shared.element)) targets.push({ mode: "bridge", label: targetLabel("bridge") });
+  if (isGateElement(context.shared.element)) targets.push({ mode: "gate", label: targetLabel("gate") });
+  if (findTunnelAtIndex(state, context.index)) targets.push({ mode: "tunnel", label: targetLabel("tunnel") });
+  if (findOneWayAtIndex(state, context.index)) targets.push({ mode: "one-way", label: targetLabel("one-way") });
+  if (findCountBarrierAtIndex(state, context.index)) targets.push({ mode: "count-barrier", label: targetLabel("count-barrier") });
+  if (context.layerCell.item?.kind === "fruit" && isMysteryFruitAt(state, context.layerNumber, context.index)) {
+    targets.push({ mode: "mystery-fruit", label: targetLabel("mystery-fruit") });
+  }
+  if (context.layerCell.item?.kind === "fruit" || (context.shared.item && !["tray", "truck"].includes(context.shared.item.kind))) {
+    targets.push({ mode: "item", label: context.layerCell.item?.label ?? context.shared.item?.label ?? targetLabel("item") });
+  }
+  if (["tray", "truck"].includes(context.shared.item?.kind)) targets.push({ mode: "tray", label: targetLabel("tray") });
+  if (context.shared.path) targets.push({ mode: "path", label: targetLabel("path") });
+  if (state.grassCells?.[context.key]) targets.push({ mode: "grass", label: targetLabel("grass") });
+  return targets;
+}
+
 function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) {
   const removeLayerItem = () => {
     if (layerCell.item?.kind !== "fruit") return false;
@@ -1032,7 +2553,7 @@ function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) 
     return true;
   };
   const removeSharedItem = () => {
-    if (objectCategory(shared.item) !== "item") return false;
+    if (objectCategory(shared.item) !== "item" || ["tray", "truck"].includes(shared.item?.kind)) return false;
     shared.item = null;
     return true;
   };
@@ -1058,12 +2579,27 @@ function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) 
     if (removeLayerItem()) return { changed: true, removed: "layer-item" };
     return { changed: removeSharedItem(), removed: "shared-item" };
   }
+  if (mode === "tray") {
+    if (!["tray", "truck"].includes(shared.item?.kind)) return { changed: false };
+    shared.item = null;
+    return { changed: true, removed: "tray" };
+  }
+  if (mode === "bridge") {
+    if (!isBridgeElement(shared.element)) return { changed: false };
+    shared.element = null;
+    return { changed: true, removed: "bridge" };
+  }
+  if (mode === "gate") {
+    if (!isGateElement(shared.element)) return { changed: false };
+    shared.element = null;
+    return { changed: true, removed: "gate" };
+  }
   if (mode === "element") return { changed: removeElement(), removed: "element" };
   if (mode === "path") return removePath();
 
+  if (removeElement()) return { changed: true, removed: "element" };
   if (removeLayerItem()) return { changed: true, removed: "layer-item" };
   if (removeSharedItem()) return { changed: true, removed: "shared-item" };
-  if (removeElement()) return { changed: true, removed: "element" };
   return removePath();
 }
 
@@ -1073,20 +2609,62 @@ function eraseAtPosition(state, position, mode = "smart") {
   ensureTerrainState(state);
   state.sharedCells ??= {};
   const key = cellKey(position.x, position.y);
-  if (mode === "smart" && state.priorityPoints[key]) {
+  const beforeJunctions = junctionKeys(state);
+  const shared = structuredClone(state.sharedCells[key] ?? { path: false, item: null, element: null });
+  const layerCell = structuredClone(layer.cells[key] ?? { item: null });
+  const hasElement = Boolean(shared.element) || objectCategory(shared.item) === "element";
+  if (mode === "grass") {
+    if (!state.grassCells[key]) return { changed: false };
+    delete state.grassCells[key];
+    state.selectedCell = { x: position.x, y: position.y };
+    return { changed: true, removed: "grass" };
+  }
+  if (mode === "priority") {
+    if (!state.priorityPoints[key]) return { changed: false };
     delete state.priorityPoints[key];
     state.selectedCell = { x: position.x, y: position.y };
     return { changed: true, removed: "priority-point" };
   }
-  const beforeCorners = cornerKeys(state);
-  const shared = structuredClone(state.sharedCells[key] ?? { path: false, item: null, element: null });
-  const layerCell = structuredClone(layer.cells[key] ?? { item: null });
+  if (mode === "mystery-fruit") {
+    const layerNumber = Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer);
+    const changed = setMysteryFruitAt(state, layerNumber, positionToIndex(position.x, position.y, state.grid.columns), false);
+    state.selectedCell = { x: position.x, y: position.y };
+    return { changed, removed: changed ? "mystery-fruit" : null };
+  }
+  if (mode === "count-barrier") {
+    const changed = removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    state.selectedCell = { x: position.x, y: position.y };
+    return { changed, removed: changed ? "count-barrier" : null };
+  }
+  if (mode === "tunnel") {
+    const changed = removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    state.selectedCell = { x: position.x, y: position.y };
+    return { changed, removed: changed ? "tunnel" : null };
+  }
+  if (mode === "one-way") {
+    const changed = removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    state.selectedCell = { x: position.x, y: position.y };
+    return { changed, removed: changed ? "one-way" : null };
+  }
+  if (mode === "smart" && state.priorityPoints[key] && !hasElement) {
+    delete state.priorityPoints[key];
+    state.selectedCell = { x: position.x, y: position.y };
+    return { changed: true, removed: "priority-point" };
+  }
   const fruitOnOtherLayer = state.layers.some((candidate) => candidate.id !== layer.id && candidate.cells?.[key]?.item?.kind === "fruit");
   const result = eraseCellLayers(shared, layerCell, mode, { protectPath: mode === "smart" && fruitOnOtherLayer });
+  if (result.removed === "layer-item") {
+    setMysteryFruitAt(state, Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer), positionToIndex(position.x, position.y, state.grid.columns), false);
+  }
 
   if (result.removed === "path") {
     state.grassCells[key] = true;
     delete state.priorityPoints[key];
+    removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    if (state.tunnelDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.tunnelDraft = null;
+    removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    if (state.oneWayDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.oneWayDraft = null;
   }
 
   if (!shared.path && !shared.item && !shared.element) delete state.sharedCells[key];
@@ -1094,7 +2672,7 @@ function eraseAtPosition(state, position, mode = "smart") {
   if (!layerCell.item) delete layer.cells[key];
   else layer.cells[key] = layerCell;
   state.selectedCell = { x: position.x, y: position.y };
-  if (result.removed === "path") syncAutoPriorityPoints(state, beforeCorners);
+  if (result.removed === "path") syncAutoPriorityPoints(state, beforeJunctions);
   return result;
 }
 
@@ -1113,11 +2691,11 @@ function applyTool(state, x, y, toolOverride = null) {
   }
 
   if (tool === "path") {
-    const beforeCorners = cornerKeys(state);
+    const beforeJunctions = junctionKeys(state);
     shared.path = true;
     delete state.grassCells[key];
     state.sharedCells[key] = shared;
-    syncAutoPriorityPoints(state, beforeCorners);
+    syncAutoPriorityPoints(state, beforeJunctions);
   } else if (tool === "terrain") {
     if (state.selectedAssetId === TERRAIN_ASSET_IDS.GRASS) {
       if (shared.path) return { changed: false, reason: "grass-on-path" };
@@ -1138,9 +2716,126 @@ function applyTool(state, x, y, toolOverride = null) {
         return { changed: false, reason: "unique-object-exists", objectId: object.id };
       }
       if (object.kind === "fruit") {
+        const index = positionToIndex(x, y, state.grid.columns);
+        const barrier = findCountBarrierAtIndex(state, index);
+        if (barrier && (barrier.startIndex === index || barrier.endIndex === index)) {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "fruit-on-barrier-endpoint", objectId: object.id };
+        }
         shared.path = true;
         if (shared.item) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
         layerCell.item = cloneObject(object);
+      } else if (object.kind === "mystery-fruit") {
+        const layerNumber = Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer);
+        const index = positionToIndex(x, y, state.grid.columns);
+        if (layerCell.item?.kind !== "fruit") {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "mystery-needs-fruit", objectId: object.id };
+        }
+        const hidden = !setMysteryFruitAt(state, layerNumber, index, false);
+        setMysteryFruitAt(state, layerNumber, index, hidden);
+        state.selectedCell = { x, y };
+        return { changed: true, action: hidden ? "mystery-added" : "mystery-removed" };
+      } else if (isCountBarrierTool(object)) {
+        const index = positionToIndex(x, y, state.grid.columns);
+        if (!shared.path) {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "barrier-needs-path", objectId: object.id };
+        }
+        const existing = findCountBarrierAtIndex(state, index);
+        if (existing) {
+          state.activeBarrierId = existing.barrierId;
+          state.selectedCountBarrierCount = normalizeCountBarrierCount(existing.count);
+          state.selectedCell = { x, y };
+          return { changed: true, action: "count-barrier-selected", barrierId: existing.barrierId };
+        }
+        state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
+        if (!Number.isInteger(state.activeBarrierId)) createNewActiveCountBarrier(state);
+        let barrier = state.countBarrierElement.find((entry) => entry.barrierId === state.activeBarrierId);
+        if (!barrier) {
+          barrier = {
+            barrierId: state.activeBarrierId,
+            count: normalizeCountBarrierCount(state.selectedCountBarrierCount),
+            startIndex: index,
+            endIndex: index,
+            index: []
+          };
+          state.countBarrierElement.push(barrier);
+        }
+        if (!barrier.index.includes(index)) barrier.index.push(index);
+        barrier.index = [...new Set(barrier.index)].sort((a, b) => a - b);
+        barrier.endIndex = index;
+        barrier.count = normalizeCountBarrierCount(barrier.count);
+        state.selectedCell = { x, y };
+        return { changed: true, action: "count-barrier-updated", barrierId: barrier.barrierId };
+      } else if (isTunnelTool(object)) {
+        const index = positionToIndex(x, y, state.grid.columns);
+        if (!shared.path) {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "tunnel-needs-path", objectId: object.id };
+        }
+        if (state.tunnelDraft?.step === "direction-a") {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "tunnel-needs-direction-a", objectId: object.id };
+        }
+        if (state.tunnelDraft?.step === "direction-b") {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "tunnel-needs-direction-b", objectId: object.id };
+        }
+        if (state.tunnelDraft?.step === "point-b") {
+          const placement = placeTunnelDraftPointB(state, index);
+          state.selectedCell = { x, y };
+          return placement;
+        }
+        const existing = findTunnelAtIndex(state, index);
+        if (existing) {
+          state.activeTunnelId = existing.tunnelId;
+          state.selectedCell = { x, y };
+          return { changed: true, action: "tunnel-selected", tunnelId: existing.tunnelId };
+        }
+        const placement = startTunnelDraftAt(state, index);
+        state.selectedCell = { x, y };
+        return placement;
+      } else if (isOneWayTool(object)) {
+        const index = positionToIndex(x, y, state.grid.columns);
+        if (!shared.path) {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "one-way-needs-path", objectId: object.id };
+        }
+        if (state.oneWayDraft?.step === "direction-a") {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "one-way-needs-direction-a", objectId: object.id };
+        }
+        if (state.oneWayDraft?.step === "direction-b") {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "one-way-needs-direction-b", objectId: object.id };
+        }
+        if (state.oneWayDraft?.step === "point-b") {
+          const placement = placeOneWayDraftPointB(state, index);
+          state.selectedCell = { x, y };
+          return placement;
+        }
+        const existing = findOneWayAtIndex(state, index);
+        if (existing) {
+          state.activeOneWayId = existing.oneWayId;
+          state.selectedCell = { x, y };
+          return { changed: true, action: "one-way-selected", oneWayId: existing.oneWayId };
+        }
+        const placement = startOneWayDraftAt(state, index);
+        state.selectedCell = { x, y };
+        return placement;
+      } else if (objectCategory(object) === "element") {
+        if (isGateElement(object) && !shared.path) {
+          return { changed: false, reason: "gate-needs-path", objectId: object.id };
+        }
+        if (shared.element && shared.element.id !== object.id) {
+          return { changed: false, reason: "element-position-occupied", objectId: shared.element.id };
+        }
+        const element = cloneObject(object);
+        if (isBridgeElement(element)) element.axis = normalizeBridgeAxis(state.selectedBridgeAxis ?? element.axis);
+        if (isGateElement(element)) element.direction = normalizeGateDirection(state.selectedGateDirection ?? element.direction);
+        shared.element = element;
+        if (isBridgeElement(element)) delete state.priorityPoints[key];
       } else {
         if (shared.item && shared.item.id !== object.id) {
           return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
@@ -1187,6 +2882,19 @@ function clearEntireMap(state) {
   state.sharedCells = {};
   state.grassCells = createFullGrassCells(state.grid);
   state.priorityPoints = {};
+  state.mysteryFruitElement = [];
+  state.countBarrierElement = [];
+  state.activeBarrierId = null;
+  state.nextBarrierId = 0;
+  state.drawingCountBarrierId = null;
+  state.tunnelElement = [];
+  state.activeTunnelId = null;
+  state.nextTunnelId = 0;
+  state.tunnelDraft = null;
+  state.oneWayElement = [];
+  state.activeOneWayId = null;
+  state.nextOneWayId = 0;
+  state.oneWayDraft = null;
   for (const layer of state.layers ?? []) {
     removedCells += Object.keys(layer.cells ?? {}).length;
     layer.cells = {};
@@ -1204,7 +2912,7 @@ function togglePathAt(state, position) {
   state.sharedCells ??= {};
   const key = cellKey(position.x, position.y);
   const cell = structuredClone(state.sharedCells[key] ?? { path: false, item: null, element: null });
-  const beforeCorners = cornerKeys(state);
+  const beforeJunctions = junctionKeys(state);
   cell.path = !cell.path;
   if (cell.path) delete state.grassCells[key];
   else {
@@ -1214,11 +2922,19 @@ function togglePathAt(state, position) {
   if (!cell.path) {
     cell.item = null;
     cell.element = null;
+    removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    if (state.tunnelDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.tunnelDraft = null;
+    removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
+    if (state.oneWayDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.oneWayDraft = null;
     state.layers.forEach((layer) => { delete layer.cells[key]; });
+    state.layers.forEach((layer, index) => {
+      setMysteryFruitAt(state, Number.isInteger(layer.layer) ? layer.layer : index, positionToIndex(position.x, position.y, state.grid.columns), false);
+    });
   }
   if (!cell.path && !cell.item && !cell.element) delete state.sharedCells[key];
   else state.sharedCells[key] = cell;
-  syncAutoPriorityPoints(state, beforeCorners);
+  syncAutoPriorityPoints(state, beforeJunctions);
 }
 
 
@@ -1240,16 +2956,24 @@ function changeSelectedTruckCapacity(state, delta) {
 
 // ---- js/editor/camera-controller.js ----
 class CameraController {
-  constructor(element) {
-    this.element = element;
+  constructor({ min = 0.5, max = 2, step = 0.1, onChange = () => {} } = {}) {
+    this.min = min;
+    this.max = max;
+    this.step = step;
+    this.onChange = onChange;
     this.zoom = 1;
   }
 
   setZoom(value) {
-    this.zoom = Math.min(2, Math.max(0.5, value));
-    this.element.style.transform = `scale(${this.zoom})`;
-    this.element.style.transformOrigin = "center";
+    const clamped = Math.min(this.max, Math.max(this.min, Number(value) || 1));
+    this.zoom = Math.round(clamped * 100) / 100;
+    this.onChange(this.zoom);
+    return this.zoom;
   }
+
+  zoomIn() { return this.setZoom(this.zoom + this.step); }
+
+  zoomOut() { return this.setZoom(this.zoom - this.step); }
 
   reset() { this.setZoom(1); }
 }
@@ -1259,8 +2983,15 @@ class CameraController {
 
 
 
+
+
+
+
+
+
 function renderGrid(container, editorData) {
   ensureTerrainState(editorData);
+  applyVisualScaleConfig(container);
   const activeLayer = editorData.layers.find((candidate) => candidate.id === editorData.activeLayerId) ?? editorData.layers[0];
   const layer = createMergedLayer(editorData);
   if (activeLayer?.visible === false) {
@@ -1286,24 +3017,99 @@ function renderGrid(container, editorData) {
       const data = getCell(layer, x, y);
       const index = positionToIndex(x, y, editorData.grid.columns);
       const priorityPoint = Boolean(editorData.priorityPoints[cellKey(x, y)]);
+      const countBarrier = findCountBarrierAtIndex(editorData, index);
+      const tunnelEntry = findTunnelEntryAtIndex(editorData, index);
+      const tunnelDraftEntry = findTunnelDraftEntryAtIndex(editorData, index);
+      const oneWayEntry = findOneWayEntryAtIndex(editorData, index);
+      const oneWayDraftEntry = findOneWayDraftEntryAtIndex(editorData, index);
+      const barrierEndpoint = countBarrier && (countBarrier.startIndex === index || countBarrier.endIndex === index);
+      const activeBarrier = countBarrier && countBarrier.barrierId === editorData.activeBarrierId;
+      const activeTunnel = (tunnelEntry && tunnelEntry.tunnel.tunnelId === editorData.activeTunnelId) || Boolean(tunnelDraftEntry);
+      const activeOneWay = (oneWayEntry && oneWayEntry.oneWay.oneWayId === editorData.activeOneWayId) || Boolean(oneWayDraftEntry);
       const grass = Boolean(editorData.grassCells[cellKey(x, y)]);
       const checkpointTray = trayCheckpoints.get(cellKey(x, y));
       const visualTray = trayVisuals.get(cellKey(x, y));
       const cell = document.createElement("button");
       cell.type = "button";
-      cell.className = `grid-cell${grass ? " grass" : " terrain-empty"}${data.path ? " path" : ""}${priorityPoint ? " priority-point" : ""}${samePosition(editorData.selectedCell, { x, y }) ? " selected" : ""}`;
+      cell.className = `grid-cell${grass ? " grass" : " terrain-empty"}${data.path ? " path" : ""}${priorityPoint ? " priority-point" : ""}${countBarrier ? " count-barrier-cell" : ""}${activeBarrier ? " active-count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry || tunnelDraftEntry ? " tunnel-cell" : ""}${tunnelDraftEntry ? " tunnel-draft-cell" : ""}${activeTunnel ? " active-tunnel-cell" : ""}${oneWayEntry || oneWayDraftEntry ? " one-way-cell" : ""}${oneWayDraftEntry ? " one-way-draft-cell" : ""}${activeOneWay ? " active-one-way-cell" : ""}${samePosition(editorData.selectedCell, { x, y }) ? " selected" : ""}`;
       cell.dataset.x = x;
       cell.dataset.y = y;
+      if (tunnelEntry || tunnelDraftEntry) cell.style.setProperty("--tunnel-color", tunnelColor((tunnelEntry?.tunnel ?? tunnelDraftEntry?.draft).tunnelId));
+      if (oneWayEntry || oneWayDraftEntry) cell.style.setProperty("--one-way-color", oneWayColor((oneWayEntry?.oneWay ?? oneWayDraftEntry?.draft).oneWayId));
       cell.setAttribute("role", "gridcell");
       cell.setAttribute("aria-label", `Ô Index ${index}${priorityPoint ? ", PriorityPoint" : ""}${grass ? ", Grass" : data.path ? ", Path" : ", Terrain trống"}`);
 
+      if (isBridgeElement(data.element)) {
+        const bridge = document.createElement("span");
+        bridge.className = `bridge-preview${normalizeBridgeAxis(data.element.axis) === 1 ? " vertical" : ""}`;
+        bridge.title = normalizeBridgeAxis(data.element.axis) === 1 ? "Bridge Vertical" : "Bridge Horizontal";
+        bridge.textContent = "🟰";
+        cell.appendChild(bridge);
+      }
+      if (isGateElement(data.element)) {
+        const gate = document.createElement("span");
+        gate.className = `gate-preview ${gateDirectionClass(data.element.direction)}`;
+        gate.title = `Gate ${gateDirectionClass(data.element.direction)}`;
+        cell.appendChild(gate);
+      }
+      if (barrierEndpoint) {
+        const barrier = document.createElement("span");
+        barrier.className = "count-barrier-preview";
+        barrier.title = `Count Barrier ${countBarrier.barrierId} · count ${countBarrier.count}`;
+        barrier.textContent = String(countBarrier.count);
+        cell.appendChild(barrier);
+      }
+      if (tunnelEntry) {
+        const tunnel = document.createElement("span");
+        tunnel.className = `tunnel-preview ${tunnelDirectionClass(tunnelEntry.entryPoint.direction)}`;
+        tunnel.title = `Tunnel ${tunnelEntry.tunnel.tunnelId} · Entry ${tunnelEntry.entryIndex === 0 ? "A" : "B"}`;
+        tunnel.style.setProperty("--tunnel-color", tunnelColor(tunnelEntry.tunnel.tunnelId));
+        const symbol = document.createElement("span");
+        symbol.className = "tunnel-symbol";
+        symbol.textContent = tunnelDirectionIcon(tunnelEntry.entryPoint.direction);
+        tunnel.appendChild(symbol);
+        cell.appendChild(tunnel);
+      }
+      if (tunnelDraftEntry) {
+        const tunnel = document.createElement("span");
+        const hasDirection = Number.isInteger(tunnelDraftEntry.entryPoint.direction);
+        tunnel.className = `tunnel-preview draft ${hasDirection ? tunnelDirectionClass(tunnelDraftEntry.entryPoint.direction) : "pending"}`;
+        tunnel.title = `Tunnel ${tunnelDraftEntry.draft.tunnelId} draft · Entry ${tunnelDraftEntry.entryIndex === 0 ? "A" : "B"}`;
+        tunnel.style.setProperty("--tunnel-color", tunnelColor(tunnelDraftEntry.draft.tunnelId));
+        const symbol = document.createElement("span");
+        symbol.className = "tunnel-symbol";
+        symbol.textContent = "⏭";
+        tunnel.appendChild(symbol);
+        cell.appendChild(tunnel);
+      }
+      if (oneWayEntry) {
+        const oneWay = document.createElement("span");
+        oneWay.className = `one-way-preview ${oneWayDirectionClass(oneWayEntry.entryPoint.direction)}`;
+        oneWay.title = `One Way ${oneWayEntry.oneWay.oneWayId} · Entry ${oneWayEntry.entryIndex === 0 ? "A" : "B"}`;
+        oneWay.style.setProperty("--one-way-color", oneWayColor(oneWayEntry.oneWay.oneWayId));
+        oneWay.textContent = oneWayDirectionIcon(oneWayEntry.entryPoint.direction);
+        cell.appendChild(oneWay);
+      }
+      if (oneWayDraftEntry) {
+        const oneWay = document.createElement("span");
+        const hasDirection = Number.isInteger(oneWayDraftEntry.entryPoint.direction);
+        oneWay.className = `one-way-preview draft ${hasDirection ? oneWayDirectionClass(oneWayDraftEntry.entryPoint.direction) : "pending"}`;
+        oneWay.title = `One Way ${oneWayDraftEntry.draft.oneWayId} draft · Entry ${oneWayDraftEntry.entryIndex === 0 ? "A" : "B"}`;
+        oneWay.style.setProperty("--one-way-color", oneWayColor(oneWayDraftEntry.draft.oneWayId));
+        oneWay.textContent = hasDirection ? oneWayDirectionIcon(oneWayDraftEntry.entryPoint.direction) : "▲";
+        cell.appendChild(oneWay);
+      }
       if (data.item && data.item.kind !== "tray") {
+        const isHiddenFruit = data.item.kind === "fruit"
+          && data.layerItem?.kind === "fruit"
+          && isMysteryFruitAt(editorData, Number.isInteger(activeLayer?.layer) ? activeLayer.layer : 0, index)
+          && !editorData.mysteryFruitDebug;
         const icon = document.createElement("span");
-        icon.className = `placed-icon ${data.item.kind}`;
+        icon.className = `placed-icon ${data.item.kind}${isHiddenFruit ? " mystery-fruit-preview" : ""}`;
         icon.textContent = data.item.icon;
-        if (data.item.kind === "fruit" || data.item.kind === "truck" || data.item.kind === "tray") {
+        if (data.item.kind === "fruit") {
           const badge = document.createElement("small");
-          badge.textContent = data.item.kind === "fruit" ? (data.item.unknown ? `#${data.item.itemId ?? data.item.id}` : FRUIT_SHORT[data.item.fruitType]) : data.item.capacity;
+          badge.textContent = isHiddenFruit ? "?" : data.item.unknown ? `#${data.item.itemId ?? data.item.id}` : FRUIT_SHORT[data.item.fruitType];
           icon.appendChild(badge);
         }
         cell.appendChild(icon);
@@ -1312,9 +3118,6 @@ function renderGrid(container, editorData) {
         const icon = document.createElement("span");
         icon.className = "placed-icon tray tray-visual-proxy";
         icon.textContent = visualTray.item.icon ?? "🧺";
-        const badge = document.createElement("small");
-        badge.textContent = visualTray.item.trayId;
-        icon.appendChild(badge);
         cell.appendChild(icon);
       }
       if (checkpointTray) {
@@ -1396,7 +3199,7 @@ class InputController {
     if (!this.isEnabled()) return;
     if (event.detail !== 0) return;
     const cell = event.target.closest(".grid-cell");
-    if (cell) this.onCell(Number(cell.dataset.x), Number(cell.dataset.y));
+    if (cell) this.onCell(Number(cell.dataset.x), Number(cell.dataset.y), { clientX: event.clientX, clientY: event.clientY });
   }
 
   handlePointerDown(event) {
@@ -1409,7 +3212,7 @@ class InputController {
     const eraseOverride = event.button === 2;
 
     if (!eraseOverride && !this.canDrag()) {
-      this.onCell(position.x, position.y);
+      this.onCell(position.x, position.y, { clientX: event.clientX, clientY: event.clientY });
       return;
     }
 
@@ -1419,7 +3222,7 @@ class InputController {
     this.strokeMode = eraseOverride ? "erase" : "primary";
     this.grid.classList.add("is-drawing");
     this.onStrokeStart();
-    this.paintTo(position);
+    this.paintTo(position, { clientX: event.clientX, clientY: event.clientY });
   }
 
   handlePointerMove(event) {
@@ -1428,7 +3231,7 @@ class InputController {
     const target = this.root.elementFromPoint?.(event.clientX, event.clientY);
     const cell = target?.closest?.(".grid-cell");
     if (!cell || !this.grid.contains(cell)) return;
-    this.paintTo({ x: Number(cell.dataset.x), y: Number(cell.dataset.y) });
+    this.paintTo({ x: Number(cell.dataset.x), y: Number(cell.dataset.y) }, { clientX: event.clientX, clientY: event.clientY });
   }
 
   handlePointerUp() {
@@ -1445,13 +3248,13 @@ class InputController {
     event.preventDefault();
   }
 
-  paintTo(position) {
+  paintTo(position, pointer = {}) {
     const cells = this.lastCell ? rasterizeGridLine(this.lastCell, position) : [position];
     cells.forEach((cell) => {
       const key = `${cell.x},${cell.y}`;
       if (this.visited.has(key)) return;
       this.visited.add(key);
-      this.onCell(cell.x, cell.y, { eraseOverride: this.strokeMode === "erase" });
+      this.onCell(cell.x, cell.y, { eraseOverride: this.strokeMode === "erase", ...pointer });
     });
     this.lastCell = position;
   }
@@ -1482,7 +3285,7 @@ function showNotification(element, message) {
 
 
 // ---- js/ui/object-palette.js ----
-function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [] } = {}) {
+function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], bridgeAxis = 0, countBarrierCount = 1 } = {}) {
   container.innerHTML = "";
   if (objects.length === 0) {
     const empty = document.createElement("div");
@@ -1502,9 +3305,59 @@ function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Ch�
     button.title = button.dataset.tooltip;
     button.setAttribute("aria-label", `${object.label}. ID: ${object.id}${isUnavailable ? ". Đã có trên map" : ""}`);
     if (isUnavailable) button.setAttribute("aria-disabled", "true");
-    button.innerHTML = `<span class="asset-icon"></span><span></span>`;
+    button.innerHTML = `<span class="asset-icon"></span><span class="asset-label"></span>`;
     button.firstElementChild.textContent = object.icon;
     button.lastElementChild.textContent = object.label;
+    if (object.kind === "bridge") {
+      button.classList.add("bridge-asset");
+      button.firstElementChild.classList.toggle("vertical-bridge-icon", Number(bridgeAxis) === 1);
+      button.dataset.tooltip = `Bridge · ${Number(bridgeAxis) === 1 ? "Vertical" : "Horizontal"}`;
+      button.title = button.dataset.tooltip;
+      button.setAttribute("aria-label", `Bridge. ${Number(bridgeAxis) === 1 ? "Vertical" : "Horizontal"}`);
+      const picker = document.createElement("span");
+      picker.className = "bridge-axis-picker";
+      [
+        ["0", "🟰"],
+        ["1", "🟰"]
+      ].forEach(([direction, label]) => {
+        const option = document.createElement("span");
+        option.className = `bridge-axis-option${String(bridgeAxis) === direction ? " active" : ""}`;
+        option.dataset.bridgeAxis = direction;
+        option.textContent = label;
+        option.title = direction === "0" ? "Horizontal" : "Vertical";
+        picker.appendChild(option);
+      });
+      button.appendChild(picker);
+    }
+    if (object.kind === "gate") {
+      button.classList.add("gate-asset");
+      button.firstElementChild.className = "asset-icon gate-icon";
+      button.dataset.tooltip = "Gate Tool";
+      button.title = button.dataset.tooltip;
+      button.setAttribute("aria-label", "Gate Tool");
+    }
+    if (object.kind === "count-barrier") {
+      button.classList.add("count-barrier-asset");
+      button.dataset.tooltip = `Count Barrier · count ${countBarrierCount}`;
+      button.title = button.dataset.tooltip;
+      button.setAttribute("aria-label", `Count Barrier. Count ${countBarrierCount}`);
+      const badge = document.createElement("span");
+      badge.className = "count-barrier-count-picker";
+      badge.textContent = `Count ${countBarrierCount}`;
+      button.appendChild(badge);
+    }
+    if (object.kind === "tunnel") {
+      button.classList.add("tunnel-asset");
+      button.dataset.tooltip = "Tunnel · tạo cặp mới";
+      button.title = button.dataset.tooltip;
+      button.setAttribute("aria-label", "Tunnel. Tạo cặp mới");
+    }
+    if (object.kind === "one-way") {
+      button.classList.add("one-way-asset");
+      button.dataset.tooltip = "One Way · tạo cặp mới";
+      button.title = button.dataset.tooltip;
+      button.setAttribute("aria-label", "One Way. Tạo cặp mới");
+    }
     container.appendChild(button);
   });
 }
@@ -1540,8 +3393,9 @@ function trayLayerTotal(layer) {
 }
 
 function getSelectedTrayContext(state) {
-  if (!state.selectedCell) return null;
-  const { x, y } = state.selectedCell;
+  const selectedCell = state.selectedCell ?? state.activeTrayCell;
+  if (!selectedCell) return null;
+  const { x, y } = selectedCell;
   const cell = state.sharedCells?.[cellKey(x, y)];
   if (!cell || !["tray", "truck"].includes(cell.item?.kind)) return null;
   return { cell, item: cell.item, x, y };
@@ -1784,7 +3638,7 @@ function createTrayEditor(context, trayIndex, width) {
   header.className = "tray-config-header";
   header.innerHTML = '<span><strong></strong><small></small></span><button class="btn btn-primary" type="button" data-tray-add-layer>＋ Layer</button>';
   header.children[0].children[0].textContent = `Khay ID ${context.item.trayId}`;
-  header.children[0].children[1].textContent = `DeliverPoint · Index ${positionToIndex(context.x, context.y, width)}`;
+  header.children[0].children[1].textContent = `Deliver Point · Index ${positionToIndex(context.x, context.y, width)}`;
   editor.appendChild(header);
 
   if (context.item.kind === "truck") {
@@ -1798,17 +3652,18 @@ function createTrayEditor(context, trayIndex, width) {
 
   const positionControl = document.createElement("label");
   positionControl.className = "tray-position-picker";
-  positionControl.innerHTML = '<span><strong>Vị trí visual khay</strong><small></small></span><select data-tray-position-direction aria-label="Hướng đặt visual khay"></select>';
+  positionControl.innerHTML = '<span><strong>trayPosition</strong><small></small></span><select data-tray-position-direction aria-label="Hướng đặt visual khay"></select>';
   const trayPosition = getTrayVisualPosition(context.item, context);
-  positionControl.children[0].children[1].textContent = `Index ${positionToIndex(trayPosition.x, trayPosition.y, width)} · tương đối từ deliverPoint`;
+  positionControl.children[0].children[1].textContent = `Index ${positionToIndex(trayPosition.x, trayPosition.y, width)} · +1 so với Deliver Point`;
   const directionSelect = positionControl.children[1];
+  const currentDirection = getTrayVisualDirection(context.item, context);
   Object.entries(TRAY_DIRECTION_META).forEach(([direction, label]) => {
     const option = document.createElement("option");
     option.value = direction;
     option.textContent = label;
+    if (direction === currentDirection) option.setAttribute("selected", "");
     directionSelect.appendChild(option);
   });
-  directionSelect.value = getTrayVisualDirection(context.item, context);
   editor.appendChild(positionControl);
 
   const layers = context.item.trayLayers ?? [];
@@ -1826,14 +3681,37 @@ function createTrayEditor(context, trayIndex, width) {
   return editor;
 }
 
+function createTrayContextAt(state, x, y) {
+  const cell = state.sharedCells?.[cellKey(x, y)];
+  if (!cell || !["tray", "truck"].includes(cell.item?.kind)) return null;
+  return { cell, item: cell.item, x, y };
+}
+
+function createTrayInspectorCard(context, width) {
+  const card = document.createElement("article");
+  card.className = "inspector-card tray-inspector-card";
+  card.innerHTML = '<header><span class="inspector-card-icon"></span><h3>Khay chứa</h3></header>';
+  card.querySelector(".inspector-card-icon").textContent = context.item.icon ?? "🧺";
+  card.appendChild(createTrayEditor(context, 0, width));
+
+  const deleteButton = document.createElement("button");
+  deleteButton.className = "inspector-link danger";
+  deleteButton.type = "button";
+  deleteButton.dataset.inspectorDelete = "tray";
+  deleteButton.textContent = "Xóa Tray";
+  card.appendChild(deleteButton);
+  return card;
+}
+
 function renderTrayEditor(container, state) {
   const trays = trayEntries(state);
+  const activeTrayCell = state.activeTrayCell ?? state.selectedCell;
   container.innerHTML = "";
   if (trays.length === 0) {
     container.innerHTML = '<div class="empty-state">Chưa có khay chứa trên map. Chọn <strong>Khay chứa</strong> trong tab Item để đặt một khay trống.</div>';
     return;
   }
-  container.appendChild(createTrayList(trays, state.selectedCell, state.grid.columns));
+  container.appendChild(createTrayList(trays, activeTrayCell, state.grid.columns));
   const context = getSelectedTrayContext(state);
   if (!context) {
     const hint = document.createElement("div");
@@ -2230,15 +4108,16 @@ function createGridIndexTooltip({ grid, getGrid, isEnabled }) {
 // ---- js/ui/toolbar.js ----
 
 function renderToolbar(editor, elements) {
+  if (!ERASE_MODE_LABELS[editor.data.eraseMode]) editor.data.eraseMode = "smart";
   document.querySelectorAll("[data-tool]").forEach((button) => button.classList.toggle("active", button.dataset.tool === editor.data.tool));
   const eraseLabel = ERASE_MODE_LABELS[editor.data.eraseMode ?? "smart"];
-  document.querySelector("#eraseToolBtn .tool-label").textContent = `Xóa · ${eraseLabel}`;
+  document.querySelector("#eraseToolBtn .tool-label").textContent = `Xóa: ${eraseLabel}`;
   document.querySelectorAll("[data-erase-mode]").forEach((button) => {
     const active = button.dataset.eraseMode === (editor.data.eraseMode ?? "smart");
     button.classList.toggle("active", active);
     button.setAttribute("aria-checked", String(active));
   });
-  elements.activeToolBadge.textContent = editor.data.tool === "erase" ? `Xóa ${eraseLabel.toLowerCase()}` : TOOL_LABELS[editor.data.tool];
+  elements.activeToolBadge.textContent = editor.data.tool === "erase" ? `Xóa: ${eraseLabel}` : TOOL_LABELS[editor.data.tool];
   elements.undoBtn.disabled = !editor.history.canUndo;
   elements.redoBtn.disabled = !editor.history.canRedo;
 }
@@ -2265,9 +4144,12 @@ function activateTab(tab, editorData, elements) {
   elements.levelLayerPicker.classList.toggle("read-only", isJson);
   elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson));
   if (isJson) elements.activeToolBadge.textContent = "Chỉ xem";
-  else if (isLevel) elements.activeToolBadge.textContent = editorData.tool === "erase"
-    ? `Xóa ${(ERASE_MODE_LABELS[editorData.eraseMode ?? "smart"] ?? "").toLowerCase()}`
+  else if (isLevel) {
+    const eraseMode = ERASE_MODE_LABELS[editorData.eraseMode] ? editorData.eraseMode : "smart";
+    elements.activeToolBadge.textContent = editorData.tool === "erase"
+    ? `Xóa: ${ERASE_MODE_LABELS[eraseMode]}`
     : TOOL_LABELS[editorData.tool];
+  }
   elements.placeholderView.classList.add("hidden");
   elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
 }
@@ -2275,34 +4157,317 @@ function activateTab(tab, editorData, elements) {
 
 // ---- js/ui/inspector-panel.js ----
 
+
+
+
+
+
+
+
 function escapeHtml(value) {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
+function activeLayerNumber(editorData) {
+  const layer = editorData.layers.find((candidate) => candidate.id === editorData.activeLayerId) ?? editorData.layers[0];
+  return Number.isInteger(layer?.layer) ? layer.layer : Math.max(0, editorData.layers.indexOf(layer));
+}
+
+function getSelectedCellIndex(editorData) {
+  if (!editorData.selectedCell) return null;
+  return positionToIndex(editorData.selectedCell.x, editorData.selectedCell.y, editorData.grid.columns);
+}
+
+function segmentedButton(value, activeValue, label, dataName) {
+  const active = Number(value) === Number(activeValue);
+  return `<button class="segmented-option${active ? " active" : ""}" type="button" ${dataName}="${value}" aria-pressed="${active}">${escapeHtml(label)}${active ? " ✓" : ""}</button>`;
+}
+
+function bridgeCard(bridge) {
+  const axis = normalizeBridgeAxis(bridge.axis);
+  return `<article class="inspector-card">
+    <header><span class="inspector-card-icon">=</span><h3>Bridge</h3></header>
+    <div class="inspector-field">
+      <span>Hướng cầu</span>
+      <div class="segmented-control">
+        ${segmentedButton(BRIDGE_AXES.HORIZONTAL, axis, "Horizontal", "data-inspector-bridge-axis")}
+        ${segmentedButton(BRIDGE_AXES.VERTICAL, axis, "Vertical", "data-inspector-bridge-axis")}
+      </div>
+    </div>
+    <button class="inspector-link danger" type="button" data-inspector-delete="bridge">Xóa Bridge</button>
+  </article>`;
+}
+
+function gateCard(gate) {
+  const direction = normalizeGateDirection(gate.direction);
+  const directionButtons = [
+    [GATE_DIRECTIONS.UP, "↑", "Up"],
+    [GATE_DIRECTIONS.LEFT, "←", "Left"],
+    [GATE_DIRECTIONS.RIGHT, "→", "Right"],
+    [GATE_DIRECTIONS.DOWN, "↓", "Down"]
+  ].map(([value, icon, label]) => {
+    const active = Number(value) === direction;
+    return `<button class="direction-option${active ? " active" : ""}" type="button" data-inspector-gate-direction="${value}" aria-label="${label}" aria-pressed="${active}"><span>${icon}</span><small>${label}</small></button>`;
+  }).join("");
+
+  return `<article class="inspector-card">
+    <header><span class="inspector-card-icon">›</span><h3>Gate</h3></header>
+    <div class="inspector-field">
+      <span>Hướng cổng</span>
+      <div class="direction-control">${directionButtons}</div>
+    </div>
+    <button class="inspector-link danger" type="button" data-inspector-delete="gate">Xóa Gate</button>
+  </article>`;
+}
+
+function countBarrierCard(barrier, selectedIndex) {
+  const count = normalizeCountBarrierCount(barrier.count);
+  const isStart = barrier.startIndex === selectedIndex;
+  const isEnd = barrier.endIndex === selectedIndex;
+  const active = barrier.barrierId === Number(barrier.activeBarrierId);
+  return `<article class="inspector-card">
+    <header><span class="inspector-card-icon">#</span><h3>Count Barrier ${barrier.barrierId}${active ? " · Active" : ""}</h3></header>
+    <div class="inspector-field">
+      <span>Countdown</span>
+      <input class="property-select" type="number" min="1" step="1" value="${count}" data-inspector-count-barrier-count="${barrier.barrierId}" aria-label="Count Barrier countdown">
+    </div>
+    <div class="inspector-kv"><span>Start</span><strong>${barrier.startIndex}${isStart ? " · ô đang chọn" : ""}</strong></div>
+    <div class="inspector-kv"><span>End</span><strong>${barrier.endIndex}${isEnd ? " · ô đang chọn" : ""}</strong></div>
+    <div class="inspector-kv"><span>Cells</span><strong>${barrier.index.length}</strong></div>
+    <div class="quick-actions">
+      <button class="btn" type="button" data-inspector-count-barrier-start="${barrier.barrierId}"${isStart ? " disabled" : ""}>Set Start</button>
+      <button class="btn" type="button" data-inspector-count-barrier-end="${barrier.barrierId}"${isEnd ? " disabled" : ""}>Set End</button>
+      <button class="btn" type="button" data-inspector-count-barrier-new>New Barrier</button>
+    </div>
+    <button class="inspector-link danger" type="button" data-inspector-count-barrier-remove-cell="${barrier.barrierId}">Xóa Cell khỏi Barrier</button>
+    <button class="inspector-link danger" type="button" data-inspector-delete="count-barrier">Xóa Barrier</button>
+  </article>`;
+}
+
+function directionSelect(value, dataAttrs) {
+  const direction = normalizeTunnelDirection(value);
+  return `<select class="property-select" ${dataAttrs} aria-label="Tunnel direction">
+    ${[
+      [0, "Up"],
+      [1, "Down"],
+      [2, "Right"],
+      [3, "Left"]
+    ].map(([optionValue, label]) => `<option value="${optionValue}"${direction === optionValue ? " selected" : ""}>${label}</option>`).join("")}
+  </select>`;
+}
+
+function oneWayDirectionSelect(value, dataAttrs) {
+  const direction = normalizeOneWayDirection(value);
+  return `<select class="property-select" ${dataAttrs} aria-label="One Way direction">
+    ${[
+      [0, "Up"],
+      [1, "Down"],
+      [2, "Right"],
+      [3, "Left"]
+    ].map(([optionValue, label]) => `<option value="${optionValue}"${direction === optionValue ? " selected" : ""}>${label}</option>`).join("")}
+  </select>`;
+}
+
+function tunnelCard(tunnel, selectedIndex, tunnels, cell) {
+  const activeOptions = tunnels.map((entry) => `<option value="${entry.tunnelId}"${entry.tunnelId === tunnel.tunnelId ? " selected" : ""}>Tunnel #${entry.tunnelId}</option>`).join("");
+  const selectedIsPath = Boolean(cell.path);
+  const entries = tunnel.entryPoints.map((point, entryIndex) => {
+    const label = entryIndex === 0 ? "A" : "B";
+    const selected = point.index === selectedIndex;
+    const direction = tunnelDirectionLabel(point.direction);
+    return `<div class="inspector-kv wide"><span>Entry Point ${label}</span><strong>Index ${point.index} · ${direction}${selected ? " · ô đang chọn" : ""}</strong></div>
+      <div class="inspector-field">
+        <span>Direction ${label}</span>
+        ${directionSelect(point.direction, `data-inspector-tunnel-direction="${tunnel.tunnelId}" data-tunnel-entry="${entryIndex}"`)}
+      </div>`;
+  }).join("");
+  return `<article class="inspector-card tunnel-inspector-card" style="--tunnel-color:${tunnelColor(tunnel.tunnelId)}">
+    <header><span class="inspector-card-icon tunnel-card-icon">→</span><h3>Tunnel #${tunnel.tunnelId}</h3></header>
+    <div class="inspector-field">
+      <span>Active Tunnel</span>
+      <select class="property-select" data-inspector-active-tunnel aria-label="Active Tunnel">${activeOptions}</select>
+    </div>
+    ${entries}
+    <div class="quick-actions tunnel-actions">
+      <button class="btn" type="button" data-inspector-tunnel-focus="${tunnel.tunnelId}" data-tunnel-entry="0">Focus A</button>
+      <button class="btn" type="button" data-inspector-tunnel-focus="${tunnel.tunnelId}" data-tunnel-entry="1">Focus B</button>
+      <button class="btn" type="button" data-inspector-tunnel-move="${tunnel.tunnelId}" data-tunnel-entry="0"${!selectedIsPath ? ' disabled title="EntryPoint phải nằm trên Path"' : ""}>Set A Here</button>
+      <button class="btn" type="button" data-inspector-tunnel-move="${tunnel.tunnelId}" data-tunnel-entry="1"${!selectedIsPath ? ' disabled title="EntryPoint phải nằm trên Path"' : ""}>Set B Here</button>
+    </div>
+    <button class="inspector-link danger" type="button" data-inspector-delete="tunnel">Xóa Tunnel</button>
+  </article>`;
+}
+
+function tunnelDraftStatus(step) {
+  return {
+    "direction-a": "Point A selected — Choose direction",
+    "point-b": "Point A complete — Select Tunnel Point B",
+    "direction-b": "Point B selected — Choose direction"
+  }[step] ?? "Select Tunnel Point A";
+}
+
+function tunnelDraftCard(draft) {
+  const pointA = draft.entryPoints[0];
+  const pointB = draft.entryPoints[1];
+  const activeDirectionStep = draft.step === "direction-a" || draft.step === "direction-b";
+  const directionButtons = [
+    [GATE_DIRECTIONS.UP, "↑", "Up"],
+    [GATE_DIRECTIONS.DOWN, "↓", "Down"],
+    [GATE_DIRECTIONS.RIGHT, "→", "Right"],
+    [GATE_DIRECTIONS.LEFT, "←", "Left"]
+  ].map(([value, icon, label]) => `<button class="direction-option" type="button" data-inspector-tunnel-draft-direction="${value}" aria-label="${label}"><span>${icon}</span><small>${label}</small></button>`).join("");
+  return `<article class="inspector-card tunnel-inspector-card" style="--tunnel-color:${tunnelColor(draft.tunnelId)}">
+    <header><span class="inspector-card-icon tunnel-card-icon">⏭</span><h3>Tunnel #${draft.tunnelId} Draft</h3></header>
+    <div class="inspector-note">${escapeHtml(tunnelDraftStatus(draft.step))}</div>
+    <div class="inspector-kv wide"><span>Entry Point A</span><strong>Index ${pointA.index}${Number.isInteger(pointA.direction) ? ` · ${tunnelDirectionLabel(pointA.direction)}` : " · pending"}</strong></div>
+    ${pointB ? `<div class="inspector-kv wide"><span>Entry Point B</span><strong>Index ${pointB.index}${Number.isInteger(pointB.direction) ? ` · ${tunnelDirectionLabel(pointB.direction)}` : " · pending"}</strong></div>` : ""}
+    ${activeDirectionStep ? `<div class="inspector-field"><span>Direction ${draft.step === "direction-a" ? "A" : "B"}</span><div class="direction-control tunnel-draft-direction-control">${directionButtons}</div></div>` : ""}
+    <button class="inspector-link danger" type="button" data-inspector-tunnel-draft-cancel>Hủy Tunnel Draft</button>
+  </article>`;
+}
+
+function oneWayCard(oneWay, selectedIndex, oneWays, cell) {
+  const activeOptions = oneWays.map((entry) => `<option value="${entry.oneWayId}"${entry.oneWayId === oneWay.oneWayId ? " selected" : ""}>One Way #${entry.oneWayId}</option>`).join("");
+  const selectedIsPath = Boolean(cell.path);
+  const direction = normalizeOneWayDirection(oneWay.entryPoints[0]?.direction);
+  const entries = oneWay.entryPoints.map((point, entryIndex) => {
+    const label = entryIndex === 0 ? "A" : "B";
+    const selected = point.index === selectedIndex;
+    return `<div class="inspector-kv wide"><span>Entry Point ${label}</span><strong>Index ${point.index} · ${oneWayDirectionLabel(direction)}${selected ? " · ô đang chọn" : ""}</strong></div>`;
+  }).join("");
+  return `<article class="inspector-card one-way-inspector-card" style="--one-way-color:${oneWayColor(oneWay.oneWayId)}">
+    <header><span class="inspector-card-icon one-way-card-icon">▲</span><h3>One Way #${oneWay.oneWayId}</h3></header>
+    <div class="inspector-field">
+      <span>Active One Way</span>
+      <select class="property-select" data-inspector-active-one-way aria-label="Active One Way">${activeOptions}</select>
+    </div>
+    <div class="inspector-field">
+      <span>Direction</span>
+      ${oneWayDirectionSelect(direction, `data-inspector-one-way-direction="${oneWay.oneWayId}"`)}
+    </div>
+    ${entries}
+    <div class="quick-actions one-way-actions">
+      <button class="btn" type="button" data-inspector-one-way-focus="${oneWay.oneWayId}" data-one-way-entry="0">Focus A</button>
+      <button class="btn" type="button" data-inspector-one-way-focus="${oneWay.oneWayId}" data-one-way-entry="1">Focus B</button>
+      <button class="btn" type="button" data-inspector-one-way-move="${oneWay.oneWayId}" data-one-way-entry="0"${!selectedIsPath ? ' disabled title="EntryPoint phải nằm trên Path"' : ""}>Set A Here</button>
+      <button class="btn" type="button" data-inspector-one-way-move="${oneWay.oneWayId}" data-one-way-entry="1"${!selectedIsPath ? ' disabled title="EntryPoint phải nằm trên Path"' : ""}>Set B Here</button>
+    </div>
+    <button class="inspector-link danger" type="button" data-inspector-delete="one-way">Xóa One Way</button>
+  </article>`;
+}
+
+function fruitCard(cell, isMystery) {
+  const fruit = cell.layerItem;
+  const title = isMystery ? "Mystery Fruit" : "Fruit";
+  const status = isMystery ? "ON" : "OFF";
+  return `<article class="inspector-card">
+    <header><span class="inspector-card-icon">${escapeHtml(fruit.icon ?? "?")}</span><h3>${title}</h3></header>
+    <div class="inspector-field">
+      <span>Mystery</span>
+      <button class="toggle-control${isMystery ? " active" : ""}" type="button" data-inspector-mystery-toggle aria-pressed="${isMystery}">
+        <span>${status}</span>
+      </button>
+    </div>
+    <div class="inspector-note">${escapeHtml(fruit.label ?? "Fruit")} ${isMystery ? "đang ẩn bằng badge ?" : "đang hiển thị bình thường"}</div>
+    <button class="inspector-link danger" type="button" data-inspector-delete="${isMystery ? "mystery-fruit" : "item"}">${isMystery ? "Tắt Mystery" : "Xóa Fruit"}</button>
+  </article>`;
+}
+
+function sharedItemCard(cell, editorData, x, y) {
+  if (!cell.sharedItem) return "";
+  if (["tray", "truck"].includes(cell.sharedItem.kind)) {
+    const context = createTrayContextAt(editorData, x, y);
+    return context ? createTrayInspectorCard(context, editorData.grid.columns).outerHTML : "";
+  }
+  return `<article class="inspector-card">
+    <header><span class="inspector-card-icon">${escapeHtml(cell.sharedItem.icon ?? "□")}</span><h3>${escapeHtml(cell.sharedItem.label ?? "Item")}</h3></header>
+    <button class="inspector-link danger" type="button" data-inspector-delete="item">Xóa Item</button>
+  </article>`;
+}
+
+function emptyCellActions(cell, hasTopLevelElement = false) {
+  if (cell.element || cell.layerItem || cell.sharedItem || hasTopLevelElement) return "";
+  const gateDisabled = !cell.path;
+  const barrierDisabled = !cell.path;
+  const tunnelDisabled = !cell.path;
+  const oneWayDisabled = !cell.path;
+  return `<article class="inspector-card">
+    <header><span class="inspector-card-icon">＋</span><h3>Thêm Element</h3></header>
+    <div class="quick-actions">
+      <button class="btn" type="button" data-inspector-add="bridge">Bridge</button>
+      <button class="btn" type="button" data-inspector-add="gate"${gateDisabled ? ' disabled title="Gate chỉ có thể đặt trên Path"' : ""}>Gate</button>
+      <button class="btn" type="button" data-inspector-add="count-barrier"${barrierDisabled ? ' disabled title="Barrier chỉ có thể đặt trên Path"' : ""}>Barrier</button>
+      <button class="btn" type="button" data-inspector-add="tunnel"${tunnelDisabled ? ' disabled title="Tunnel chỉ có thể đặt trên Path"' : ""}>Tunnel</button>
+      <button class="btn" type="button" data-inspector-add="one-way"${oneWayDisabled ? ' disabled title="One Way chỉ có thể đặt trên Path"' : ""}>One Way</button>
+    </div>
+  </article>`;
+}
+
+function cellTypeLabel(editorData, cell, x, y) {
+  if (cell.path) return "Path";
+  if (isGrassAt(editorData, x, y)) return "Grass";
+  return "Terrain trống";
+}
+
 function renderInspector(container, editorData) {
   if (!editorData.selectedCell) {
-    container.innerHTML = '<div class="empty-state">Chọn công cụ <strong>Chọn ô</strong>, sau đó click vào một ô để xem thuộc tính.</div>';
+    container.innerHTML = "";
     return;
   }
   const { x, y } = editorData.selectedCell;
-  const index = positionToIndex(x, y, editorData.grid.columns);
+  const index = getSelectedCellIndex(editorData);
+  const layerNumber = activeLayerNumber(editorData);
   const cell = getMergedCell(editorData, x, y);
-  const capacity = cell.item?.kind === "truck"
-    ? `<div class="property-row"><span>Sức chứa</span><span class="capacity-control"><button type="button" data-capacity-step="-1">−</button><output>${cell.item.capacity}</output><button type="button" data-capacity-step="1">+</button></span></div>`
-    : "";
-  container.innerHTML = `<div class="property-list">
-    <div class="property-row"><span>Vị trí</span><strong>Index ${index}</strong></div>
-    <div class="property-row"><span>Đường đi</span><strong>${cell.path ? "Có" : "Không"}</strong></div>
-    <div class="property-row"><span>Grass</span><strong>${isGrassAt(editorData, x, y) ? "Có" : "Không"}</strong></div>
-    <div class="property-row"><span>PriorityPoint</span><strong>${isPriorityPointAt(editorData, x, y) ? "Có" : "Không"}</strong></div>
-    <div class="property-row"><span>Item layer</span><strong>${escapeHtml(cell.layerItem?.label ?? "Không có fruit")}</strong></div>
-    <div class="property-row"><span>Dùng chung</span><strong>${escapeHtml(cell.sharedItem?.label ?? cell.element?.label ?? "Không có")}</strong></div>
-    ${capacity}</div>
-    <div class="inspector-actions"><button class="btn" type="button" id="togglePathBtn">${cell.path ? "Bỏ đường" : "Thêm đường"}</button><button class="btn" type="button" id="deleteCellBtn">Xóa lớp trên cùng</button></div>`;
+  const bridge = isBridgeElement(cell.element) ? cell.element : null;
+  const gate = isGateElement(cell.element) ? cell.element : null;
+  const countBarrier = findCountBarrierAtIndex(editorData, index);
+  if (countBarrier) countBarrier.activeBarrierId = editorData.activeBarrierId;
+  const tunnels = editorData.tunnelElement ?? [];
+  const tunnelAtCell = findTunnelEntryAtIndex(editorData, index);
+  const tunnelDraftAtCell = findTunnelDraftEntryAtIndex(editorData, index);
+  const tunnel = tunnelAtCell?.tunnel ?? null;
+  const oneWays = editorData.oneWayElement ?? [];
+  const oneWayAtCell = findOneWayEntryAtIndex(editorData, index);
+  const oneWay = oneWayAtCell?.oneWay ?? null;
+  const mystery = cell.layerItem?.kind === "fruit" && isMysteryFruitAt(editorData, layerNumber, index);
+  const cards = [
+    bridge ? bridgeCard(bridge) : "",
+    gate ? gateCard(gate) : "",
+    tunnel ? tunnelCard(tunnel, index, tunnels, cell) : "",
+    oneWay ? oneWayCard(oneWay, index, oneWays, cell) : "",
+    countBarrier ? countBarrierCard(countBarrier, index) : "",
+    cell.layerItem?.kind === "fruit" ? fruitCard(cell, mystery) : "",
+    sharedItemCard(cell, editorData, x, y),
+    emptyCellActions(cell, Boolean(countBarrier || tunnelAtCell || tunnelDraftAtCell || oneWayAtCell))
+  ].filter(Boolean).join("");
+  const elementSummary = [
+    bridge ? `Bridge · ${bridgeAxisLabel(bridge.axis)}` : "",
+    gate ? `Gate · ${gateDirectionLabel(gate.direction)}` : "",
+    tunnelDraftAtCell ? `Tunnel Draft ${tunnelDraftAtCell.draft.tunnelId}` : "",
+    tunnelAtCell ? `Tunnel ${tunnelAtCell.tunnel.tunnelId}` : "",
+    oneWayAtCell ? `One Way ${oneWayAtCell.oneWay.oneWayId}` : "",
+    countBarrier ? `Count Barrier ${countBarrier.barrierId}` : "",
+    mystery ? "Mystery Fruit" : cell.layerItem?.kind === "fruit" ? cell.layerItem.label : "",
+    cell.sharedItem?.label ?? ""
+  ].filter(Boolean).join(", ") || "Không có";
+
+  container.innerHTML = `<div class="context-inspector">
+    <section class="cell-summary">
+      <div class="inspector-kv"><span>Type</span><strong>${cellTypeLabel(editorData, cell, x, y)}</strong></div>
+      <div class="inspector-kv"><span>X</span><strong>${x}</strong></div>
+      <div class="inspector-kv"><span>Y</span><strong>${y}</strong></div>
+      <div class="inspector-kv wide"><span>Element</span><strong>${escapeHtml(elementSummary)}</strong></div>
+      ${isPriorityPointAt(editorData, x, y) ? '<div class="cell-badge">PriorityPoint</div>' : ""}
+    </section>
+    ${cards || '<div class="empty-state">Ô này không có element đặc biệt.</div>'}
+  </div>`;
 }
 
 
 // ---- js/ui/level-settings.js ----
+
+
+
 
 function isMapSizeWithinBounds(grid) {
   return Number.isInteger(grid?.columns) && grid.columns >= 1 && Number.isInteger(grid?.rows) && grid.rows >= 1;
@@ -2318,7 +4483,15 @@ function hasDataOutsideGrid(state, nextGrid) {
     if (!["tray", "truck"].includes(cell.item?.kind)) return false;
     const visual = getTrayVisualPosition(cell.item, parseCellKey(key));
     return !isInsideGrid(nextGrid, visual.x, visual.y);
-  });
+  }) || [...normalizeTunnelElement(state.tunnelElement), ...(normalizeTunnelDraft(state.tunnelDraft) ? [normalizeTunnelDraft(state.tunnelDraft)] : [])].some((tunnel) => tunnel.entryPoints.some((point) => {
+    const x = point.index % state.grid.columns;
+    const y = Math.floor(point.index / state.grid.columns);
+    return !isInsideGrid(nextGrid, x, y);
+  })) || [...normalizeOneWayElement(state.oneWayElement), ...(normalizeOneWayDraft(state.oneWayDraft) ? [normalizeOneWayDraft(state.oneWayDraft)] : [])].some((oneWay) => oneWay.entryPoints.some((point) => {
+    const x = point.index % state.grid.columns;
+    const y = Math.floor(point.index / state.grid.columns);
+    return !isInsideGrid(nextGrid, x, y);
+  }));
 }
 
 function changeMapDimension(state, dimension, nextValue) {
@@ -2331,6 +4504,23 @@ function changeMapDimension(state, dimension, nextValue) {
   ensureTerrainState(state);
   const previousGrid = { ...state.grid };
   state.grid = nextGrid;
+  state.countBarrierElement = remapCountBarrierIndexes(state.countBarrierElement, previousGrid.columns, nextGrid.columns);
+  state.tunnelElement = remapTunnelIndexes(state.tunnelElement, previousGrid.columns, nextGrid.columns);
+  if (state.tunnelDraft) {
+    state.tunnelDraft.entryPoints = state.tunnelDraft.entryPoints.map((point) => {
+      const x = point.index % previousGrid.columns;
+      const y = Math.floor(point.index / previousGrid.columns);
+      return { ...point, index: (y * nextGrid.columns) + x };
+    });
+  }
+  state.oneWayElement = remapOneWayIndexes(state.oneWayElement, previousGrid.columns, nextGrid.columns);
+  if (state.oneWayDraft) {
+    state.oneWayDraft.entryPoints = state.oneWayDraft.entryPoints.map((point) => {
+      const x = point.index % previousGrid.columns;
+      const y = Math.floor(point.index / previousGrid.columns);
+      return { ...point, index: (y * nextGrid.columns) + x };
+    });
+  }
   if (value > previousGrid[dimension]) {
     for (let y = 0; y < nextGrid.rows; y += 1) {
       for (let x = 0; x < nextGrid.columns; x += 1) {
@@ -2367,11 +4557,22 @@ function growSnake(snake, position) {
 
 // ---- js/gameplay/collision-system.js ----
 
-function detectCollision({ grid, layer, snake }, nextHead) {
+
+
+function gateBlocks(element, direction) {
+  return isGateElement(element) && gateDirectionFromMovement(direction) !== normalizeGateDirection(element.direction);
+}
+
+function detectCollision({ grid, layer, snake }, nextHead, direction = snake.direction, { ignoreSelfCollision = false } = {}) {
   if (!isInsideGrid(grid, nextHead.x, nextHead.y)) return { type: "boundary" };
   const cell = layer.cells[cellKey(nextHead.x, nextHead.y)];
   if (!cell?.path) return { type: "off-path" };
-  if (snake.body.some((part) => part.x === nextHead.x && part.y === nextHead.y)) return { type: "self" };
+  const head = snake.body[0];
+  const headCell = layer.cells[cellKey(head.x, head.y)];
+  if (gateBlocks(headCell?.element, direction) || gateBlocks(cell.element, direction)) return { type: "gate", element: cell.element ?? headCell?.element };
+  if (!ignoreSelfCollision
+    && snake.body.some((part) => !part.hiddenInTunnel && part.x === nextHead.x && part.y === nextHead.y)
+    && !bridgeAllowsDifferentAxisOverlap(layer, snake, nextHead, direction)) return { type: "self" };
   if (cell.item?.kind === "obstacle") return { type: "obstacle", item: cell.item };
   return null;
 }
@@ -2405,6 +4606,8 @@ function isWinState(state) {
 
 
 
+
+
 function findSnakeStart(layer) {
   for (const [key, cell] of Object.entries(layer.cells)) {
     if (cell.item?.kind === "snake") {
@@ -2423,6 +4626,12 @@ function createSimulation(level) {
   return {
     grid: structuredClone(level.grid),
     layer,
+    tunnels: normalizeTunnelElement(level.tunnelElement),
+    oneWays: normalizeOneWayElement(level.oneWayElement).map((oneWay) => ({
+      ...oneWay,
+      currentDirection: normalizeOneWayDirection(oneWay.entryPoints[0]?.direction),
+      passedEntries: []
+    })),
     snake: { body: [{ x: start.x, y: start.y }], direction: start.direction },
     inventory: {},
     delivered: {},
@@ -2431,19 +4640,125 @@ function createSimulation(level) {
   };
 }
 
+function oneWayEntryAtIndex(oneWays, index) {
+  for (const oneWay of Array.isArray(oneWays) ? oneWays : []) {
+    const entryIndex = oneWay.entryPoints.findIndex((point) => point.index === index);
+    if (entryIndex >= 0) return { oneWay, entryIndex, entryPoint: oneWay.entryPoints[entryIndex] };
+  }
+  return null;
+}
+
+function updateOneWayRuntime(state, headIndex) {
+  const entry = oneWayEntryAtIndex(state.oneWays, headIndex);
+  if (!entry) return;
+  const runtime = state.oneWays.find((oneWay) => oneWay.oneWayId === entry.oneWay.oneWayId);
+  if (!runtime) return;
+  runtime.passedEntries = [...new Set([...(runtime.passedEntries ?? []), entry.entryIndex])];
+  if (runtime.passedEntries.length >= 2) {
+    runtime.currentDirection = reverseOneWayDirection(runtime.currentDirection);
+    runtime.entryPoints = runtime.entryPoints.map((point) => ({ ...point, direction: runtime.currentDirection }));
+    runtime.passedEntries = [];
+  }
+}
+
+function tunnelEntryAtIndex(tunnels, index) {
+  for (const tunnel of normalizeTunnelElement(tunnels)) {
+    const entryIndex = tunnel.entryPoints.findIndex((point) => point.index === index);
+    if (entryIndex >= 0) return { tunnel, entryPoint: tunnel.entryPoints[entryIndex], exitPoint: tunnel.entryPoints[entryIndex === 0 ? 1 : 0] };
+  }
+  return null;
+}
+
+function tunnelBodySlotVisible(state, position) {
+  return isInsideGrid(state.grid, position.x, position.y)
+    && Boolean(state.layer.cells[cellKey(position.x, position.y)]?.path);
+}
+
+function tunnelExitPathDirections(state, exitPosition, incomingDirection) {
+  return Object.entries({
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 }
+  }).filter(([direction, vector]) => {
+    const nextPosition = { x: exitPosition.x + vector.x, y: exitPosition.y + vector.y };
+    const nextIndex = (nextPosition.y * state.grid.columns) + nextPosition.x;
+    const oneWayEntry = oneWayEntryAtIndex(state.oneWays, nextIndex);
+    if (oneWayEntry && oneWayDirectionKey(oneWayEntry.oneWay.currentDirection) !== direction) return false;
+    const tempState = { ...state, snake: { ...state.snake, body: [{ ...exitPosition }], direction: incomingDirection } };
+    return !detectCollision(tempState, nextPosition, direction, { ignoreSelfCollision: true });
+  }).map(([direction]) => direction);
+}
+
+function actualTunnelExitDirection(state, exitPosition, incomingDirection) {
+  const directions = tunnelExitPathDirections(state, exitPosition, incomingDirection);
+  return directions.includes(incomingDirection) ? incomingDirection : directions[0] ?? incomingDirection;
+}
+
+function rebuildBodyFromTunnelExit(state, body, exitPosition, exitDirection) {
+  const vector = {
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 }
+  }[exitDirection];
+  return body.map((segment, index) => {
+    const position = {
+      x: exitPosition.x - (vector.x * index),
+      y: exitPosition.y - (vector.y * index)
+    };
+    return {
+      ...segment,
+      ...position,
+      direction: exitDirection,
+      hiddenInTunnel: index > 0 && !tunnelBodySlotVisible(state, position)
+    };
+  });
+}
+
+function moveSimulationSnake(snake, direction) {
+  const head = nextPosition(snake.body[0], direction);
+  return {
+    ...snake,
+    direction,
+    body: [
+      { ...head, direction, hiddenInTunnel: false },
+      ...snake.body.slice(0, -1).map((segment, index) => ({
+        ...segment,
+        hiddenInTunnel: Boolean(snake.body[index].hiddenInTunnel)
+      }))
+    ]
+  };
+}
+
 function stepSimulation(simulation, direction = simulation.snake.direction) {
   if (simulation.status !== "running") return simulation;
   const state = structuredClone(simulation);
   const head = nextPosition(state.snake.body[0], direction);
-  const collision = detectCollision(state, head);
+  const nextIndex = (head.y * state.grid.columns) + head.x;
+  const tunnelEntry = tunnelEntryAtIndex(state.tunnels, nextIndex);
+  const collision = detectCollision(state, head, direction, { ignoreSelfCollision: Boolean(tunnelEntry) });
   if (collision) {
     state.status = "lost";
     state.lastCollision = collision;
     return state;
   }
+  const oneWayEntry = oneWayEntryAtIndex(state.oneWays, nextIndex);
+  if (oneWayEntry && oneWayDirectionKey(oneWayEntry.oneWay.currentDirection) !== direction) {
+    state.status = "lost";
+    state.lastCollision = { type: "one-way", element: oneWayEntry.oneWay };
+    return state;
+  }
 
-  state.snake = moveSnake(state.snake, direction);
-  const key = cellKey(head.x, head.y);
+  state.snake = moveSimulationSnake(state.snake, direction);
+  if (tunnelEntry) {
+    const exit = { x: tunnelEntry.exitPoint.index % state.grid.columns, y: Math.floor(tunnelEntry.exitPoint.index / state.grid.columns) };
+    state.snake.direction = actualTunnelExitDirection(state, exit, direction);
+    state.snake.body = rebuildBodyFromTunnelExit(state, state.snake.body, exit, state.snake.direction);
+  }
+  const finalHead = state.snake.body[0];
+  updateOneWayRuntime(state, (finalHead.y * state.grid.columns) + finalHead.x);
+  const key = cellKey(finalHead.x, finalHead.y);
   const item = state.layer.cells[key]?.item;
   if (item?.kind === "fruit") {
     state.inventory = collectFruit(state.inventory, item.fruitType);
@@ -2469,6 +4784,12 @@ function stepSimulation(simulation, direction = simulation.snake.direction) {
 // ---- js/gameplay/playable-controller.js ----
 
 
+
+
+
+
+
+
 const PLAY_STATUS = Object.freeze({
   READY: "ready",
   MOVING: "moving",
@@ -2477,7 +4798,8 @@ const PLAY_STATUS = Object.freeze({
   PAUSED: "paused",
   WON: "won",
   LOST: "lost",
-  BLOCKED: "blocked"
+  BLOCKED: "blocked",
+  TELEPORTING: "teleporting"
 });
 
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
@@ -2491,8 +4813,99 @@ const STATUS_COPY = Object.freeze({
   paused: ["Đã pause", "Nhấn Resume để tiếp tục phiên chơi."],
   won: ["Hoàn thành", "Tất cả layer của mọi khay đã được giao đủ."],
   lost: ["Thua", "Rắn đã va chạm hoặc không còn hướng hợp lệ."],
-  blocked: ["Chưa thể chơi", "Hãy sửa các lỗi level được liệt kê bên dưới."]
+  blocked: ["Chưa thể chơi", "Hãy sửa các lỗi level được liệt kê bên dưới."],
+  teleporting: ["Đang qua Tunnel", "Train đang được đặt lại theo cổng ra."]
 });
+
+function gateAllowsMovement(element, direction) {
+  return !isGateElement(element) || gateDirectionFromMovement(direction) === normalizeGateDirection(element.direction);
+}
+
+function tunnelEntryAtIndex(tunnels, index) {
+  for (const tunnel of normalizeTunnelElement(tunnels)) {
+    const entryIndex = tunnel.entryPoints.findIndex((point) => point.index === index);
+    if (entryIndex >= 0) {
+      return {
+        tunnel,
+        entryIndex,
+        entryPoint: tunnel.entryPoints[entryIndex],
+        exitPoint: tunnel.entryPoints[entryIndex === 0 ? 1 : 0]
+      };
+    }
+  }
+  return null;
+}
+
+function tunnelBodySlotVisible(session, position) {
+  return isInsideGrid(session.grid, position.x, position.y)
+    && Boolean(session.layer.cells[cellKey(position.x, position.y)]?.path);
+}
+
+function rebuildBodyFromTunnelExit(session, body, exitPosition, exitDirection) {
+  const vector = DIRECTIONS[exitDirection];
+  return body.map((segment, index) => {
+    const position = {
+      x: exitPosition.x - (vector.x * index),
+      y: exitPosition.y - (vector.y * index)
+    };
+    return {
+      ...segment,
+      ...position,
+      direction: exitDirection,
+      hiddenInTunnel: index > 0 && !tunnelBodySlotVisible(session, position)
+    };
+  });
+}
+
+function nextTailPosition(session, body, direction) {
+  const tail = body[body.length - 1];
+  const vector = DIRECTIONS[direction];
+  const position = {
+    x: tail.x - vector.x,
+    y: tail.y - vector.y
+  };
+  return {
+    ...position,
+    direction,
+    hiddenInTunnel: Boolean(tail.hiddenInTunnel) || !tunnelBodySlotVisible(session, position)
+  };
+}
+
+function tailLogicDisabled(session) {
+  return Boolean(session?.teleporting || session?.tailDisabled);
+}
+
+function tunnelExitPathDirections(session, exitPosition, incomingDirection) {
+  const exitCell = session.layer.cells[cellKey(exitPosition.x, exitPosition.y)];
+  return Object.entries(DIRECTIONS).filter(([direction, vector]) => {
+    if (isBridgeElement(exitCell?.element) && incomingDirection && direction !== incomingDirection) return false;
+    const nextPosition = { x: exitPosition.x + vector.x, y: exitPosition.y + vector.y };
+    const nextCell = session.layer.cells[cellKey(nextPosition.x, nextPosition.y)];
+    if (!gateAllowsMovement(exitCell?.element, direction) || !gateAllowsMovement(nextCell?.element, direction)) return false;
+    if (!oneWayAllowsMovement(session, positionToIndex(nextPosition.x, nextPosition.y, session.grid.columns), direction)) return false;
+    return cellIsTraversable(session, nextPosition, direction, { ignoreSelfCollision: true });
+  }).map(([direction]) => direction);
+}
+
+function actualTunnelExitDirection(session, exitPosition, incomingDirection) {
+  const directions = tunnelExitPathDirections(session, exitPosition, incomingDirection);
+  const autoDirection = nextAutoDirection({ ...session, snake: { body: [{ ...exitPosition }], direction: incomingDirection } }, directions);
+  return autoDirection ?? (directions.includes(incomingDirection) ? incomingDirection : directions[0] ?? incomingDirection);
+}
+
+function oneWayEntryAtIndex(oneWays, index) {
+  for (const oneWay of Array.isArray(oneWays) ? oneWays : []) {
+    const entryIndex = oneWay.entryPoints.findIndex((point) => point.index === index);
+    if (entryIndex >= 0) {
+      return {
+        oneWay,
+        entryIndex,
+        entryPoint: oneWay.entryPoints[entryIndex]
+      };
+    }
+  }
+  return null;
+}
 
 function firstFruitLayerId(level) {
   return level?.layers?.[0]?.id ?? level?.activeLayerId;
@@ -2551,6 +4964,69 @@ function validatePlayableLevel(level) {
   Object.keys(level.priorityPoints ?? {}).forEach((key) => {
     if (!level.sharedCells?.[key]?.path) errors.push(`PriorityPoint Index ${mapIndex(...key.split(",").map(Number))} phải thuộc Path.`);
   });
+  entries.forEach(({ x, y, cell }) => {
+    if (!isGateElement(cell.element)) return;
+    if (!cell.path) errors.push(`Gate tại Index ${mapIndex(x, y)} phải nằm trên đường đi.`);
+    if (!isValidGateDirection(cell.element.direction)) errors.push(`Gate tại Index ${mapIndex(x, y)} có direction không hợp lệ.`);
+  });
+  const barrierIndexes = new Set();
+  const barrierEndpointIndexes = new Set();
+  normalizeCountBarrierElement(level.countBarrierElement).forEach((barrier) => {
+    const localIndexes = new Set(barrier.index);
+    barrierEndpointIndexes.add(barrier.startIndex);
+    barrierEndpointIndexes.add(barrier.endIndex);
+    if (barrier.index.length < 2) errors.push(`Count Barrier ${barrier.barrierId} phải khóa ít nhất 2 ô Path.`);
+    if (barrier.startIndex === barrier.endIndex) errors.push(`Count Barrier ${barrier.barrierId} phải có startIndex và endIndex khác nhau.`);
+    if (!localIndexes.has(barrier.startIndex) || !localIndexes.has(barrier.endIndex)) errors.push(`Count Barrier ${barrier.barrierId} start/end phải nằm trong index.`);
+    barrier.index.forEach((index) => {
+      const { x, y } = { x: index % level.grid.columns, y: Math.floor(index / level.grid.columns) };
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`Count Barrier ${barrier.barrierId} Index ${index} nằm ngoài map.`);
+        return;
+      }
+      if (!layer.cells[cellKey(x, y)]?.path) errors.push(`Count Barrier ${barrier.barrierId} Index ${index} phải nằm trên Path.`);
+      if (barrierIndexes.has(index)) errors.push(`Count Barrier không được chồng index ${index}.`);
+      barrierIndexes.add(index);
+    });
+  });
+  const tunnelIndexes = new Set();
+  normalizeTunnelElement(level.tunnelElement).forEach((tunnel) => {
+    if (tunnel.entryPoints.length !== 2) errors.push(`Tunnel ${tunnel.tunnelId} phải có đúng 2 entryPoint.`);
+    const localIndexes = new Set();
+    tunnel.entryPoints.forEach((point, entryIndex) => {
+      const name = entryIndex === 0 ? "A" : "B";
+      const { x, y } = { x: point.index % level.grid.columns, y: Math.floor(point.index / level.grid.columns) };
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`Tunnel ${tunnel.tunnelId} Entry ${name} Index ${point.index} nằm ngoài map.`);
+        return;
+      }
+      if (!layer.cells[cellKey(x, y)]?.path) errors.push(`Tunnel ${tunnel.tunnelId} Entry ${name} Index ${point.index} phải nằm trên Path.`);
+      if (!isValidTunnelDirection(point.direction)) errors.push(`Tunnel ${tunnel.tunnelId} Entry ${name} direction không hợp lệ.`);
+      if (localIndexes.has(point.index)) errors.push(`Tunnel ${tunnel.tunnelId} không được dùng cùng index cho hai entryPoint.`);
+      if (tunnelIndexes.has(point.index)) errors.push(`Tunnel không được chồng index ${point.index}.`);
+      localIndexes.add(point.index);
+      tunnelIndexes.add(point.index);
+    });
+  });
+  const oneWayIndexes = new Set();
+  normalizeOneWayElement(level.oneWayElement).forEach((oneWay) => {
+    if (oneWay.entryPoints.length !== 2) errors.push(`One Way ${oneWay.oneWayId} phải có đúng 2 entryPoint.`);
+    const localIndexes = new Set();
+    oneWay.entryPoints.forEach((point, entryIndex) => {
+      const name = entryIndex === 0 ? "A" : "B";
+      const { x, y } = { x: point.index % level.grid.columns, y: Math.floor(point.index / level.grid.columns) };
+      if (!isInsideGrid(level.grid, x, y)) {
+        errors.push(`One Way ${oneWay.oneWayId} Entry ${name} Index ${point.index} nằm ngoài map.`);
+        return;
+      }
+      if (!layer.cells[cellKey(x, y)]?.path) errors.push(`One Way ${oneWay.oneWayId} Entry ${name} Index ${point.index} phải nằm trên Path.`);
+      if (!isValidOneWayDirection(point.direction)) errors.push(`One Way ${oneWay.oneWayId} Entry ${name} direction không hợp lệ.`);
+      if (localIndexes.has(point.index)) errors.push(`One Way ${oneWay.oneWayId} không được dùng cùng index cho hai entryPoint.`);
+      if (oneWayIndexes.has(point.index)) errors.push(`One Way không được chồng index ${point.index}.`);
+      localIndexes.add(point.index);
+      oneWayIndexes.add(point.index);
+    });
+  });
 
   starts.forEach(({ x, y, cell }) => {
     if (!cell.path) errors.push(`${cell.item.label ?? cell.item.kind} tại Index ${mapIndex(x, y)} phải nằm trên đường đi.`);
@@ -2570,10 +5046,12 @@ function validatePlayableLevel(level) {
   if (new Set(visualKeys).size !== visualKeys.length) errors.push("Có nhiều khay đang dùng chung một vị trí visual.");
 
   fruits.forEach(({ x, y, cell, layerIndex }) => {
+    const index = mapIndex(x, y);
     const sharedCell = level.sharedCells?.[cellKey(x, y)];
     const sharedPath = sharedCell?.path ?? cell.path;
-    if (!sharedPath) errors.push(`${cell.item.label ?? cell.item.kind} tại Index ${mapIndex(x, y)} trong fruit layer ${layerIndex + 1} phải nằm trên đường đi.`);
-    if (sharedCell?.item) errors.push(`Fruit layer ${layerIndex + 1} tại Index ${mapIndex(x, y)} trùng ${sharedCell.item.kind} dùng chung.`);
+    if (!sharedPath) errors.push(`${cell.item.label ?? cell.item.kind} tại Index ${index} trong fruit layer ${layerIndex + 1} phải nằm trên đường đi.`);
+    if (sharedCell?.item) errors.push(`Fruit layer ${layerIndex + 1} tại Index ${index} trùng ${sharedCell.item.kind} dùng chung.`);
+    if (barrierEndpointIndexes.has(index)) errors.push(`Fruit layer ${layerIndex + 1} không được đặt tại endpoint Count Barrier Index ${index}.`);
     if (cell.item.unknown || !FRUIT_TYPES.includes(cell.item.fruitType)) errors.push(`Unknown item #${cell.item.itemId ?? cell.item.id} trong fruit layer ${layerIndex + 1} chưa được Playable hỗ trợ.`);
   });
 
@@ -2631,6 +5109,15 @@ function createPlayableSession(level, { mode = "continuous", speed = 9 } = {}) {
     layer,
     grassCells: structuredClone(level.grassCells),
     priorityPoints: structuredClone(level.priorityPoints),
+    mysteryFruitElement: structuredClone(level.mysteryFruitElement ?? []),
+    mysteryFruitDebug: Boolean(level.mysteryFruitDebug),
+    countBarriers: normalizeCountBarrierElement(level.countBarrierElement).map((barrier) => ({ ...barrier, remainingCount: barrier.count })),
+    tunnels: normalizeTunnelElement(level.tunnelElement),
+    oneWays: normalizeOneWayElement(level.oneWayElement).map((oneWay) => ({
+      ...oneWay,
+      entryPoints: oneWay.entryPoints.map((point) => ({ ...point, direction: normalizeOneWayDirection(point.direction) })),
+      passedEntries: []
+    })),
     fruitLayers: structuredClone(report.fruitLayers),
     activeFruitLayerIndex: 0,
     snake: { body: [{ x: start.x, y: start.y }], direction: null },
@@ -2643,7 +5130,9 @@ function createPlayableSession(level, { mode = "continuous", speed = 9 } = {}) {
     resumeStatus: PLAY_STATUS.READY,
     lastReason: null,
     delivery: null,
-    deliveryEffect: null
+    deliveryEffect: null,
+    teleporting: false,
+    tailDisabled: false
   };
   advanceFruitLayerIfCleared(session);
   return session;
@@ -2683,22 +5172,53 @@ function allFruitLayersComplete(session) {
   return session.remainingFruits === 0 && session.activeFruitLayerIndex >= session.fruitLayers.length - 1;
 }
 
-function cellIsTraversable(session, position) {
+function cellIsTraversable(session, position, direction = null, { ignoreSelfCollision = false } = {}) {
   if (!isInsideGrid(session.grid, position.x, position.y)) return false;
+  const index = positionToIndex(position.x, position.y, session.grid.columns);
+  if (session.countBarriers?.some((barrier) => barrier.remainingCount > 0 && barrier.index.includes(index))) return false;
   const cell = session.layer.cells[cellKey(position.x, position.y)];
   if (!cell?.path) return false;
   if (session.trays.some((tray) => tray.visualKey === cellKey(position.x, position.y))) return false;
   if (cell.item?.kind === "obstacle" || cell.element?.kind === "obstacle") return false;
-  return !session.snake.body.some((part) => part.x === position.x && part.y === position.y);
+  if (ignoreSelfCollision || tailLogicDisabled(session)) return true;
+  const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && part.x === position.x && part.y === position.y);
+  if (!hitsSelf) return true;
+  return bridgeAllowsDifferentAxisOverlap(session.layer, session.snake, position, direction);
+}
+
+function oneWayAllowsMovement(session, index, direction) {
+  const oneWayEntry = oneWayEntryAtIndex(session.oneWays, index);
+  if (!oneWayEntry) return true;
+  return oneWayDirectionKey(oneWayEntry.entryPoint.direction) === direction;
 }
 
 function availableDirections(session) {
   const head = session.snake.body[0];
+  const headCell = session.layer.cells[cellKey(head.x, head.y)];
   const reverse = OPPOSITE[session.snake.direction];
   return Object.entries(DIRECTIONS).filter(([direction, vector]) => {
-    if (session.snake.body.length > 1 && direction === reverse) return false;
-    return cellIsTraversable(session, { x: head.x + vector.x, y: head.y + vector.y });
+    if (isBridgeElement(headCell?.element) && session.snake.direction && direction !== session.snake.direction) return false;
+    const nextPosition = { x: head.x + vector.x, y: head.y + vector.y };
+    const nextIndex = positionToIndex(nextPosition.x, nextPosition.y, session.grid.columns);
+    const nextTunnelEntry = tunnelEntryAtIndex(session.tunnels, nextIndex);
+    if (!nextTunnelEntry && !tailLogicDisabled(session) && session.snake.body.length > 1 && direction === reverse) return false;
+    const nextCell = session.layer.cells[cellKey(nextPosition.x, nextPosition.y)];
+    if (!gateAllowsMovement(headCell?.element, direction) || !gateAllowsMovement(nextCell?.element, direction)) return false;
+    if (!oneWayAllowsMovement(session, nextIndex, direction)) return false;
+    return cellIsTraversable(session, nextPosition, direction, { ignoreSelfCollision: Boolean(nextTunnelEntry) });
   }).map(([direction]) => direction);
+}
+
+function updateOneWayRuntime(session, headIndex) {
+  const entry = oneWayEntryAtIndex(session.oneWays, headIndex);
+  if (!entry) return;
+  const runtime = session.oneWays.find((oneWay) => oneWay.oneWayId === entry.oneWay.oneWayId);
+  if (!runtime) return;
+  runtime.passedEntries = [...new Set([...(runtime.passedEntries ?? []), entry.entryIndex])];
+  if (runtime.passedEntries.length >= 2) {
+    runtime.entryPoints = runtime.entryPoints.map((point) => ({ ...point, direction: reverseOneWayDirection(point.direction) }));
+    runtime.passedEntries = [];
+  }
 }
 
 function activeTrayLayer(tray) {
@@ -2710,7 +5230,32 @@ function layerIsComplete(layer) {
 }
 
 function advanceCompletedTrayLayers(tray) {
+  const before = tray.activeIndex;
   while (activeTrayLayer(tray) && layerIsComplete(activeTrayLayer(tray))) tray.activeIndex += 1;
+  return tray.activeIndex - before;
+}
+
+function decrementCountBarriers(session, amount = 1) {
+  const step = Math.max(0, Math.floor(Number(amount)) || 0);
+  if (step === 0) return [];
+  (session.countBarriers ?? []).forEach((barrier) => {
+    if (barrier.remainingCount > 0) barrier.remainingCount -= step;
+  });
+  const unlocked = (session.countBarriers ?? []).filter((barrier) => barrier.remainingCount <= 0);
+  session.countBarriers = (session.countBarriers ?? []).filter((barrier) => barrier.remainingCount > 0);
+  return unlocked;
+}
+
+function removeUnlockedBarrierEndpointFruits(session, barriers) {
+  barriers.forEach((barrier) => {
+    [barrier.startIndex, barrier.endIndex].forEach((index) => {
+      const key = cellKey(index % session.grid.columns, Math.floor(index / session.grid.columns));
+      const cell = session.layer.cells[key];
+      if (cell?.item?.kind !== "fruit") return;
+      cell.item = null;
+      session.remainingFruits = Math.max(0, session.remainingFruits - 1);
+    });
+  });
 }
 
 function nextDeliverableCargoIndex(session, tray) {
@@ -2753,7 +5298,13 @@ function deliverNextCargo(session) {
     nonce: `${Date.now()}-${session.snake.body.length}`
   };
 
-  advanceCompletedTrayLayers(tray);
+  const completedLayerCount = advanceCompletedTrayLayers(tray);
+  const unlockedBarriers = decrementCountBarriers(session, completedLayerCount);
+  removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
+  advanceFruitLayerIfCleared(session);
+  if (tray.activeIndex >= tray.layers.length && !tray.completed) {
+    tray.completed = true;
+  }
   if (nextDeliverableCargoIndex(session, tray) < 1) {
     session.delivery = null;
     setPostDeliveryStatus(session);
@@ -2765,6 +5316,19 @@ function deliverNextCargo(session) {
 
 function allTraysComplete(session) {
   return session.trays.length > 0 && session.trays.every((tray) => tray.activeIndex >= tray.layers.length);
+}
+
+function isDecisionStopPoint(session, key) {
+  return session.turnpointKeys.includes(key) || session.trays.some((tray) => tray.checkpointKey === key);
+}
+
+function nextAutoDirection(session, available) {
+  const reverse = OPPOSITE[session.snake.direction];
+  const onward = available.filter((direction) => direction !== reverse);
+  if (onward.includes(session.snake.direction)) return session.snake.direction;
+  if (onward.length === 1) return onward[0];
+  if (onward.length === 0 && available.length === 1) return available[0];
+  return null;
 }
 
 function setPostDeliveryStatus(session) {
@@ -2787,30 +5351,35 @@ function setPostMoveStatus(session) {
   }
   const available = availableDirections(session);
   const head = session.snake.body[0];
-  const isTurnpoint = session.turnpointKeys.includes(cellKey(head.x, head.y));
-  const reverse = OPPOSITE[session.snake.direction];
-  const onward = available.filter((direction) => direction !== reverse);
-  if (session.mode === "step") {
+  const key = cellKey(head.x, head.y);
+  const headCell = session.layer.cells[key];
+  if (isBridgeElement(headCell?.element)) {
+    if (available.includes(session.snake.direction)) session.status = PLAY_STATUS.MOVING;
+    else {
+      session.status = PLAY_STATUS.LOST;
+      session.lastReason = "Bridge yêu cầu rắn tiếp tục đi thẳng nhưng phía trước không hợp lệ.";
+    }
+    return;
+  }
+  if (isDecisionStopPoint(session, key)) {
     if (available.length === 0) {
       session.status = PLAY_STATUS.LOST;
-      session.lastReason = "Không còn hướng di chuyển hợp lệ.";
+      session.lastReason = session.turnpointKeys.includes(key)
+        ? "Không còn hướng di chuyển hợp lệ tại PriorityPoint."
+        : "Không còn hướng hợp lệ tại checkpoint khay.";
     } else session.status = PLAY_STATUS.WAITING;
     return;
   }
-  if (isTurnpoint) {
-    if (available.length === 0) {
-      session.status = PLAY_STATUS.LOST;
-      session.lastReason = "Không còn hướng di chuyển hợp lệ tại PriorityPoint.";
-    } else session.status = PLAY_STATUS.WAITING;
-    return;
-  }
-  if (onward.length === 1 && onward[0] === session.snake.direction) {
+  const autoDirection = nextAutoDirection(session, available);
+  if (autoDirection) {
+    session.snake.direction = autoDirection;
     session.status = PLAY_STATUS.MOVING;
-  } else if (onward.length > 0 || available.includes(reverse)) {
-    session.status = PLAY_STATUS.WAITING;
-  } else {
+  } else if (available.length === 0) {
     session.status = PLAY_STATUS.LOST;
     session.lastReason = "Rắn đã tới ngõ cụt và không thể quay đầu khi đang có đuôi.";
+  } else {
+    session.status = PLAY_STATUS.LOST;
+    session.lastReason = "Ngã rẽ cần PriorityPoint để rắn dừng và chọn hướng.";
   }
 }
 
@@ -2820,18 +5389,44 @@ function movePlayableSession(session, direction) {
   const vector = DIRECTIONS[direction];
   const previousBody = session.snake.body.map((part) => ({ ...part }));
   const head = previousBody[0];
-  const nextHead = { x: head.x + vector.x, y: head.y + vector.y };
-  session.snake.direction = direction;
+  const nextHead = { x: head.x + vector.x, y: head.y + vector.y, direction };
+  const tunnelEntry = tunnelEntryAtIndex(session.tunnels, positionToIndex(nextHead.x, nextHead.y, session.grid.columns));
+  if (tunnelEntry) {
+    session.teleporting = true;
+    session.tailDisabled = true;
+    session.status = PLAY_STATUS.TELEPORTING;
+  }
   const previousCargo = previousBody.slice(1);
-  session.snake.body = [
-    nextHead,
-    ...previousCargo.map((segment, index) => ({ ...segment, x: previousBody[index].x, y: previousBody[index].y }))
+  const movedBody = [
+    { ...nextHead, hiddenInTunnel: false },
+    ...previousCargo.map((segment, index) => ({
+      ...segment,
+      x: previousBody[index].x,
+      y: previousBody[index].y,
+      direction,
+      hiddenInTunnel: Boolean(previousBody[index].hiddenInTunnel)
+    }))
   ];
+  if (tunnelEntry) {
+    const exit = {
+      x: tunnelEntry.exitPoint.index % session.grid.columns,
+      y: Math.floor(tunnelEntry.exitPoint.index / session.grid.columns)
+    };
+    session.snake.direction = actualTunnelExitDirection(session, exit, direction);
+    session.snake.body = rebuildBodyFromTunnelExit(session, movedBody, exit, session.snake.direction);
+    session.tailDisabled = false;
+    session.teleporting = false;
+  } else {
+    session.snake.direction = direction;
+    session.snake.body = movedBody;
+  }
 
-  const key = cellKey(nextHead.x, nextHead.y);
+  const finalHead = session.snake.body[0];
+  updateOneWayRuntime(session, positionToIndex(finalHead.x, finalHead.y, session.grid.columns));
+  const key = cellKey(finalHead.x, finalHead.y);
   const cell = session.layer.cells[key];
   if (cell.item?.kind === "fruit") {
-    const tailPosition = previousBody[previousBody.length - 1];
+    const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
     session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType });
     cell.item = null;
     session.remainingFruits -= 1;
@@ -2877,11 +5472,19 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
   }
 
   function renderBoard() {
-    const level = session ? { grid: session.grid, layer: session.layer } : previewLevel ? { grid: previewLevel.grid, layer: activeLayer(previewLevel) } : null;
+    const previewLayerIndex = previewLevel?.layers?.findIndex((layer) => layer.id === previewLevel.activeLayerId) ?? 0;
+    const level = session
+      ? { grid: session.grid, layer: session.layer, mysteryFruitElement: session.mysteryFruitElement, mysteryFruitDebug: session.mysteryFruitDebug, activeFruitLayerIndex: session.activeFruitLayerIndex, countBarriers: session.countBarriers, tunnels: session.tunnels, oneWays: session.oneWays }
+      : previewLevel
+        ? { grid: previewLevel.grid, layer: activeLayer(previewLevel), mysteryFruitElement: previewLevel.mysteryFruitElement, mysteryFruitDebug: previewLevel.mysteryFruitDebug, activeFruitLayerIndex: Math.max(0, previewLayerIndex), countBarriers: normalizeCountBarrierElement(previewLevel.countBarrierElement).map((barrier) => ({ ...barrier, remainingCount: barrier.count })), tunnels: normalizeTunnelElement(previewLevel.tunnelElement), oneWays: normalizeOneWayElement(previewLevel.oneWayElement) }
+        : null;
     elements.playableGridBoard.innerHTML = "";
     if (!level?.layer) return;
+    applyVisualScaleConfig(elements.playableGridBoard);
     elements.playableGridBoard.style.gridTemplateColumns = `repeat(${level.grid.columns}, minmax(0, 1fr))`;
-    const snakeParts = new Map((session?.snake.body ?? []).map((part, index) => [cellKey(part.x, part.y), { ...part, index }]));
+    const snakeParts = new Map((session?.snake.body ?? [])
+      .filter((part, index) => !part.hiddenInTunnel && !(session?.tailDisabled && index > 0))
+      .map((part, index) => [cellKey(part.x, part.y), { ...part, index }]));
     const boardTrays = session?.trays ?? entriesWithPosition(level.layer)
       .filter(({ cell }) => ["tray", "truck"].includes(cell.item?.kind))
       .map(createTrayRuntime);
@@ -2892,17 +5495,66 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     for (let y = 0; y < level.grid.rows; y += 1) {
       for (let x = 0; x < level.grid.columns; x += 1) {
         const key = cellKey(x, y);
+        const index = positionToIndex(x, y, level.grid.columns);
         const cellData = level.layer.cells[key] ?? { path: false, item: null };
+        const countBarrier = level.countBarriers?.find((barrier) => barrier.index.includes(index));
+        const tunnelEntry = tunnelEntryAtIndex(level.tunnels, index);
+        const oneWayEntry = oneWayEntryAtIndex(level.oneWays, index);
+        const lockedBarrier = countBarrier && countBarrier.remainingCount > 0;
+        const barrierEndpoint = lockedBarrier && (countBarrier.startIndex === index || countBarrier.endIndex === index);
         const tray = traysByVisualKey.get(key);
         const checkpointTray = traysByCheckpointKey.get(key);
         const cell = document.createElement("div");
-        cell.className = `grid-cell playable-cell${grassCells[key] ? " grass" : " terrain-empty"}${cellData.path ? " path" : ""}${priorityPoints[key] ? " priority-point" : ""}${tray ? " tray-visual-cell" : ""}${checkpointTray ? " tray-checkpoint-cell" : ""}`;
+        cell.className = `grid-cell playable-cell${grassCells[key] ? " grass" : " terrain-empty"}${cellData.path ? " path" : ""}${priorityPoints[key] ? " priority-point" : ""}${lockedBarrier ? " count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry ? " tunnel-cell" : ""}${oneWayEntry ? " one-way-cell" : ""}${tray ? " tray-visual-cell" : ""}${checkpointTray ? " tray-checkpoint-cell" : ""}`;
+        if (tunnelEntry) cell.style.setProperty("--tunnel-color", tunnelColor(tunnelEntry.tunnel.tunnelId));
+        if (oneWayEntry) cell.style.setProperty("--one-way-color", oneWayColor(oneWayEntry.oneWay.oneWayId));
         cell.setAttribute("role", "gridcell");
-        cell.setAttribute("aria-label", `Ô chơi Index ${positionToIndex(x, y, level.grid.columns)}`);
-        if (cellData.item && !["tray", "truck"].includes(cellData.item.kind) && !(session && cellData.item.kind === "snake")) {
+        cell.setAttribute("aria-label", `Ô chơi Index ${index}`);
+        if (isBridgeElement(cellData.element)) {
+          const bridge = document.createElement("span");
+          bridge.className = `bridge-preview${normalizeBridgeAxis(cellData.element.axis) === 1 ? " vertical" : ""}`;
+          bridge.textContent = "🟰";
+          cell.appendChild(bridge);
+        }
+        if (isGateElement(cellData.element)) {
+          const gate = document.createElement("span");
+          gate.className = `gate-preview ${gateDirectionClass(cellData.element.direction)}`;
+          gate.title = `Gate ${gateDirectionLabel(cellData.element.direction)}`;
+          cell.appendChild(gate);
+        }
+        if (barrierEndpoint) {
+          const barrier = document.createElement("span");
+          barrier.className = "count-barrier-preview";
+          barrier.title = `Count Barrier ${countBarrier.barrierId} · còn ${countBarrier.remainingCount}`;
+          barrier.textContent = String(countBarrier.remainingCount);
+          cell.appendChild(barrier);
+        }
+        if (tunnelEntry) {
+          const tunnel = document.createElement("span");
+          tunnel.className = `tunnel-preview ${tunnelDirectionClass(tunnelEntry.entryPoint.direction)}`;
+          tunnel.style.setProperty("--tunnel-color", tunnelColor(tunnelEntry.tunnel.tunnelId));
+          const symbol = document.createElement("span");
+          symbol.className = "tunnel-symbol";
+          symbol.textContent = tunnelDirectionIcon(tunnelEntry.entryPoint.direction);
+          tunnel.appendChild(symbol);
+          cell.appendChild(tunnel);
+        }
+        if (oneWayEntry) {
+          const direction = oneWayEntry.entryPoint.direction;
+          const oneWay = document.createElement("span");
+          oneWay.className = `one-way-preview ${oneWayDirectionClass(direction)}`;
+          oneWay.style.setProperty("--one-way-color", oneWayColor(oneWayEntry.oneWay.oneWayId));
+          oneWay.textContent = oneWayDirectionIcon(direction);
+          cell.appendChild(oneWay);
+        }
+        const hideLockedBarrierFruit = lockedBarrier && cellData.item?.kind === "fruit";
+        if (cellData.item && !hideLockedBarrierFruit && !["tray", "truck"].includes(cellData.item.kind) && !(session && cellData.item.kind === "snake")) {
+          const hiddenFruit = cellData.item.kind === "fruit"
+            && isMysteryFruitAt(level, level.activeFruitLayerIndex ?? 0, index)
+            && !level.mysteryFruitDebug;
           const icon = document.createElement("span");
-          icon.className = `placed-icon ${cellData.item.kind}`;
-          icon.textContent = itemIcon(cellData.item);
+          icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}`;
+          icon.textContent = hiddenFruit ? "?" : itemIcon(cellData.item);
           cell.appendChild(icon);
           if (tray) {
             const layer = activeTrayLayer(tray);
@@ -2945,7 +5597,8 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         const snakePart = snakeParts.get(cellKey(x, y));
         if (snakePart) {
           const token = document.createElement("span");
-          token.className = `playable-token ${snakePart.index === 0 ? "head" : "cargo"}`;
+          const tokenDirection = snakePart.direction ? ` dir-${snakePart.direction}` : "";
+          token.className = `playable-token ${snakePart.index === 0 ? "head" : "cargo"}${tokenDirection}`;
           token.textContent = snakePart.index === 0 ? "🐍" : FRUIT_ICONS[snakePart.fruitType] ?? "●";
           cell.appendChild(token);
         }
@@ -3180,21 +5833,39 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
 
 
 
+
+
+
+
+
+
 const byId = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
-  "layerSelect", "toggleActiveLayerVisibilityBtn", "deleteActiveLayerBtn", "trayPanel", "pathStat", "grassStat", "priorityStat", "itemStat", "fruitStat", "fruitTypeStat", "trayStat", "capacityStat", "dataSummary", "validationList", "inspectorBody", "inspectorDetails",
+  "zoomOutBtn", "zoomInBtn", "zoomResetBtn", "zoomValue",
+  "layerSelect", "toggleActiveLayerVisibilityBtn", "mysteryFruitDebugBtn", "deleteActiveLayerBtn", "contextPanelTitle", "contextPanelSubtitle", "contextPanelCloseBtn", "trayPanel", "pathStat", "grassStat", "priorityStat", "itemStat", "fruitStat", "fruitTypeStat", "trayStat", "capacityStat", "dataSummary", "validationList", "inspectorBody", "inspectorDetails",
   "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
   "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
-  "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "refreshFolderBtn",
+  "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
 ].map((id) => [id, byId(id)]));
 
 const editor = new EditorState(loadSavedState());
 const fileManager = new LevelFileManager();
+const SELECTED_DATA_FILE_STORAGE_KEY = "railwaydash:lastSelectedDataFile";
+const folderFileState = {
+  directoryHandle: null,
+  directoryName: "",
+  permission: fileManager.supported ? "unknown" : "unsupported",
+  files: [],
+  selectedFileName: readSelectedDataFileName(),
+  loading: false,
+  error: null,
+  scanId: 0
+};
 let folderFiles = [];
 let fileDirty = editor.data.fileDirty ?? !editor.data.sourceFileName;
 let activePaletteCategory = "item";
@@ -3209,6 +5880,17 @@ const gridIndexTooltip = createGridIndexTooltip({
   getGrid: () => editor.data.grid,
   isEnabled: () => ["level", "json"].includes(editor.data.tab)
 });
+const editorCamera = new CameraController({
+  onChange: updateZoomUi
+});
+
+function updateZoomUi() {
+  if (elements.zoomValue) elements.zoomValue.textContent = `${Math.round(editorCamera.zoom * 100)}%`;
+  if (elements.zoomOutBtn) elements.zoomOutBtn.disabled = editorCamera.zoom <= editorCamera.min;
+  if (elements.zoomInBtn) elements.zoomInBtn.disabled = editorCamera.zoom >= editorCamera.max;
+  if (elements.zoomResetBtn) elements.zoomResetBtn.disabled = Math.abs(editorCamera.zoom - 1) < 0.001;
+  fitBoardToCanvas();
+}
 
 function switchTab(tab) {
   if (tab === "playable") gridIndexTooltip.hide();
@@ -3242,7 +5924,9 @@ function fitBoardToCanvas() {
   const widthFromHeight = Math.max(0, availableHeight - frameHeight) * ratio + frameWidth;
   const fittedWidth = Math.max(120, Math.min(790, availableWidth, widthFromHeight));
 
-  elements.boardWrap.style.width = `${fittedWidth}px`;
+  const zoomedWidth = fittedWidth * editorCamera.zoom;
+  elements.boardWrap.style.width = `${zoomedWidth}px`;
+  elements.canvasArea.classList.toggle("map-zoomed", editorCamera.zoom > 1);
 }
 
 function loadSavedState() {
@@ -3253,7 +5937,7 @@ function loadSavedState() {
         try { return deserializeEditorState(raw); }
         catch {
           const legacy = migrateLevel(JSON.parse(raw));
-          return { grid: legacy.grid, sharedCells: legacy.sharedCells ?? {}, layers: legacy.layers, activeLayerId: legacy.activeLayerId ?? legacy.layers?.[0]?.id, selectedCell: null, selectedAssetId: "snake-start", tool: "path", eraseMode: "smart", tab: "level", fileName: "untitled-level.json", sourceFileName: null, fileDirty: true };
+          return { grid: legacy.grid, sharedCells: legacy.sharedCells ?? {}, layers: legacy.layers, activeLayerId: legacy.activeLayerId ?? legacy.layers?.[0]?.id, selectedCell: null, activeTrayCell: null, selectedAssetId: "snake-start", tool: "path", eraseMode: "smart", tab: "level", fileName: "untitled-level.json", sourceFileName: null, fileDirty: true };
         }
       }
     } catch (error) {
@@ -3287,7 +5971,25 @@ function renderLayers() {
   elements.layerSelect.value = editor.data.activeLayerId;
   elements.toggleActiveLayerVisibilityBtn.textContent = editor.activeLayer.visible ? "◉" : "○";
   elements.toggleActiveLayerVisibilityBtn.title = editor.activeLayer.visible ? "Ẩn hoa quả của layer đang chọn" : "Hiện hoa quả của layer đang chọn";
+  elements.mysteryFruitDebugBtn.classList.toggle("active", Boolean(editor.data.mysteryFruitDebug));
+  elements.mysteryFruitDebugBtn.title = editor.data.mysteryFruitDebug ? "Tắt Debug Mystery Fruit" : "Bật Debug Mystery Fruit";
+  elements.mysteryFruitDebugBtn.setAttribute("aria-pressed", String(Boolean(editor.data.mysteryFruitDebug)));
   elements.deleteActiveLayerBtn.disabled = editor.data.layers.length === 1;
+}
+
+function readSelectedDataFileName() {
+  try { return localStorage.getItem(SELECTED_DATA_FILE_STORAGE_KEY); }
+  catch { return null; }
+}
+
+function rememberSelectedDataFileName(fileName) {
+  folderFileState.selectedFileName = fileName;
+  try {
+    if (fileName) localStorage.setItem(SELECTED_DATA_FILE_STORAGE_KEY, fileName);
+    else localStorage.removeItem(SELECTED_DATA_FILE_STORAGE_KEY);
+  } catch (error) {
+    console.warn("Không thể lưu file data đang chọn", error);
+  }
 }
 
 function renderValidation(layer) {
@@ -3299,6 +6001,10 @@ function renderValidation(layer) {
   const checks = [
     { ok: report.stats.snake === 1, text: report.stats.snake === 1 ? "Có đúng 1 điểm bắt đầu" : `Cần đúng 1 điểm bắt đầu (hiện có ${report.stats.snake})` },
     { ok: report.stats.allFruits > 0, text: report.stats.allFruits > 0 ? `${report.stats.allFruits} fruit trong ${report.stats.fruitLayers} layer` : "Chưa có trái cây trong các layer" },
+    { ok: true, text: `${report.stats.mysteryFruits} Mystery Fruit` },
+    { ok: true, text: `${report.stats.countBarriers} Count Barrier · ${report.stats.countBarrierCells} ô khóa` },
+    { ok: true, text: `${report.stats.tunnels} Tunnel` },
+    { ok: true, text: `${report.stats.oneWays} One Way` },
     { ok: trayRecipesOk, text: trayRecipesOk ? `${report.stats.trayLayers} layer khay đã đủ recipe 9/9` : `Còn ${report.stats.invalidTrayRecipes || "khay chưa có"} recipe khay chưa hoàn tất` },
     { ok: balanceOk, text: balanceOk ? "Tổng fruit các layer khớp recipe khay" : "Tổng fruit các layer và recipe khay chưa khớp" }
   ];
@@ -3308,12 +6014,32 @@ function renderValidation(layer) {
   return report.stats;
 }
 
+function tunnelDraftBadge(draft) {
+  if (!draft) return "Select Tunnel Point A";
+  return {
+    "direction-a": "Point A selected — Choose direction",
+    "point-b": "Point A complete — Select Tunnel Point B",
+    "direction-b": "Point B selected — Choose direction"
+  }[draft.step] ?? "Select Tunnel Point A";
+}
+
+function oneWayDraftBadge(draft) {
+  if (!draft) return "Select One Way Point A";
+  return {
+    "direction-a": "Point A selected — Choose direction",
+    "point-b": "Point A complete — Select One Way Point B",
+    "direction-b": "Point B selected — Choose direction"
+  }[draft.step] ?? "Select One Way Point A";
+}
+
 function renderAll() {
   const layer = editor.activeLayer;
   const paletteObjects = objectsByCategory(activePaletteCategory);
   renderObjectPalette(elements.assetPalette, paletteObjects, editor.data.selectedAssetId, {
     emptyLabel: activePaletteCategory === "element" ? "Element sẽ được bổ sung ở bước tiếp theo." : `Chưa có ${activePaletteCategory}.`,
-    unavailableIds: hasPlacedObject("snake-start") ? ["snake-start"] : []
+    unavailableIds: hasPlacedObject("snake-start") ? ["snake-start"] : [],
+    bridgeAxis: editor.data.selectedBridgeAxis ?? 0,
+    countBarrierCount: normalizeCountBarrierCount(editor.data.selectedCountBarrierCount)
   });
   document.querySelectorAll("[data-palette-tab]").forEach((button) => {
     const active = button.dataset.paletteTab === activePaletteCategory;
@@ -3323,11 +6049,37 @@ function renderAll() {
   });
   renderGrid(elements.gridBoard, editor.data);
   renderLayers();
-  renderTrayEditor(elements.trayPanel, editor.data);
-  renderInspector(elements.inspectorBody, editor.data);
+  if (editor.data.selectedCell) {
+    elements.trayPanel.classList.add("inspector-mode");
+    elements.contextPanelTitle.textContent = `Ô ${getSelectedCellIndex(editor.data)}`;
+    elements.contextPanelSubtitle.textContent = "Chỉnh sửa nội dung tại ô đang chọn";
+    elements.contextPanelCloseBtn.classList.remove("hidden");
+    renderInspector(elements.trayPanel, editor.data);
+  } else {
+    elements.trayPanel.classList.remove("inspector-mode");
+    elements.contextPanelTitle.textContent = "Khay chứa";
+    elements.contextPanelSubtitle.textContent = "Hiển thị và setup layer của từng khay";
+    elements.contextPanelCloseBtn.classList.add("hidden");
+    renderTrayEditor(elements.trayPanel, editor.data);
+  }
+  elements.inspectorDetails.classList.add("hidden");
   const dataSummary = renderDataSummary(elements.dataSummary, editor.data);
   renderToolbar(editor, elements);
   if (editor.data.tool === "terrain") elements.activeToolBadge.textContent = findObject(editor.data.selectedAssetId)?.label ?? "Chỉnh terrain";
+  else if (editor.data.tool === "item") elements.activeToolBadge.textContent = findObject(editor.data.selectedAssetId)?.label ?? "Đặt item";
+  if (editor.data.tool === "item" && findObject(editor.data.selectedAssetId)?.kind === "mystery-fruit") elements.activeToolBadge.textContent = "Mystery Fruit";
+  if (editor.data.tool === "item" && findObject(editor.data.selectedAssetId)?.kind === "count-barrier") {
+    const activeId = Number.isInteger(editor.data.activeBarrierId) ? ` · Active ${editor.data.activeBarrierId}` : "";
+    elements.activeToolBadge.textContent = `Count Barrier${activeId} · ${normalizeCountBarrierCount(editor.data.selectedCountBarrierCount)}`;
+  }
+  if (editor.data.tool === "item" && findObject(editor.data.selectedAssetId)?.kind === "tunnel") {
+    const activeId = Number.isInteger(editor.data.activeTunnelId) ? ` · Active ${editor.data.activeTunnelId}` : "";
+    elements.activeToolBadge.textContent = editor.data.tunnelDraft ? tunnelDraftBadge(editor.data.tunnelDraft) : `Tunnel${activeId || " · Select Point A"}`;
+  }
+  if (editor.data.tool === "item" && findObject(editor.data.selectedAssetId)?.kind === "one-way") {
+    const activeId = Number.isInteger(editor.data.activeOneWayId) ? ` · Active ${editor.data.activeOneWayId}` : "";
+    elements.activeToolBadge.textContent = editor.data.oneWayDraft ? oneWayDraftBadge(editor.data.oneWayDraft) : `One Way${activeId || " · Select Point A"}`;
+  }
   const stats = renderValidation(layer);
   elements.pathStat.textContent = stats.paths;
   elements.grassStat.textContent = Object.keys(editor.data.grassCells ?? {}).length;
@@ -3367,14 +6119,42 @@ function renderJsonWorkspace() {
   byId("exportBtn").disabled = !report.exportable;
   elements.jsonDirtyStatus.textContent = fileDirty ? "Có thay đổi chưa lưu" : "Đã đồng bộ file";
   elements.jsonDirtyStatus.classList.toggle("clean", !fileDirty);
-  elements.chooseFolderBtn.disabled = !fileManager.supported;
-  elements.refreshFolderBtn.disabled = !fileManager.connected;
-  if (!fileManager.supported) elements.folderStatus.textContent = "Trình duyệt không hỗ trợ quản lý thư mục; vẫn có thể Import và Tải xuống.";
+  elements.chooseFolderBtn.disabled = !fileManager.supported || folderFileState.loading;
+  elements.chooseFolderBtn.textContent = fileManager.connected ? "Đổi thư mục" : "Mở thư mục";
+  elements.refreshFolderBtn.disabled = !fileManager.connected || folderFileState.permission !== "granted" || folderFileState.loading;
+  elements.reconnectFolderBtn.classList.toggle("hidden", !fileManager.connected || folderFileState.permission === "granted" || folderFileState.permission === "unknown");
+  elements.reconnectFolderBtn.disabled = folderFileState.loading;
+  elements.folderStatus.textContent = folderStatusText();
   renderFolderFiles();
+}
+
+function folderStatusText() {
+  if (!fileManager.supported) return "Trình duyệt không hỗ trợ mở folder trực tiếp; vẫn có thể Nhập file và Tải xuống.";
+  if (folderFileState.loading) return `Loading folder${folderFileState.directoryName ? ` ${folderFileState.directoryName}` : ""}...`;
+  if (folderFileState.error) return folderFileState.error;
+  if (!fileManager.connected) return "Chưa chọn thư mục. File mới sẽ được tải xuống.";
+  if (folderFileState.permission === "prompt" || folderFileState.permission === "denied") return `${folderFileState.directoryName} · Cần cấp lại quyền để mở folder.`;
+  if (folderFileState.permission === "unknown") return `${folderFileState.directoryName} · Đang kiểm tra quyền truy cập.`;
+  const invalidCount = folderFiles.filter((file) => file.status !== "valid").length;
+  return `${folderFileState.directoryName} · ${folderFiles.length} file JSON${invalidCount ? ` · ${invalidCount} file lỗi` : ""}`;
 }
 
 function renderFolderFiles() {
   elements.jsonFileList.innerHTML = "";
+  if (folderFileState.loading) {
+    const loading = document.createElement("div");
+    loading.className = "json-file-empty";
+    loading.textContent = "Loading folder...";
+    elements.jsonFileList.appendChild(loading);
+    return;
+  }
+  if (fileManager.connected && folderFileState.permission !== "granted") {
+    const reconnect = document.createElement("div");
+    reconnect.className = "json-file-empty";
+    reconnect.textContent = "Cần cấp lại quyền để mở folder.";
+    elements.jsonFileList.appendChild(reconnect);
+    return;
+  }
   if (!fileManager.connected || folderFiles.length === 0) {
     const empty = document.createElement("div");
     empty.className = "json-file-empty";
@@ -3384,14 +6164,17 @@ function renderFolderFiles() {
   }
   folderFiles.forEach((file) => {
     const row = document.createElement("div");
-    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}`;
+    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${file.status !== "valid" ? " file-error" : ""}`;
     row.dataset.fileName = file.name;
     const copy = document.createElement("div");
     copy.className = "json-file-copy";
     const title = document.createElement("strong");
-    title.textContent = file.name;
+    title.textContent = `${file.status === "valid" ? "" : "! "}${file.name}`;
     const meta = document.createElement("small");
-    meta.textContent = `${Math.max(1, Math.ceil(file.size / 1024))} KB · ${new Date(file.updatedAt).toLocaleString("vi-VN")}`;
+    const statusLabel = file.status === "valid" ? "Hợp lệ" : file.status === "invalid" ? "JSON lỗi" : "Không đọc được";
+    const updatedAt = file.lastModified ? new Date(file.lastModified).toLocaleString("vi-VN") : "Không rõ thời gian";
+    meta.textContent = `${statusLabel} · ${Math.max(1, Math.ceil(file.size / 1024))} KB · ${updatedAt}`;
+    if (file.errorMessage) meta.title = file.errorMessage;
     copy.append(title, meta);
     const actions = document.createElement("div");
     actions.className = "json-file-actions";
@@ -3399,6 +6182,9 @@ function renderFolderFiles() {
       const button = document.createElement("button");
       button.type = "button"; button.dataset.fileAction = action; button.textContent = label;
       if (action === "delete") button.className = "danger";
+      if (action === "open" && file.status !== "valid") {
+        button.title = file.errorMessage ?? "File không thể mở vào editor.";
+      }
       if (action === "save" && !validateLevel(editor.data).exportable) button.disabled = true;
       actions.appendChild(button);
     });
@@ -3413,11 +6199,124 @@ function showEraseFeedback(result) {
   }
 }
 
+let eraseChoiceMenu = null;
+let directionPicker = null;
+
+function hideEraseChoiceMenu() {
+  eraseChoiceMenu?.remove();
+  eraseChoiceMenu = null;
+}
+
+function showEraseChoiceMenu(position, targets) {
+  hideEraseChoiceMenu();
+  const cell = elements.gridBoard.querySelector(`[data-x="${position.x}"][data-y="${position.y}"]`);
+  const rect = cell?.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.className = "erase-choice-menu";
+  menu.innerHTML = `<strong>Xóa gì tại ô ${positionToIndex(position.x, position.y, editor.data.grid.columns)}?</strong>`;
+  targets.forEach((target) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.eraseChoiceMode = target.mode;
+    button.dataset.eraseChoiceX = String(position.x);
+    button.dataset.eraseChoiceY = String(position.y);
+    button.textContent = target.label;
+    menu.appendChild(button);
+  });
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.dataset.eraseChoiceCancel = "true";
+  cancel.textContent = "Hủy";
+  menu.appendChild(cancel);
+  document.body.appendChild(menu);
+  const left = rect ? rect.left + rect.width + 8 : window.innerWidth / 2;
+  const top = rect ? rect.top : window.innerHeight / 2;
+  menu.style.left = `${Math.min(left, window.innerWidth - menu.offsetWidth - 12)}px`;
+  menu.style.top = `${Math.min(top, window.innerHeight - menu.offsetHeight - 12)}px`;
+  eraseChoiceMenu = menu;
+}
+
+function directionLabel(type, step) {
+  if (type === "gate") return "Gate Direction";
+  const point = step?.endsWith("b") ? "B" : "A";
+  return `${type === "tunnel" ? "Tunnel" : "One Way"} Point ${point}`;
+}
+
+function hideDirectionPicker({ force = false } = {}) {
+  if (!directionPicker) return;
+  if (!force && directionPicker.mode === "draft") return;
+  directionPicker.element.remove();
+  directionPicker = null;
+}
+
+function showDirectionPicker(type, position, { mode = "draft", id = null, entryIndex = 0, step = "direction-a" } = {}) {
+  hideDirectionPicker({ force: true });
+  const cell = elements.gridBoard.querySelector(`[data-x="${position.x}"][data-y="${position.y}"]`);
+  const rect = cell?.getBoundingClientRect();
+  const picker = document.createElement("div");
+  picker.className = `direction-popover ${type}-direction-popover`;
+  picker.dataset.directionPickerType = type;
+  picker.dataset.directionPickerMode = mode;
+  picker.dataset.directionPickerId = id ?? "";
+  picker.dataset.directionPickerEntry = String(entryIndex);
+  picker.innerHTML = `<strong>${directionLabel(type, step)}</strong>`;
+  [
+    ["0", "↑", "Up"],
+    ["1", "↓", "Down"],
+    ["2", "→", "Right"],
+    ["3", "←", "Left"]
+  ].forEach(([value, icon, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.floatingDirection = value;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.textContent = icon;
+    picker.appendChild(button);
+  });
+  if (type !== "gate") {
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.className = "direction-popover-cancel";
+    cancel.dataset.directionPickerCancel = type;
+    cancel.textContent = "×";
+    cancel.title = "Cancel";
+    picker.appendChild(cancel);
+  }
+  document.body.appendChild(picker);
+  const left = rect ? rect.left + rect.width + 8 : window.innerWidth / 2;
+  const top = rect ? rect.top : window.innerHeight / 2;
+  picker.style.left = `${Math.min(left, window.innerWidth - picker.offsetWidth - 12)}px`;
+  picker.style.top = `${Math.min(top, window.innerHeight - picker.offsetHeight - 12)}px`;
+  directionPicker = { element: picker, type, mode, id, entryIndex, position };
+}
+
+function eraseSmartAt(position) {
+  const targets = getEraseTargets(editor.data, position);
+  if (targets.length === 0) {
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    return;
+  }
+  if (targets.length > 1) {
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    showEraseChoiceMenu(position, targets);
+    return;
+  }
+  hideEraseChoiceMenu();
+  showEraseFeedback(mutate((state) => eraseAtPosition(state, position, targets[0].mode)));
+}
+
 const input = new InputController({
   isEnabled: () => editor.data.tab === "level",
-  canDrag: () => editor.data.tool !== "select",
-  onStrokeStart: () => editor.beginTransaction(),
-  onStrokeEnd: () => editor.endTransaction(),
+  canDrag: () => editor.data.tool !== "select" && !(editor.data.tool === "item" && ["tunnel", "one-way", "gate"].includes(findObject(editor.data.selectedAssetId)?.kind)),
+  onStrokeStart: () => {
+    editor.beginTransaction();
+  },
+  onStrokeEnd: () => {
+    editor.endTransaction();
+  },
   onCell(x, y, { eraseOverride = false } = {}) {
     const visualTray = Object.entries(editor.data.sharedCells ?? {}).map(([key, cell]) => {
       if (!["tray", "truck"].includes(cell.item?.kind)) return null;
@@ -3434,16 +6333,45 @@ const input = new InputController({
     }
     const targetX = routeVisualToTray ? visualTray.x : x;
     const targetY = routeVisualToTray ? visualTray.y : y;
+    const clickedBarrier = findCountBarrierAtIndex(editor.data, positionToIndex(targetX, targetY, editor.data.grid.columns));
+    if (clickedBarrier && !eraseOverride) {
+      editor.data.activeBarrierId = clickedBarrier.barrierId;
+      editor.data.selectedCountBarrierCount = normalizeCountBarrierCount(clickedBarrier.count);
+    }
+    const clickedTunnel = findTunnelAtIndex(editor.data, positionToIndex(targetX, targetY, editor.data.grid.columns));
+    if (clickedTunnel && !eraseOverride && !editor.data.tunnelDraft && !editor.data.oneWayDraft && editor.data.tool !== "erase") {
+      const clickedIndex = positionToIndex(targetX, targetY, editor.data.grid.columns);
+      const entryIndex = clickedTunnel.entryPoints.findIndex((point) => point.index === clickedIndex);
+      editor.data.activeTunnelId = clickedTunnel.tunnelId;
+      selectCell(editor.data, targetX, targetY);
+      editor.notify();
+      showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "edit", id: clickedTunnel.tunnelId, entryIndex, step: entryIndex === 1 ? "direction-b" : "direction-a" });
+      return;
+    }
+    const clickedOneWay = findOneWayAtIndex(editor.data, positionToIndex(targetX, targetY, editor.data.grid.columns));
+    if (clickedOneWay && !eraseOverride && !editor.data.tunnelDraft && !editor.data.oneWayDraft && editor.data.tool !== "erase") {
+      const clickedIndex = positionToIndex(targetX, targetY, editor.data.grid.columns);
+      const entryIndex = clickedOneWay.entryPoints.findIndex((point) => point.index === clickedIndex);
+      editor.data.activeOneWayId = clickedOneWay.oneWayId;
+      selectCell(editor.data, targetX, targetY);
+      editor.notify();
+      showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "edit", id: clickedOneWay.oneWayId, entryIndex, step: entryIndex === 1 ? "direction-b" : "direction-a" });
+      return;
+    }
     const clickedCell = getMergedCell(editor.data, targetX, targetY);
     const clickedTray = ["tray", "truck"].includes(clickedCell?.item?.kind);
     if (clickedTray && !eraseOverride && editor.data.tool !== "erase") {
       editor.data.tool = "select";
       selectCell(editor.data, targetX, targetY);
       editor.notify();
+    } else if ((eraseOverride || editor.data.tool === "erase") && (eraseOverride || (editor.data.eraseMode ?? "smart") === "smart")) {
+      eraseSmartAt({ x: targetX, y: targetY });
     } else if (editor.data.tool === "select" && !eraseOverride) {
       selectCell(editor.data, targetX, targetY);
       editor.notify();
     } else {
+      hideEraseChoiceMenu();
+      const selectedObject = findObject(editor.data.selectedAssetId);
       const result = mutate((state) => applyTool(state, targetX, targetY, eraseOverride ? "smart-erase" : null));
       if (result?.reason === "unique-object-exists") {
         showNotification(elements.toast, "Map chỉ được có một đầu rắn. Hãy xóa đầu rắn hiện tại trước khi đặt lại.");
@@ -3451,16 +6379,62 @@ const input = new InputController({
         showNotification(elements.toast, "Không thể đặt khay: vị trí visual mặc định phía trên nằm ngoài map.");
       } else if (result?.reason === "tray-checkpoint-needs-road") {
         showNotification(elements.toast, "Hãy vẽ đường trước, sau đó đặt khay trực tiếp lên checkpoint đó.");
+      } else if (result?.reason === "gate-needs-path") {
+        showNotification(elements.toast, "Gate chỉ được đặt trên Path.");
+      } else if (result?.reason === "mystery-needs-fruit") {
+        showNotification(elements.toast, "Mystery Fruit chỉ đánh dấu Fruit trong layer đang chọn.");
+      } else if (result?.reason === "fruit-on-barrier-endpoint") {
+        showNotification(elements.toast, "Không đặt Fruit tại 2 đầu Count Barrier. Hãy đặt Fruit ở ô giữa Barrier hoặc Path khác.");
+      } else if (result?.reason === "barrier-needs-path") {
+        showNotification(elements.toast, "Count Barrier chỉ có thể vẽ trên Path.");
+      } else if (result?.reason === "tunnel-needs-path") {
+        showNotification(elements.toast, "Tunnel chỉ có thể đặt trên Path.");
+      } else if (result?.reason === "tunnel-same-point") {
+        showNotification(elements.toast, "Point B không được trùng Point A.");
+      } else if (result?.reason === "tunnel-overlap") {
+        showNotification(elements.toast, "Ô này đã thuộc Tunnel khác.");
+      } else if (result?.reason === "tunnel-needs-direction-a") {
+        showNotification(elements.toast, "Chọn direction cho Point A trước.");
+      } else if (result?.reason === "tunnel-needs-direction-b") {
+        showNotification(elements.toast, "Chọn direction cho Point B trước.");
+      } else if (result?.reason === "one-way-needs-path") {
+        showNotification(elements.toast, "One Way chỉ có thể đặt trên Path.");
+      } else if (result?.reason === "one-way-same-point") {
+        showNotification(elements.toast, "Point B không được trùng Point A.");
+      } else if (result?.reason === "one-way-overlap") {
+        showNotification(elements.toast, "Ô này đã thuộc One Way khác.");
+      } else if (result?.reason === "one-way-needs-direction-a") {
+        showNotification(elements.toast, "Chọn direction cho Point A trước.");
+      } else if (result?.reason === "one-way-needs-direction-b") {
+        showNotification(elements.toast, "Chọn direction cho Point B trước.");
+      } else if (result?.reason === "barrier-overlap") {
+        showNotification(elements.toast, "Ô Path này đã thuộc một Count Barrier khác.");
       } else if (result?.reason === "tray-visual-occupied") {
         showNotification(elements.toast, "Ô visual mặc định phía trên checkpoint phải trống.");
       } else if (["shared-position-occupied", "fruit-position-occupied"].includes(result?.reason)) {
         showNotification(elements.toast, "Ô này đã có object dùng chung hoặc fruit ở một layer khác.");
+      } else if (result?.reason === "element-position-occupied") {
+        showNotification(elements.toast, "Ô này đã có element khác.");
       } else if (result?.reason === "grass-on-path") {
         showNotification(elements.toast, "Grass không thể trùng Path. Hãy xóa Path trước.");
       } else if (result?.reason === "terrain-on-path") {
         showNotification(elements.toast, "Không thể chuyển ô Path thành Terrain trống. Hãy xóa Path trước.");
       } else if (result?.reason === "priority-needs-path") {
         showNotification(elements.toast, "PriorityPoint chỉ được đặt trên Path.");
+      } else if (result?.action === "tunnel-point-a-selected") {
+        showNotification(elements.toast, "Point A selected — Choose direction");
+        showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "draft", id: result.tunnelId, entryIndex: 0, step: "direction-a" });
+      } else if (result?.action === "tunnel-point-b-selected") {
+        showNotification(elements.toast, "Point B selected — Choose direction");
+        showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "draft", id: result.tunnelId, entryIndex: 1, step: "direction-b" });
+      } else if (result?.action === "one-way-point-a-selected") {
+        showNotification(elements.toast, "Point A selected — Choose direction");
+        showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "draft", id: result.oneWayId, entryIndex: 0, step: "direction-a" });
+      } else if (result?.action === "one-way-point-b-selected") {
+        showNotification(elements.toast, "Point B selected — Choose direction");
+        showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "draft", id: result.oneWayId, entryIndex: 1, step: "direction-b" });
+      } else if (result?.changed && selectedObject?.kind === "gate") {
+        showDirectionPicker("gate", { x: targetX, y: targetY }, { mode: "edit" });
       } else showEraseFeedback(result);
     }
   },
@@ -3492,6 +6466,7 @@ document.querySelector(".tool-list").addEventListener("click", (event) => {
   if (eraseMode) {
     editor.data.eraseMode = eraseMode.dataset.eraseMode;
     editor.data.tool = "erase";
+    setEraseMenuExpanded(false);
     editor.notify();
     return;
   }
@@ -3499,14 +6474,81 @@ document.querySelector(".tool-list").addEventListener("click", (event) => {
   if (button && TOOL_LABELS[button.dataset.tool]) { editor.data.tool = button.dataset.tool; editor.notify(); }
 });
 const eraseToolMenu = document.querySelector(".erase-tool-menu");
-const setEraseMenuExpanded = (expanded) => byId("eraseToolBtn").setAttribute("aria-expanded", String(expanded));
-eraseToolMenu.addEventListener("pointerenter", () => setEraseMenuExpanded(true));
-eraseToolMenu.addEventListener("pointerleave", () => setEraseMenuExpanded(false));
-eraseToolMenu.addEventListener("focusin", () => setEraseMenuExpanded(true));
-eraseToolMenu.addEventListener("focusout", (event) => {
-  if (!eraseToolMenu.contains(event.relatedTarget)) setEraseMenuExpanded(false);
+const setEraseMenuExpanded = (expanded) => {
+  eraseToolMenu.classList.toggle("open", expanded);
+  byId("eraseToolBtn").setAttribute("aria-expanded", String(expanded));
+};
+byId("eraseToolBtn").addEventListener("click", (event) => {
+  event.stopPropagation();
+  editor.data.tool = "erase";
+  setEraseMenuExpanded(byId("eraseToolBtn").getAttribute("aria-expanded") !== "true");
+  editor.notify();
+});
+document.addEventListener("click", (event) => {
+  if (!eraseToolMenu.contains(event.target)) setEraseMenuExpanded(false);
+});
+document.addEventListener("click", (event) => {
+  const choice = event.target.closest("[data-erase-choice-mode]");
+  if (choice) {
+    const mode = choice.dataset.eraseChoiceMode;
+    const position = { x: Number(choice.dataset.eraseChoiceX), y: Number(choice.dataset.eraseChoiceY) };
+    hideEraseChoiceMenu();
+    showEraseFeedback(mutate((state) => eraseAtPosition(state, position, mode)));
+    return;
+  }
+  if (event.target.closest("[data-erase-choice-cancel]")) hideEraseChoiceMenu();
+  else if (eraseChoiceMenu && !eraseChoiceMenu.contains(event.target)) hideEraseChoiceMenu();
+});
+document.addEventListener("click", (event) => {
+  const direction = event.target.closest("[data-floating-direction]");
+  if (direction && directionPicker?.element.contains(direction)) {
+    const value = Number(direction.dataset.floatingDirection);
+    const current = directionPicker;
+    let result = null;
+    if (current.type === "tunnel" && current.mode === "draft") {
+      result = mutate((state) => setTunnelDraftDirection(state, value));
+      if (result?.action === "tunnel-created") showNotification(elements.toast, `Tunnel #${result.tunnelId} created`);
+      else if (result?.action === "tunnel-direction-a-selected") showNotification(elements.toast, "Point A complete — Select Tunnel Point B");
+    } else if (current.type === "one-way" && current.mode === "draft") {
+      result = mutate((state) => setOneWayDraftDirection(state, value));
+      if (result?.action === "one-way-created") showNotification(elements.toast, `One Way #${result.oneWayId} created`);
+      else if (result?.action === "one-way-direction-a-selected") showNotification(elements.toast, "Point A complete — Select One Way Point B");
+    } else if (current.type === "tunnel") {
+      mutate((state) => setTunnelEntryDirection(state, Number(current.id), Number(current.entryIndex), value));
+      showNotification(elements.toast, "Đã cập nhật direction Tunnel.");
+    } else if (current.type === "one-way") {
+      mutate((state) => setOneWayEntryDirection(state, Number(current.id), Number(current.entryIndex), value));
+      showNotification(elements.toast, "Đã cập nhật direction One Way.");
+    } else if (current.type === "gate") {
+      mutate((state) => {
+        const key = `${current.position.x},${current.position.y}`;
+        const element = state.sharedCells?.[key]?.element;
+        if (!isGateElement(element)) return false;
+        element.direction = normalizeGateDirection(value);
+        state.selectedGateDirection = element.direction;
+        state.selectedCell = { ...current.position };
+        return true;
+      });
+      showNotification(elements.toast, "Đã chọn hướng Gate.");
+    }
+    hideDirectionPicker({ force: true });
+    return;
+  }
+  const cancel = event.target.closest("[data-direction-picker-cancel]");
+  if (cancel && directionPicker?.element.contains(cancel)) {
+    const type = directionPicker.type;
+    if (directionPicker.mode === "draft") {
+      mutate(type === "tunnel" ? cancelTunnelDraft : cancelOneWayDraft);
+      showNotification(elements.toast, type === "tunnel" ? "Đã hủy Tunnel Draft." : "Đã hủy One Way Draft.");
+    }
+    hideDirectionPicker({ force: true });
+    return;
+  }
+  if (directionPicker && !directionPicker.element.contains(event.target)) hideDirectionPicker();
 });
 elements.assetPalette.addEventListener("click", (event) => {
+  const bridgeAxis = event.target.closest("[data-bridge-axis]");
+  if (bridgeAxis) editor.data.selectedBridgeAxis = normalizeBridgeAxis(bridgeAxis.dataset.bridgeAxis);
   const button = event.target.closest("[data-asset]");
   if (!button || !findObject(button.dataset.asset)) return;
   if (button.getAttribute("aria-disabled") === "true") {
@@ -3549,12 +6591,20 @@ elements.toggleActiveLayerVisibilityBtn.addEventListener("click", () => mutate((
   const layer = state.layers.find((candidate) => candidate.id === state.activeLayerId);
   layer.visible = !layer.visible;
 }));
+elements.mysteryFruitDebugBtn.addEventListener("click", () => mutate((state) => {
+  state.mysteryFruitDebug = !state.mysteryFruitDebug;
+}));
 
 function deleteActiveLayer() {
   if (editor.data.layers.length <= 1 || !confirm("Xóa layer fruit đang chọn và toàn bộ hoa quả trong layer này? Map, rắn và khay chứa sẽ được giữ nguyên.")) return;
   mutate((state) => {
     const deletedId = state.activeLayerId;
     const deletedIndex = state.layers.findIndex((layer) => layer.id === deletedId);
+    const deletedLayerNumber = Number.isInteger(state.layers[deletedIndex]?.layer) ? state.layers[deletedIndex].layer : deletedIndex;
+    state.mysteryFruitElement = (state.mysteryFruitElement ?? []).flatMap((entry) => {
+      if (entry.layer === deletedLayerNumber) return [];
+      return [{ ...entry, layer: entry.layer > deletedLayerNumber ? entry.layer - 1 : entry.layer }];
+    });
     state.layers = state.layers.filter((layer) => layer.id !== deletedId);
     reindexLayers(state.layers);
     const nextIndex = Math.min(deletedIndex, state.layers.length - 1);
@@ -3562,7 +6612,205 @@ function deleteActiveLayer() {
   });
 }
 elements.deleteActiveLayerBtn.addEventListener("click", deleteActiveLayer);
+elements.contextPanelCloseBtn.addEventListener("click", () => {
+  editor.data.selectedCell = null;
+  editor.notify();
+});
+
+function selectedLayerNumber(state) {
+  const layer = state.layers.find((candidate) => candidate.id === state.activeLayerId) ?? state.layers[0];
+  return Number.isInteger(layer?.layer) ? layer.layer : Math.max(0, state.layers.indexOf(layer));
+}
+
+function placeInspectorElement(assetId) {
+  if (!editor.data.selectedCell) return;
+  const { x, y } = editor.data.selectedCell;
+  const result = mutate((state) => {
+    const previousTool = state.tool;
+    const previousAsset = state.selectedAssetId;
+    state.tool = "item";
+    state.selectedAssetId = assetId;
+    const placement = applyTool(state, x, y);
+    state.tool = previousTool;
+    state.selectedAssetId = previousAsset;
+    return placement;
+  });
+  if (result?.reason === "gate-needs-path") showNotification(elements.toast, "Gate chỉ có thể đặt trên Path.");
+  else if (result?.reason === "tunnel-needs-path") showNotification(elements.toast, "Tunnel chỉ có thể đặt trên Path.");
+  else if (result?.reason === "tunnel-same-point") showNotification(elements.toast, "Point B không được trùng Point A.");
+  else if (result?.reason === "tunnel-overlap") showNotification(elements.toast, "Ô này đã thuộc Tunnel khác.");
+  else if (result?.reason === "tunnel-needs-direction-a") showNotification(elements.toast, "Chọn direction cho Point A trước.");
+  else if (result?.reason === "tunnel-needs-direction-b") showNotification(elements.toast, "Chọn direction cho Point B trước.");
+  else if (result?.reason === "one-way-needs-path") showNotification(elements.toast, "One Way chỉ có thể đặt trên Path.");
+  else if (result?.reason === "one-way-same-point") showNotification(elements.toast, "Point B không được trùng Point A.");
+  else if (result?.reason === "one-way-overlap") showNotification(elements.toast, "Ô này đã thuộc One Way khác.");
+  else if (result?.reason === "one-way-needs-direction-a") showNotification(elements.toast, "Chọn direction cho Point A trước.");
+  else if (result?.reason === "one-way-needs-direction-b") showNotification(elements.toast, "Chọn direction cho Point B trước.");
+  else if (result?.reason === "element-position-occupied") showNotification(elements.toast, "Ô này đã có element khác.");
+  else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
+}
+
 elements.trayPanel.addEventListener("click", (event) => {
+  if (event.target.closest("[data-deselect-cell]")) {
+    editor.data.selectedCell = null;
+    editor.notify();
+    return;
+  }
+  const bridgeAxis = event.target.closest("[data-inspector-bridge-axis]");
+  if (bridgeAxis && editor.data.selectedCell) {
+    mutate((state) => {
+      const key = `${state.selectedCell.x},${state.selectedCell.y}`;
+      const element = state.sharedCells?.[key]?.element;
+      if (!isBridgeElement(element)) return false;
+      element.axis = normalizeBridgeAxis(bridgeAxis.dataset.inspectorBridgeAxis);
+      state.selectedBridgeAxis = element.axis;
+      return true;
+    });
+    showNotification(elements.toast, `Bridge chuyển sang ${Number(bridgeAxis.dataset.inspectorBridgeAxis) === 1 ? "Vertical" : "Horizontal"}`);
+    return;
+  }
+  const gateDirection = event.target.closest("[data-inspector-gate-direction]");
+  if (gateDirection && editor.data.selectedCell) {
+    mutate((state) => {
+      const key = `${state.selectedCell.x},${state.selectedCell.y}`;
+      const element = state.sharedCells?.[key]?.element;
+      if (!isGateElement(element)) return false;
+      element.direction = normalizeGateDirection(gateDirection.dataset.inspectorGateDirection);
+      state.selectedGateDirection = element.direction;
+      return true;
+    });
+    showNotification(elements.toast, `Đã đổi hướng Gate`);
+    return;
+  }
+  const tunnelDraftDirection = event.target.closest("[data-inspector-tunnel-draft-direction]");
+  if (tunnelDraftDirection) {
+    const result = mutate((state) => setTunnelDraftDirection(state, Number(tunnelDraftDirection.dataset.inspectorTunnelDraftDirection)));
+    if (result?.action === "tunnel-created") showNotification(elements.toast, `Tunnel #${result.tunnelId} created`);
+    else if (result?.action === "tunnel-direction-a-selected") showNotification(elements.toast, "Point A complete — Select Tunnel Point B");
+    else showNotification(elements.toast, "Không thể cập nhật Tunnel Draft.");
+    return;
+  }
+  if (event.target.closest("[data-inspector-tunnel-draft-cancel]")) {
+    mutate(cancelTunnelDraft);
+    showNotification(elements.toast, "Đã hủy Tunnel Draft.");
+    return;
+  }
+  const tunnelFocus = event.target.closest("[data-inspector-tunnel-focus]");
+  if (tunnelFocus) {
+    const tunnel = findTunnelById(editor.data, Number(tunnelFocus.dataset.inspectorTunnelFocus));
+    const entry = tunnel?.entryPoints?.[Number(tunnelFocus.dataset.tunnelEntry)];
+    if (!entry) return;
+    const position = indexToPosition(entry.index, editor.data.grid.columns);
+    editor.data.activeTunnelId = tunnel.tunnelId;
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    return;
+  }
+  const tunnelMove = event.target.closest("[data-inspector-tunnel-move]");
+  if (tunnelMove && editor.data.selectedCell) {
+    const targetIndex = positionToIndex(editor.data.selectedCell.x, editor.data.selectedCell.y, editor.data.grid.columns);
+    const changed = mutate((state) => setTunnelEntryIndex(
+      state,
+      Number(tunnelMove.dataset.inspectorTunnelMove),
+      Number(tunnelMove.dataset.tunnelEntry),
+      targetIndex
+    ));
+    showNotification(elements.toast, changed ? "Đã cập nhật vị trí Tunnel." : "Không thể đặt 2 entryPoint cùng một Index.");
+    return;
+  }
+  const oneWayFocus = event.target.closest("[data-inspector-one-way-focus]");
+  if (oneWayFocus) {
+    const oneWay = findOneWayById(editor.data, Number(oneWayFocus.dataset.inspectorOneWayFocus));
+    const entry = oneWay?.entryPoints?.[Number(oneWayFocus.dataset.oneWayEntry)];
+    if (!entry) return;
+    const position = indexToPosition(entry.index, editor.data.grid.columns);
+    editor.data.activeOneWayId = oneWay.oneWayId;
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    return;
+  }
+  const oneWayMove = event.target.closest("[data-inspector-one-way-move]");
+  if (oneWayMove && editor.data.selectedCell) {
+    const targetIndex = positionToIndex(editor.data.selectedCell.x, editor.data.selectedCell.y, editor.data.grid.columns);
+    const changed = mutate((state) => setOneWayEntryIndex(
+      state,
+      Number(oneWayMove.dataset.inspectorOneWayMove),
+      Number(oneWayMove.dataset.oneWayEntry),
+      targetIndex
+    ));
+    showNotification(elements.toast, changed ? "Đã cập nhật vị trí One Way." : "Không thể đặt 2 entryPoint cùng một Index.");
+    return;
+  }
+  if (event.target.closest("[data-inspector-mystery-toggle]") && editor.data.selectedCell) {
+    mutate((state) => {
+      const layerNumber = selectedLayerNumber(state);
+      const { x, y } = state.selectedCell;
+      const index = positionToIndex(x, y, state.grid.columns);
+      const hidden = !isMysteryFruitAt(state, layerNumber, index);
+      setMysteryFruitAt(state, layerNumber, index, hidden);
+      return hidden;
+    });
+    showNotification(elements.toast, "Đã cập nhật Mystery Fruit");
+    return;
+  }
+  const inspectorDelete = event.target.closest("[data-inspector-delete]");
+  if (inspectorDelete && editor.data.selectedCell) {
+    const mode = inspectorDelete.dataset.inspectorDelete;
+    const label = mode === "mystery-fruit" ? "Mystery Fruit" : mode === "item" ? "Item" : mode === "tray" ? "Tray" : mode === "count-barrier" ? "Count Barrier" : mode === "tunnel" ? "Tunnel" : mode === "one-way" ? "One Way" : mode;
+    if (mode === "tray" && !confirm("Xóa khay chứa tại ô đang chọn?")) return;
+    if (mode === "tunnel") {
+      const tunnel = findTunnelAtIndex(editor.data, positionToIndex(editor.data.selectedCell.x, editor.data.selectedCell.y, editor.data.grid.columns))
+        ?? findTunnelById(editor.data, editor.data.activeTunnelId);
+      if (tunnel) mutate((state) => removeTunnelById(state, tunnel.tunnelId));
+    } else if (mode === "one-way") {
+      const oneWay = findOneWayAtIndex(editor.data, positionToIndex(editor.data.selectedCell.x, editor.data.selectedCell.y, editor.data.grid.columns))
+        ?? findOneWayById(editor.data, editor.data.activeOneWayId);
+      if (oneWay) mutate((state) => removeOneWayById(state, oneWay.oneWayId));
+    } else {
+      showEraseFeedback(mutate((state) => eraseAtPosition(state, state.selectedCell, mode)));
+    }
+    showNotification(elements.toast, `Đã xóa ${label}`);
+    return;
+  }
+  const newBarrier = event.target.closest("[data-inspector-count-barrier-new]");
+  if (newBarrier) {
+    mutate((state) => {
+      createNewActiveCountBarrier(state);
+      state.selectedAssetId = "count-barrier";
+      state.tool = "item";
+    });
+    showNotification(elements.toast, `Đã tạo Barrier mới #${editor.data.activeBarrierId}`);
+    return;
+  }
+  const removeBarrierCell = event.target.closest("[data-inspector-count-barrier-remove-cell]");
+  if (removeBarrierCell && editor.data.selectedCell) {
+    const targetIndex = positionToIndex(editor.data.selectedCell.x, editor.data.selectedCell.y, editor.data.grid.columns);
+    const changed = mutate((state) => removeCountBarrierCell(state, Number(removeBarrierCell.dataset.inspectorCountBarrierRemoveCell), targetIndex));
+    showNotification(elements.toast, changed ? "Đã xóa cell khỏi Barrier." : "Không thể xóa cell khỏi Barrier.");
+    return;
+  }
+  const barrierStart = event.target.closest("[data-inspector-count-barrier-start]");
+  const barrierEnd = event.target.closest("[data-inspector-count-barrier-end]");
+  if ((barrierStart || barrierEnd) && editor.data.selectedCell) {
+    const target = barrierStart ?? barrierEnd;
+    const targetIndex = positionToIndex(editor.data.selectedCell.x, editor.data.selectedCell.y, editor.data.grid.columns);
+    mutate((state) => {
+      const barrier = findCountBarrierById(state, Number(target.dataset.inspectorCountBarrierStart ?? target.dataset.inspectorCountBarrierEnd));
+      if (!barrier?.index.includes(targetIndex)) return false;
+      const current = state.countBarrierElement.find((entry) => entry.barrierId === barrier.barrierId);
+      if (!current) return false;
+      if (barrierStart) current.startIndex = targetIndex;
+      else current.endIndex = targetIndex;
+      return true;
+    });
+    showNotification(elements.toast, barrierStart ? "Đã đặt startIndex cho Barrier." : "Đã đặt endIndex cho Barrier.");
+    return;
+  }
+  const inspectorAdd = event.target.closest("[data-inspector-add]");
+  if (inspectorAdd && !inspectorAdd.disabled) {
+    placeInspectorElement(inspectorAdd.dataset.inspectorAdd);
+    return;
+  }
   if (event.target.closest("[data-tray-add-layer]")) {
     mutate(addTrayLayer);
     showNotification(elements.toast, "Đã thêm layer khay mới · recipe 0/9");
@@ -3608,11 +6856,68 @@ elements.trayPanel.addEventListener("click", (event) => {
   }
   const tray = event.target.closest("[data-tray-x]");
   if (!tray) return;
-  editor.data.tool = "select";
-  selectCell(editor.data, Number(tray.dataset.trayX), Number(tray.dataset.trayY));
+  editor.data.activeTrayCell = { x: Number(tray.dataset.trayX), y: Number(tray.dataset.trayY) };
+  editor.data.selectedCell = null;
   editor.notify();
 });
 elements.trayPanel.addEventListener("change", (event) => {
+  const activeTunnel = event.target.closest("[data-inspector-active-tunnel]");
+  if (activeTunnel) {
+    const tunnel = findTunnelById(editor.data, Number(activeTunnel.value));
+    if (!tunnel) return;
+    mutate((state) => { state.activeTunnelId = tunnel.tunnelId; });
+    const entry = tunnel.entryPoints[0];
+    const position = indexToPosition(entry.index, editor.data.grid.columns);
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    showNotification(elements.toast, `Đã chọn Tunnel #${tunnel.tunnelId}.`);
+    return;
+  }
+  const activeOneWay = event.target.closest("[data-inspector-active-one-way]");
+  if (activeOneWay) {
+    const oneWay = findOneWayById(editor.data, Number(activeOneWay.value));
+    if (!oneWay) return;
+    mutate((state) => { state.activeOneWayId = oneWay.oneWayId; });
+    const entry = oneWay.entryPoints[0];
+    const position = indexToPosition(entry.index, editor.data.grid.columns);
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    showNotification(elements.toast, `Đã chọn One Way #${oneWay.oneWayId}.`);
+    return;
+  }
+  const tunnelDirection = event.target.closest("[data-inspector-tunnel-direction]");
+  if (tunnelDirection) {
+    const changed = mutate((state) => setTunnelEntryDirection(
+      state,
+      Number(tunnelDirection.dataset.inspectorTunnelDirection),
+      Number(tunnelDirection.dataset.tunnelEntry),
+      Number(tunnelDirection.value)
+    ));
+    if (changed) showNotification(elements.toast, "Đã cập nhật direction Tunnel.");
+    return;
+  }
+  const oneWayDirection = event.target.closest("[data-inspector-one-way-direction]");
+  if (oneWayDirection) {
+    const changed = mutate((state) => setOneWayDirection(
+      state,
+      Number(oneWayDirection.dataset.inspectorOneWayDirection),
+      Number(oneWayDirection.value)
+    ));
+    if (changed) showNotification(elements.toast, "Đã cập nhật direction One Way.");
+    return;
+  }
+  const barrierCount = event.target.closest("[data-inspector-count-barrier-count]");
+  if (barrierCount) {
+    mutate((state) => {
+      const barrier = state.countBarrierElement.find((entry) => entry.barrierId === Number(barrierCount.dataset.inspectorCountBarrierCount));
+      if (!barrier) return false;
+      barrier.count = normalizeCountBarrierCount(barrierCount.value);
+      state.selectedCountBarrierCount = barrier.count;
+      return true;
+    });
+    showNotification(elements.toast, "Đã cập nhật count của Barrier.");
+    return;
+  }
   const directionPicker = event.target.closest("[data-tray-position-direction]");
   if (directionPicker) {
     const result = mutate((state) => setTrayVisualDirection(state, directionPicker.value));
@@ -3665,6 +6970,9 @@ function addLayer() {
 byId("addLayerBtn").addEventListener("click", addLayer);
 elements.undoBtn.addEventListener("click", () => { editor.undo(); fileDirty = true; editor.data.fileDirty = true; renderAll(); });
 elements.redoBtn.addEventListener("click", () => { editor.redo(); fileDirty = true; editor.data.fileDirty = true; renderAll(); });
+elements.zoomOutBtn.addEventListener("click", () => editorCamera.zoomOut());
+elements.zoomInBtn.addEventListener("click", () => editorCamera.zoomIn());
+elements.zoomResetBtn.addEventListener("click", () => editorCamera.reset());
 byId("backToLevelBtn").addEventListener("click", () => { switchTab("level"); renderAll(); });
 elements.inspectorBody.addEventListener("click", (event) => {
   const capacity = event.target.closest("[data-capacity-step]");
@@ -3672,15 +6980,48 @@ elements.inspectorBody.addEventListener("click", (event) => {
   else if (event.target.closest("#togglePathBtn")) mutate((state) => togglePathAt(state, state.selectedCell));
   else if (event.target.closest("#deleteCellBtn")) showEraseFeedback(mutate((state) => eraseAtPosition(state, state.selectedCell, "smart")));
 });
+elements.inspectorBody.addEventListener("change", (event) => {
+  const bridgeAxis = event.target.closest("[data-bridge-axis]");
+  if (!bridgeAxis || !editor.data.selectedCell) return;
+  mutate((state) => {
+    const key = `${state.selectedCell.x},${state.selectedCell.y}`;
+    const element = state.sharedCells?.[key]?.element;
+    if (bridgeAxis && isBridgeElement(element)) {
+      element.axis = normalizeBridgeAxis(bridgeAxis.value);
+      state.selectedBridgeAxis = element.axis;
+    }
+  });
+});
 function canReplaceCurrentLevel() {
   return !fileDirty || confirm("Level hiện tại có thay đổi chưa lưu hoặc chưa tải xuống. Thay toàn bộ level hiện tại?");
 }
 
-function downloadCurrentLevel() {
+async function downloadCurrentLevel() {
   const report = validateLevel(editor.data);
   if (!report.exportable) return showNotification(elements.toast, "Chưa thể Export: hãy sửa toàn bộ lỗi level trước.");
   editor.data.fileName = normalizeFileName(elements.jsonFileNameInput.value || editor.data.fileName);
-  downloadJson(serializeLevel(editor.data), editor.data.fileName);
+  const documentData = serializeLevel(editor.data);
+  if (fileManager.connected && folderFileState.permission === "granted") {
+    try {
+      await fileManager.write(editor.data.fileName, documentData);
+      editor.data.sourceFileName = editor.data.fileName;
+      fileDirty = false;
+      editor.data.fileDirty = false;
+      rememberSelectedDataFileName(editor.data.fileName);
+      await scanFolder();
+      renderAll();
+      showNotification(elements.toast, `Đã lưu ${editor.data.fileName} vào ${folderFileState.directoryName}.`);
+      return;
+    } catch (error) {
+      showNotification(elements.toast, `Không thể lưu vào folder: ${error.message}`);
+      return;
+    }
+  }
+  if (fileManager.connected && folderFileState.permission !== "granted") {
+    showNotification(elements.toast, "Cần Reconnect folder trước khi lưu vào folder đang mở.");
+    return;
+  }
+  downloadJson(documentData, editor.data.fileName);
   editor.data.sourceFileName = null;
   fileDirty = false;
   editor.data.fileDirty = false;
@@ -3698,6 +7039,16 @@ function openImportedData(raw, fileName) {
   const report = validateLevel(data);
   renderAll();
   showNotification(elements.toast, report.exportable ? `Đã mở ${fileName}` : `Đã mở ${fileName} · có ${report.warnings.length} lỗi cần sửa`);
+}
+
+function openFolderDataEntry(entry) {
+  if (!entry || entry.status !== "valid") {
+    showNotification(elements.toast, `Không thể mở file: ${entry?.errorMessage ?? "File JSON không hợp lệ."}`);
+    return false;
+  }
+  openImportedData(entry.data, entry.name);
+  rememberSelectedDataFileName(entry.name);
+  return true;
 }
 
 byId("exportBtn").addEventListener("click", downloadCurrentLevel);
@@ -3729,17 +7080,96 @@ elements.newLevelBtn.addEventListener("click", () => {
   renderAll();
 });
 
-async function refreshFolder() {
-  folderFiles = await fileManager.listFiles();
-  elements.folderStatus.textContent = `${fileManager.directory.name} · ${folderFiles.length} file JSON`;
+function applyFolderHandle(handle) {
+  folderFileState.directoryHandle = handle ?? null;
+  folderFileState.directoryName = handle?.name ?? "";
+  fileManager.setDirectory(handle);
+}
+
+async function restoreSelectedFolderFile({ askBeforeReplace = false } = {}) {
+  const selectedName = folderFileState.selectedFileName ?? readSelectedDataFileName();
+  if (!selectedName) return false;
+  const entry = folderFiles.find((file) => file.name === selectedName);
+  if (!entry) {
+    rememberSelectedDataFileName(null);
+    return false;
+  }
+  if (entry.status !== "valid") return false;
+  if (fileDirty) {
+    if (!askBeforeReplace) return false;
+    if (!canReplaceCurrentLevel()) return false;
+  }
+  return openFolderDataEntry(entry);
+}
+
+async function scanFolder({ restoreSelected = false, askBeforeReplace = false } = {}) {
+  if (!fileManager.connected) return;
+  const scanId = folderFileState.scanId + 1;
+  folderFileState.scanId = scanId;
+  folderFileState.loading = true;
+  folderFileState.error = null;
   renderAll();
+  try {
+    const files = await fileManager.listFiles({ isCurrent: () => folderFileState.scanId === scanId });
+    if (files === null || folderFileState.scanId !== scanId) return;
+    folderFiles = files;
+    folderFileState.files = files;
+    folderFileState.permission = "granted";
+    folderFileState.loading = false;
+    folderFileState.error = null;
+    renderAll();
+    if (restoreSelected) await restoreSelectedFolderFile({ askBeforeReplace });
+  } catch (error) {
+    if (folderFileState.scanId !== scanId) return;
+    folderFiles = [];
+    folderFileState.files = [];
+    folderFileState.loading = false;
+    if (error.name === "NotAllowedError") {
+      folderFileState.permission = "denied";
+      folderFileState.error = `${folderFileState.directoryName} · Cần cấp lại quyền để mở folder.`;
+    } else if (error.name === "NotFoundError") {
+      folderFileState.permission = "denied";
+      folderFileState.error = "Không thể truy cập folder đã lưu. Folder có thể đã bị di chuyển, đổi tên hoặc xóa.";
+      fileManager.forgetDirectory().catch((storageError) => console.warn("Không thể xóa folder handle đã lưu", storageError));
+      applyFolderHandle(null);
+    } else {
+      folderFileState.error = `Không thể truy cập folder: ${error.message}`;
+    }
+    renderAll();
+  }
 }
 
 elements.chooseFolderBtn.addEventListener("click", async () => {
-  try { await fileManager.chooseDirectory(); await refreshFolder(); }
+  try {
+    const handle = await fileManager.chooseDirectory();
+    applyFolderHandle(handle);
+    folderFiles = [];
+    folderFileState.files = [];
+    folderFileState.permission = "granted";
+    folderFileState.error = null;
+    await scanFolder({ restoreSelected: true, askBeforeReplace: true });
+  }
   catch (error) { if (error.name !== "AbortError") showNotification(elements.toast, error.message); }
 });
-elements.refreshFolderBtn.addEventListener("click", () => refreshFolder().catch((error) => showNotification(elements.toast, error.message)));
+elements.reconnectFolderBtn.addEventListener("click", async () => {
+  try {
+    folderFileState.loading = true;
+    folderFileState.error = null;
+    renderAll();
+    folderFileState.permission = await fileManager.requestPermission();
+    folderFileState.loading = false;
+    if (folderFileState.permission === "granted") await scanFolder({ restoreSelected: true, askBeforeReplace: true });
+    else {
+      folderFileState.error = `${folderFileState.directoryName} · Người dùng chưa cấp quyền truy cập folder.`;
+      renderAll();
+    }
+  } catch (error) {
+    folderFileState.loading = false;
+    folderFileState.error = `Không thể reconnect folder: ${error.message}`;
+    renderAll();
+  }
+});
+elements.refreshFolderBtn.addEventListener("click", () => scanFolder({ restoreSelected: true, askBeforeReplace: false }));
 
 elements.jsonFileList.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-file-action]");
@@ -3748,8 +7178,13 @@ elements.jsonFileList.addEventListener("click", async (event) => {
   const name = row.dataset.fileName;
   try {
     if (button.dataset.fileAction === "open") {
+      const entry = folderFiles.find((file) => file.name === name);
+      if (entry?.status !== "valid") {
+        showNotification(elements.toast, `Không thể mở ${name}: ${entry?.errorMessage ?? "File JSON không hợp lệ."}`);
+        return;
+      }
       if (!canReplaceCurrentLevel()) return;
-      openImportedData(await fileManager.read(name), name);
+      openFolderDataEntry(entry ?? { name, data: await fileManager.read(name), status: "valid" });
     } else if (button.dataset.fileAction === "save") {
       if (!confirm(`Lưu đè toàn bộ nội dung hiện tại vào ${name}?`)) return;
       const report = validateLevel(editor.data);
@@ -3757,7 +7192,8 @@ elements.jsonFileList.addEventListener("click", async (event) => {
       await fileManager.write(name, serializeLevel(editor.data));
       editor.data.fileName = name; editor.data.sourceFileName = name; fileDirty = false;
       editor.data.fileDirty = false;
-      await refreshFolder(); showNotification(elements.toast, `Đã lưu đè ${name}`);
+      rememberSelectedDataFileName(name);
+      await scanFolder(); showNotification(elements.toast, `Đã lưu đè ${name}`);
     } else if (button.dataset.fileAction === "rename") {
       const proposed = prompt("Tên file mới:", name);
       if (!proposed) return;
@@ -3766,19 +7202,43 @@ elements.jsonFileList.addEventListener("click", async (event) => {
       if (folderFiles.some((file) => file.name === nextName)) return showNotification(elements.toast, `${nextName} đã tồn tại.`);
       await fileManager.rename(name, nextName);
       if (editor.data.sourceFileName === name) { editor.data.sourceFileName = nextName; editor.data.fileName = nextName; }
-      await refreshFolder(); showNotification(elements.toast, `Đã đổi tên thành ${nextName}`);
+      if (folderFileState.selectedFileName === name) rememberSelectedDataFileName(nextName);
+      await scanFolder(); showNotification(elements.toast, `Đã đổi tên thành ${nextName}`);
     } else if (button.dataset.fileAction === "delete") {
       if (!confirm(`Xóa vĩnh viễn file ${name} khỏi ổ đĩa?`)) return;
       await fileManager.remove(name);
       if (editor.data.sourceFileName === name) { editor.data.sourceFileName = null; fileDirty = true; editor.data.fileDirty = true; }
-      await refreshFolder(); showNotification(elements.toast, `Đã xóa ${name}`);
+      if (folderFileState.selectedFileName === name) rememberSelectedDataFileName(null);
+      await scanFolder(); showNotification(elements.toast, `Đã xóa ${name}`);
     }
   } catch (error) { showNotification(elements.toast, `Không thể thao tác file: ${error.message}`); }
 });
 
+async function restoreSavedFolder() {
+  if (!fileManager.supported) {
+    folderFileState.permission = "unsupported";
+    renderAll();
+    return;
+  }
+  try {
+    const handle = await fileManager.restoreDirectory();
+    if (!handle) return;
+    applyFolderHandle(handle);
+    folderFileState.permission = await fileManager.queryPermission();
+    renderAll();
+    if (folderFileState.permission === "granted") await scanFolder({ restoreSelected: true, askBeforeReplace: false });
+  } catch (error) {
+    folderFileState.permission = fileManager.connected ? "denied" : "unknown";
+    folderFileState.error = `Không thể đọc folder đã lưu: ${error.message}`;
+    renderAll();
+  }
+}
+
 editor.events.on("change", renderAll);
 new ResizeObserver(fitBoardToCanvas).observe(elements.canvasArea);
 renderAll();
+updateZoomUi();
 switchTab(["playable", "json"].includes(editor.data.tab) ? editor.data.tab : "level");
+restoreSavedFolder();
 
 })();

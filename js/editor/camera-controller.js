@@ -1,14 +1,22 @@
 export class CameraController {
-  constructor(element) {
-    this.element = element;
+  constructor({ min = 0.5, max = 2, step = 0.1, onChange = () => {} } = {}) {
+    this.min = min;
+    this.max = max;
+    this.step = step;
+    this.onChange = onChange;
     this.zoom = 1;
   }
 
   setZoom(value) {
-    this.zoom = Math.min(2, Math.max(0.5, value));
-    this.element.style.transform = `scale(${this.zoom})`;
-    this.element.style.transformOrigin = "center";
+    const clamped = Math.min(this.max, Math.max(this.min, Number(value) || 1));
+    this.zoom = Math.round(clamped * 100) / 100;
+    this.onChange(this.zoom);
+    return this.zoom;
   }
+
+  zoomIn() { return this.setZoom(this.zoom + this.step); }
+
+  zoomOut() { return this.setZoom(this.zoom - this.step); }
 
   reset() { this.setZoom(1); }
 }

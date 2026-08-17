@@ -1,4 +1,7 @@
 import { ensureTerrainState, getTrayVisualPosition, isInsideGrid, parseCellKey, trimCells } from "../utils/grid-utils.js";
+import { remapCountBarrierIndexes } from "../objects/count-barrier-object.js";
+import { normalizeTunnelDraft, normalizeTunnelElement, remapTunnelIndexes } from "../objects/tunnel-object.js";
+import { normalizeOneWayDraft, normalizeOneWayElement, remapOneWayIndexes } from "../objects/one-way-object.js";
 
 export function isMapSizeWithinBounds(grid) {
   return Number.isInteger(grid?.columns) && grid.columns >= 1 && Number.isInteger(grid?.rows) && grid.rows >= 1;
@@ -14,7 +17,15 @@ export function hasDataOutsideGrid(state, nextGrid) {
     if (!["tray", "truck"].includes(cell.item?.kind)) return false;
     const visual = getTrayVisualPosition(cell.item, parseCellKey(key));
     return !isInsideGrid(nextGrid, visual.x, visual.y);
-  });
+  }) || [...normalizeTunnelElement(state.tunnelElement), ...(normalizeTunnelDraft(state.tunnelDraft) ? [normalizeTunnelDraft(state.tunnelDraft)] : [])].some((tunnel) => tunnel.entryPoints.some((point) => {
+    const x = point.index % state.grid.columns;
+    const y = Math.floor(point.index / state.grid.columns);
+    return !isInsideGrid(nextGrid, x, y);
+  })) || [...normalizeOneWayElement(state.oneWayElement), ...(normalizeOneWayDraft(state.oneWayDraft) ? [normalizeOneWayDraft(state.oneWayDraft)] : [])].some((oneWay) => oneWay.entryPoints.some((point) => {
+    const x = point.index % state.grid.columns;
+    const y = Math.floor(point.index / state.grid.columns);
+    return !isInsideGrid(nextGrid, x, y);
+  }));
 }
 
 export function changeMapDimension(state, dimension, nextValue) {
@@ -27,6 +38,23 @@ export function changeMapDimension(state, dimension, nextValue) {
   ensureTerrainState(state);
   const previousGrid = { ...state.grid };
   state.grid = nextGrid;
+  state.countBarrierElement = remapCountBarrierIndexes(state.countBarrierElement, previousGrid.columns, nextGrid.columns);
+  state.tunnelElement = remapTunnelIndexes(state.tunnelElement, previousGrid.columns, nextGrid.columns);
+  if (state.tunnelDraft) {
+    state.tunnelDraft.entryPoints = state.tunnelDraft.entryPoints.map((point) => {
+      const x = point.index % previousGrid.columns;
+      const y = Math.floor(point.index / previousGrid.columns);
+      return { ...point, index: (y * nextGrid.columns) + x };
+    });
+  }
+  state.oneWayElement = remapOneWayIndexes(state.oneWayElement, previousGrid.columns, nextGrid.columns);
+  if (state.oneWayDraft) {
+    state.oneWayDraft.entryPoints = state.oneWayDraft.entryPoints.map((point) => {
+      const x = point.index % previousGrid.columns;
+      const y = Math.floor(point.index / previousGrid.columns);
+      return { ...point, index: (y * nextGrid.columns) + x };
+    });
+  }
   if (value > previousGrid[dimension]) {
     for (let y = 0; y < nextGrid.rows; y += 1) {
       for (let x = 0; x < nextGrid.columns; x += 1) {

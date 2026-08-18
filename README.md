@@ -1,34 +1,60 @@
 # Snacky Level Editor
 
-Phiên bản module hóa của `snacky-level-editor.html`. `index.html` sử dụng bundle đã được tạo sẵn nên có thể mở trực tiếp bằng trình duyệt hoặc chạy qua static HTTP server.
+Web tool editor dùng để tạo và chỉnh level Railway Dash theo `RailwayDash Level Format v1`. Tool chạy bằng HTML/CSS/JavaScript thuần, state được module hóa trong `js/`, còn `index.html` dùng `js/app.bundle.js` đã build sẵn.
+
+## Chạy editor
+
+Mở trực tiếp `index.html` bằng trình duyệt, hoặc chạy static server:
 
 ```powershell
-cd snacky-level-editor
+cd "D:\RailWay Dash\snacky-level-editor"
 npm run serve
 ```
 
-Sau khi thay đổi source trong `js/`, tạo lại bundle dùng bởi `index.html`:
+Sau khi sửa source trong `js/`, build lại bundle:
 
 ```powershell
 npm run build
 ```
 
-Chạy kiểm thử logic thuần:
+## Cách sử dụng nhanh
 
-```powershell
-npm test
-```
+- Chọn tab `Level` để vẽ map, đặt item, đặt element và chỉnh layer fruit.
+- Chọn tool trong toolbar: vẽ Path, chỉnh Terrain, đặt Item/Element, Select hoặc Erase.
+- Click/drag trên grid để đặt nội dung. Một số element mở popup chọn hướng ngay tại cell sau khi đặt.
+- Dùng panel bên phải để chỉnh thông tin ô đang chọn, khay chứa, layer fruit và thông số level.
+- Chọn tab `DataJson` để import/export JSON hoặc kết nối thư mục level nếu trình duyệt hỗ trợ File System Access.
+- Tất cả index trong JSON dùng zero-based row-major: `index = y * width + x`.
 
-## Phân lớp
+## Cách editor lưu dữ liệu
 
-- `core`: state, event bus, history và hằng số dùng chung.
-- `editor`: render grid, input và các thao tác chỉnh sửa.
-- `objects`: registry cùng factory của từng loại object.
-- `data`: schema, migration, serializer và validation.
-- `gameplay`: runtime mô phỏng độc lập với DOM.
-- `ui`: các view/controller nhỏ của giao diện.
-- `utils`: helper không giữ state.
+- `Path.index`: ô đường tàu có thể đi.
+- `Grass.index`: ô nền grass, không được trùng Path.
+- `PriorityPoint.index`: điểm ưu tiên, bắt buộc nằm trên Path.
+- `itemLayers`: fruit theo từng layer.
+- `trays`: khay chứa, gồm điểm giao hàng và vị trí hiển thị khay.
+- `bridgeElement`, `gateElement`, `countBarrierElement`, `tunnelElement`, `oneWayElement`, `mysteryFruitElement`: element gameplay ở root JSON.
 
-`levels/sample-level.json` là dữ liệu mẫu theo RailwayDash Level Format v1. Import/Export chỉ nhận format mới với ba field bắt buộc `Path.index`, `Grass.index` và `PriorityPoint.index`; format `road/turnpoint` cũ không còn được migration. Tất cả index, spawn, fruit, `trays[].deliverPoint.index` và `trays[].trayPosition.index` đều dùng zero-based row-major (`index = y × width + x`). Path và Grass không được trùng nhau; PriorityPoint bắt buộc thuộc Path. `deliverPoint` là checkpoint nằm trên Path; `trayPosition` là ô visual liền kề và có thể đặt ở trên, dưới, trái hoặc phải. Không chỉnh sửa `js/app.bundle.js` trực tiếp vì đây là file được sinh tự động từ các module.
+## Item và element
 
-Tab DataJson có thể quản lý trực tiếp các file JSON trong thư mục do người dùng cấp quyền trên trình duyệt hỗ trợ File System Access. File mới luôn được tải xuống; khi API thư mục không khả dụng, Import và Download vẫn hoạt động bình thường.
+- `Snake Start`: đầu rắn, chỉ có một trên map.
+- `Fruit`: apple, banana, grape, eggplant; được đặt theo layer fruit.
+- `Tray`: khay nhận fruit, setup trong panel khay.
+- `Bridge`: cầu cho hai tuyến cắt cùng cell nhưng không tạo giao lộ. `axis = 0` là ngang, `axis = 1` là dọc.
+- `Gate`: cổng một chiều theo hướng chọn sau khi đặt. `direction`: `0 Up`, `1 Down`, `2 Right`, `3 Left`.
+- `Count Barrier`: vùng Path có `count`; chỉ mở/được xử lý khi đạt số lượng yêu cầu.
+- `Tunnel`: nối hai điểm Path. Quy trình đặt: chọn Point A, chọn hướng A, chọn Point B, chọn hướng B.
+- `One Way`: nối hai điểm Path với hướng di chuyển bắt buộc. Quy trình đặt giống Tunnel.
+- `Mystery Fruit`: element ẩn/đánh dấu fruit thật trong layer, có chế độ debug để xem trực tiếp.
+
+## Module chính
+
+- `core`: state, constants, event bus, history.
+- `editor`: grid renderer, input, camera, placement/erase.
+- `objects`: định nghĩa item/element và helper normalize.
+- `data`: schema, serializer, validator, import/export file.
+- `gameplay`: playable preview, simulation, collision, win condition.
+- `ui`: toolbar, palette, inspector, tray editor, data summary.
+- `utils`: helper grid, id, file, math.
+
+Không sửa trực tiếp `js/app.bundle.js` nếu thay đổi logic. Sửa module trong `js/`, sau đó chạy `npm run build`.

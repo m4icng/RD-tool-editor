@@ -223,9 +223,13 @@
 .playable-help span,.playable-help small { display: block; }
 .playable-help small { padding-top: 7px; border-top: 1px solid #dcebe2; color: var(--muted); }
 .playable-help.compact { gap: 6px; }
+.booster-btn { display: flex; width: 100%; min-height: 38px; align-items: center; justify-content: center; gap: 7px; border: 1px solid #d8b765; border-radius: 9px; background: #fff8e3; color: #73510e; cursor: pointer; font-size: 12px; font-weight: 850; }
+.booster-btn:hover:not(:disabled),.booster-btn.active { border-color: #c78a16; background: #ffe8a6; color: #5c3b04; box-shadow: 0 0 0 2px rgba(199,138,22,.14); }
+.booster-btn:disabled { cursor: not-allowed; opacity: .48; }
 .play-status-badge { padding: 6px 9px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 10px; font-weight: 850; letter-spacing: .03em; text-transform: uppercase; }
 .play-status-badge.moving { background: var(--green-soft); color: #24774e; }
 .play-status-badge.waiting { background: var(--amber-soft); color: #8b6415; }
+.play-status-badge.shovel-targeting,.play-status-badge.shovel-teleporting,.play-status-badge.shovel-await-direction,.play-status-badge.shovel-restore-tail { background: #fff0bc; color: #855c0b; }
 .play-status-badge.paused { background: #eef1f5; color: #667286; }
 .play-status-badge.won { background: #dff8e9; color: #167143; }
 .play-status-badge.lost,.play-status-badge.blocked { background: var(--danger-soft); color: var(--danger); }

@@ -45,6 +45,9 @@
 .playable-board-wrap { width: min(100%,790px); }
 .playable-cell { cursor: default; }
 .playable-cell:hover { box-shadow: none; }
+.playable-cell.shovel-target { cursor: pointer; box-shadow: inset 0 0 0 clamp(2px,7cqw,4px) rgba(255,230,96,.9),0 0 clamp(4px,12cqw,10px) rgba(255,202,40,.58); animation: shovel-target-pulse 820ms ease-in-out infinite alternate; }
+.playable-cell.shovel-target:hover { z-index: 5; box-shadow: inset 0 0 0 clamp(2px,8cqw,5px) rgba(255,255,255,.96),0 0 clamp(6px,16cqw,14px) rgba(255,184,28,.78); }
+.playable-cell.shovel-target-disabled { opacity: .6; }
 .playable-token { position: absolute; left: 50%; top: 50%; z-index: 4; display: grid; width: var(--visual-spawn,70%); height: var(--visual-spawn,70%); place-items: center; border: clamp(1px,4cqw,2px) solid #fff; border-radius: 34%; background: #e0f8e9; box-shadow: 0 3px 9px rgba(25,56,39,.28); font-size: clamp(8px,42cqw,28px); line-height: 1; transform: translate(-50%,-50%) rotate(var(--token-rotation,0deg)); }
 .playable-token.dir-up { --token-rotation: -90deg; }
 .playable-token.dir-down { --token-rotation: 90deg; }
@@ -70,6 +73,7 @@
 .playable-end-card p { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .playable-end-card > div { display: flex; justify-content: center; gap: 8px; }
 @keyframes playable-head-pulse { from { transform: translate(-50%,-50%) rotate(var(--token-rotation,0deg)) scale(.95); } to { transform: translate(-50%,-50%) rotate(var(--token-rotation,0deg)) scale(1.03); } }
+@keyframes shovel-target-pulse { from { filter: brightness(1); } to { filter: brightness(1.16); } }
 @keyframes delivery-checkpoint-pulse { from { transform: scale(.82); } to { transform: scale(1.15); } }
 @keyframes tray-needs-pulse { from { transform: translateY(-50%) scale(.97); } to { transform: translateY(-50%) scale(1.04); } }
 @keyframes delivery-fruit-up { 0% { opacity: 1; transform: translate(-50%,-50%) scale(.9); } 100% { opacity: 0; transform: translate(-50%,-195%) scale(.55); } }

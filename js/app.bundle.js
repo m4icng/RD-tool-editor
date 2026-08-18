@@ -4781,7 +4781,104 @@ function stepSimulation(simulation, direction = simulation.snake.direction) {
 }
 
 
+// ---- js/gameplay/shovel-booster.js ----
+
+const DEFAULT_SHOVEL_COUNT = Infinity;
+const SHOVEL_COUNT_LABEL = "∞";
+
+const SHOVEL_STATUS = Object.freeze({
+  TARGETING: "shovel-targeting",
+  TELEPORTING: "shovel-teleporting",
+  AWAIT_DIRECTION: "shovel-await-direction",
+  RESTORE_TAIL: "shovel-restore-tail"
+});
+
+function createShovelBoosterRuntime(count = DEFAULT_SHOVEL_COUNT) {
+  return {
+    count,
+    targetKeys: [],
+    restoreActive: false
+  };
+}
+
+function validShovelTargetKeys(session) {
+  if (!session?.priorityPoints || !session?.snake?.body?.[0]) return [];
+  const head = session.snake.body[0];
+  const headKey = cellKey(head.x, head.y);
+  const deliverKeys = new Set((session.trays ?? []).map((tray) => tray.checkpointKey));
+  return Object.keys(session.priorityPoints).filter((key) => key !== headKey && !deliverKeys.has(key));
+}
+
+function canUseShovelBooster(session) {
+  return Boolean(session?.shovel && !session.shovel.restoreActive && validShovelTargetKeys(session).length > 0);
+}
+
+function beginShovelTargeting(session) {
+  if (!canUseShovelBooster(session)) return false;
+  session.shovel.targetKeys = validShovelTargetKeys(session);
+  session.status = SHOVEL_STATUS.TARGETING;
+  return true;
+}
+
+function cancelShovelTargeting(session, fallbackStatus) {
+  if (!session?.shovel) return false;
+  session.shovel.targetKeys = [];
+  session.status = fallbackStatus;
+  return true;
+}
+
+function shovelTargetKeyFromIndex(session, index) {
+  if (!Number.isInteger(index) || !session?.grid?.columns) return null;
+  const key = cellKey(index % session.grid.columns, Math.floor(index / session.grid.columns));
+  return session.shovel?.targetKeys?.includes(key) ? key : null;
+}
+
+function teleportWithShovel(session, targetKey) {
+  if (!session?.shovel?.targetKeys?.includes(targetKey)) return false;
+  const [x, y] = targetKey.split(",").map(Number);
+  const previousBody = session.snake.body.map((segment) => ({ ...segment }));
+  session.shovel.targetKeys = [];
+  session.shovel.restoreActive = previousBody.length > 1;
+  session.tailDisabled = previousBody.length > 1;
+  session.snake.direction = null;
+  session.snake.body = [
+    { ...previousBody[0], x, y, direction: null, hiddenInTunnel: false, hiddenInShovel: false },
+    ...previousBody.slice(1).map((segment) => ({
+      ...segment,
+      hiddenInTunnel: false,
+      hiddenInShovel: true
+    }))
+  ];
+  session.status = SHOVEL_STATUS.AWAIT_DIRECTION;
+  return true;
+}
+
+function beginShovelTailRestore(session) {
+  if (!session?.shovel?.restoreActive) return false;
+  session.tailDisabled = false;
+  session.status = SHOVEL_STATUS.RESTORE_TAIL;
+  return true;
+}
+
+function revealNextShovelTailSegment(session) {
+  if (!session?.shovel?.restoreActive) return false;
+  const segment = session.snake.body.find((part, index) => index > 0 && part.hiddenInShovel);
+  if (segment) segment.hiddenInShovel = false;
+  const stillHidden = session.snake.body.some((part, index) => index > 0 && part.hiddenInShovel);
+  if (!stillHidden) {
+    session.shovel.restoreActive = false;
+    session.tailDisabled = false;
+  }
+  return Boolean(segment);
+}
+
+function isShovelRestoring(session) {
+  return Boolean(session?.shovel?.restoreActive);
+}
+
+
 // ---- js/gameplay/playable-controller.js ----
+
 
 
 
@@ -4799,7 +4896,11 @@ const PLAY_STATUS = Object.freeze({
   WON: "won",
   LOST: "lost",
   BLOCKED: "blocked",
-  TELEPORTING: "teleporting"
+  TELEPORTING: "teleporting",
+  SHOVEL_TARGETING: SHOVEL_STATUS.TARGETING,
+  SHOVEL_TELEPORTING: SHOVEL_STATUS.TELEPORTING,
+  SHOVEL_AWAIT_DIRECTION: SHOVEL_STATUS.AWAIT_DIRECTION,
+  SHOVEL_RESTORE_TAIL: SHOVEL_STATUS.RESTORE_TAIL
 });
 
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
@@ -4814,7 +4915,11 @@ const STATUS_COPY = Object.freeze({
   won: ["Hoàn thành", "Tất cả layer của mọi khay đã được giao đủ."],
   lost: ["Thua", "Rắn đã va chạm hoặc không còn hướng hợp lệ."],
   blocked: ["Chưa thể chơi", "Hãy sửa các lỗi level được liệt kê bên dưới."],
-  teleporting: ["Đang qua Tunnel", "Train đang được đặt lại theo cổng ra."]
+  teleporting: ["Đang qua Tunnel", "Train đang được đặt lại theo cổng ra."],
+  [SHOVEL_STATUS.TARGETING]: ["Chọn điểm Xẻng", "Chọn một PriorityPoint đang sáng để dịch chuyển Head."],
+  [SHOVEL_STATUS.TELEPORTING]: ["Đang dùng Xẻng", "Tail đang tạm ẩn và Head được đưa tới điểm đích."],
+  [SHOVEL_STATUS.AWAIT_DIRECTION]: ["Chờ hướng sau Xẻng", "Head đã tới PriorityPoint mới. Chọn hướng tiếp tục."],
+  [SHOVEL_STATUS.RESTORE_TAIL]: ["Đang hồi Tail", "Tail xuất hiện dần theo đường Head vừa đi."]
 });
 
 function gateAllowsMovement(element, direction) {
@@ -4872,7 +4977,17 @@ function nextTailPosition(session, body, direction) {
 }
 
 function tailLogicDisabled(session) {
-  return Boolean(session?.teleporting || session?.tailDisabled);
+  return Boolean(
+    session?.teleporting
+    || session?.tailDisabled
+    || session?.status === SHOVEL_STATUS.TARGETING
+    || session?.status === SHOVEL_STATUS.TELEPORTING
+    || session?.status === SHOVEL_STATUS.AWAIT_DIRECTION
+  );
+}
+
+function visibleTailLength(session) {
+  return (session?.snake?.body ?? []).filter((part, index) => index > 0 && !part.hiddenInTunnel && !part.hiddenInShovel).length;
 }
 
 function tunnelExitPathDirections(session, exitPosition, incomingDirection) {
@@ -5132,7 +5247,8 @@ function createPlayableSession(level, { mode = "continuous", speed = 9 } = {}) {
     delivery: null,
     deliveryEffect: null,
     teleporting: false,
-    tailDisabled: false
+    tailDisabled: false,
+    shovel: createShovelBoosterRuntime()
   };
   advanceFruitLayerIfCleared(session);
   return session;
@@ -5181,7 +5297,7 @@ function cellIsTraversable(session, position, direction = null, { ignoreSelfColl
   if (session.trays.some((tray) => tray.visualKey === cellKey(position.x, position.y))) return false;
   if (cell.item?.kind === "obstacle" || cell.element?.kind === "obstacle") return false;
   if (ignoreSelfCollision || tailLogicDisabled(session)) return true;
-  const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && part.x === position.x && part.y === position.y);
+  const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && !part.hiddenInShovel && part.x === position.x && part.y === position.y);
   if (!hitsSelf) return true;
   return bridgeAllowsDifferentAxisOverlap(session.layer, session.snake, position, direction);
 }
@@ -5201,7 +5317,7 @@ function availableDirections(session) {
     const nextPosition = { x: head.x + vector.x, y: head.y + vector.y };
     const nextIndex = positionToIndex(nextPosition.x, nextPosition.y, session.grid.columns);
     const nextTunnelEntry = tunnelEntryAtIndex(session.tunnels, nextIndex);
-    if (!nextTunnelEntry && !tailLogicDisabled(session) && session.snake.body.length > 1 && direction === reverse) return false;
+    if (!nextTunnelEntry && !tailLogicDisabled(session) && visibleTailLength(session) > 0 && direction === reverse) return false;
     const nextCell = session.layer.cells[cellKey(nextPosition.x, nextPosition.y)];
     if (!gateAllowsMovement(headCell?.element, direction) || !gateAllowsMovement(nextCell?.element, direction)) return false;
     if (!oneWayAllowsMovement(session, nextIndex, direction)) return false;
@@ -5404,7 +5520,8 @@ function movePlayableSession(session, direction) {
       x: previousBody[index].x,
       y: previousBody[index].y,
       direction,
-      hiddenInTunnel: Boolean(previousBody[index].hiddenInTunnel)
+      hiddenInTunnel: Boolean(previousBody[index].hiddenInTunnel),
+      hiddenInShovel: Boolean(segment.hiddenInShovel)
     }))
   ];
   if (tunnelEntry) {
@@ -5427,13 +5544,15 @@ function movePlayableSession(session, direction) {
   const cell = session.layer.cells[key];
   if (cell.item?.kind === "fruit") {
     const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
-    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType });
+    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, hiddenInShovel: isShovelRestoring(session) });
     cell.item = null;
     session.remainingFruits -= 1;
     advanceFruitLayerIfCleared(session);
   }
+  revealNextShovelTailSegment(session);
   const tray = session.trays.find((candidate) => candidate.checkpointKey === key);
   if (!beginCheckpointDelivery(session, tray)) setPostMoveStatus(session);
+  if (isShovelRestoring(session) && session.status === PLAY_STATUS.MOVING) session.status = PLAY_STATUS.SHOVEL_RESTORE_TAIL;
   return { moved: true, status: session.status };
 }
 
@@ -5492,6 +5611,8 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     const traysByCheckpointKey = new Map(boardTrays.map((tray) => [tray.checkpointKey, tray]));
     const grassCells = session?.grassCells ?? previewLevel?.grassCells ?? {};
     const priorityPoints = session?.priorityPoints ?? previewLevel?.priorityPoints ?? {};
+    const shovelTargetKeys = new Set(session?.status === PLAY_STATUS.SHOVEL_TARGETING ? session.shovel.targetKeys : []);
+    const shovelTargeting = shovelTargetKeys.size > 0;
     for (let y = 0; y < level.grid.rows; y += 1) {
       for (let x = 0; x < level.grid.columns; x += 1) {
         const key = cellKey(x, y);
@@ -5505,7 +5626,11 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         const tray = traysByVisualKey.get(key);
         const checkpointTray = traysByCheckpointKey.get(key);
         const cell = document.createElement("div");
-        cell.className = `grid-cell playable-cell${grassCells[key] ? " grass" : " terrain-empty"}${cellData.path ? " path" : ""}${priorityPoints[key] ? " priority-point" : ""}${lockedBarrier ? " count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry ? " tunnel-cell" : ""}${oneWayEntry ? " one-way-cell" : ""}${tray ? " tray-visual-cell" : ""}${checkpointTray ? " tray-checkpoint-cell" : ""}`;
+        const shovelClass = shovelTargeting && priorityPoints[key]
+          ? shovelTargetKeys.has(key) ? " shovel-target" : " shovel-target-disabled"
+          : "";
+        cell.className = `grid-cell playable-cell${grassCells[key] ? " grass" : " terrain-empty"}${cellData.path ? " path" : ""}${priorityPoints[key] ? " priority-point" : ""}${shovelClass}${lockedBarrier ? " count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry ? " tunnel-cell" : ""}${oneWayEntry ? " one-way-cell" : ""}${tray ? " tray-visual-cell" : ""}${checkpointTray ? " tray-checkpoint-cell" : ""}`;
+        cell.dataset.cellIndex = String(index);
         if (tunnelEntry) cell.style.setProperty("--tunnel-color", tunnelColor(tunnelEntry.tunnel.tunnelId));
         if (oneWayEntry) cell.style.setProperty("--one-way-color", oneWayColor(oneWayEntry.oneWay.oneWayId));
         cell.setAttribute("role", "gridcell");
@@ -5654,6 +5779,20 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     });
   }
 
+  function renderShovelControl() {
+    if (!elements.playableShovelBtn) return;
+    const targeting = session?.status === PLAY_STATUS.SHOVEL_TARGETING;
+    const validCount = session ? validShovelTargetKeys(session).length : 0;
+    elements.playableShovelBtn.textContent = targeting ? "Hủy Xẻng" : `🪏 Xẻng ${SHOVEL_COUNT_LABEL}`;
+    elements.playableShovelBtn.classList.toggle("active", targeting);
+    elements.playableShovelBtn.disabled = !session || (!targeting && !canUseShovelBooster(session));
+    elements.playableShovelBtn.title = isShovelRestoring(session)
+      ? "Tail cần restore xong trước khi dùng Xẻng tiếp"
+      : validCount === 0
+      ? "Không có PriorityPoint hợp lệ để dùng Xẻng"
+      : targeting ? "Hủy chọn target Xẻng" : "Chọn PriorityPoint để dịch chuyển Head";
+  }
+
   function render() {
     const status = session?.status ?? PLAY_STATUS.BLOCKED;
     const [label, copy] = statusText(status);
@@ -5673,10 +5812,10 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
       });
       elements.playableBlocker.append(heading, list);
     }
-    const directions = session && [PLAY_STATUS.READY, PLAY_STATUS.WAITING].includes(session.status) ? availableDirections(session) : [];
+    const directions = session && [PLAY_STATUS.READY, PLAY_STATUS.WAITING, PLAY_STATUS.SHOVEL_AWAIT_DIRECTION].includes(session.status) ? availableDirections(session) : [];
     elements.playableDirectionHint.innerHTML = directions.length
       ? `<strong>Hướng hợp lệ:</strong> ${directions.map((direction) => DIRECTION_LABELS[direction]).join(" · ")}`
-      : status === PLAY_STATUS.MOVING ? "Rắn đang di chuyển; input mới sẽ bị bỏ qua." : "Không nhận input hướng ở trạng thái hiện tại.";
+      : [PLAY_STATUS.MOVING, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(status) ? "Rắn đang di chuyển; input mới sẽ bị bỏ qua." : "Không nhận input hướng ở trạng thái hiện tại.";
     elements.playModeSelect.value = session?.mode ?? elements.playModeSelect.value;
     elements.playSpeedSelect.value = String(session?.speed ?? elements.playSpeedSelect.value);
     elements.playPauseBtn.textContent = status === PLAY_STATUS.PAUSED ? "Resume" : "Pause";
@@ -5696,6 +5835,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     renderBoard();
     renderCargo();
     renderTrays();
+    renderShovelControl();
   }
 
   function scheduleNext() {
@@ -5709,7 +5849,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
       }, 280);
       return;
     }
-    if (session.status !== PLAY_STATUS.MOVING) return;
+    if (![PLAY_STATUS.MOVING, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(session.status)) return;
     timer = setTimeout(() => {
       movePlayableSession(session, session.snake.direction);
       render();
@@ -5718,12 +5858,39 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
   }
 
   function chooseDirection(direction) {
-    if (!isActive || !session || ![PLAY_STATUS.READY, PLAY_STATUS.WAITING].includes(session.status)) return false;
+    if (!isActive || !session || ![PLAY_STATUS.READY, PLAY_STATUS.WAITING, PLAY_STATUS.SHOVEL_AWAIT_DIRECTION].includes(session.status)) return false;
     if (!availableDirections(session).includes(direction)) return false;
-    session.status = PLAY_STATUS.MOVING;
+    if (session.status === PLAY_STATUS.SHOVEL_AWAIT_DIRECTION) beginShovelTailRestore(session);
+    session.status = isShovelRestoring(session) ? PLAY_STATUS.SHOVEL_RESTORE_TAIL : PLAY_STATUS.MOVING;
     movePlayableSession(session, direction);
     render();
     scheduleNext();
+    return true;
+  }
+
+  function toggleShovelTargeting() {
+    if (!isActive || !session) return false;
+    if (session.status === PLAY_STATUS.SHOVEL_TARGETING) {
+      cancelShovelTargeting(session, session.resumeStatus ?? PLAY_STATUS.WAITING);
+      render();
+      scheduleNext();
+      return true;
+    }
+    if (![PLAY_STATUS.READY, PLAY_STATUS.MOVING, PLAY_STATUS.WAITING].includes(session.status) || !canUseShovelBooster(session)) return false;
+    clearTimer();
+    session.resumeStatus = session.status === PLAY_STATUS.MOVING ? PLAY_STATUS.MOVING : session.status;
+    beginShovelTargeting(session);
+    render();
+    return true;
+  }
+
+  function confirmShovelTarget(index) {
+    if (!session || session.status !== PLAY_STATUS.SHOVEL_TARGETING) return false;
+    const targetKey = shovelTargetKeyFromIndex(session, index);
+    if (!targetKey) return false;
+    session.status = PLAY_STATUS.SHOVEL_TELEPORTING;
+    if (!teleportWithShovel(session, targetKey)) return false;
+    render();
     return true;
   }
 
@@ -5759,7 +5926,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
   function leave() {
     isActive = false;
     clearTimer();
-    if (session && [PLAY_STATUS.READY, PLAY_STATUS.MOVING, PLAY_STATUS.DELIVERING, PLAY_STATUS.WAITING].includes(session.status)) {
+    if (session && [PLAY_STATUS.READY, PLAY_STATUS.MOVING, PLAY_STATUS.DELIVERING, PLAY_STATUS.WAITING, PLAY_STATUS.SHOVEL_TARGETING, PLAY_STATUS.SHOVEL_AWAIT_DIRECTION, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(session.status)) {
       session.resumeStatus = session.status;
       session.status = PLAY_STATUS.PAUSED;
       render();
@@ -5782,6 +5949,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
   elements.playPauseBtn.addEventListener("click", togglePause);
   elements.playRestartBtn.addEventListener("click", restart);
   elements.playAgainBtn.addEventListener("click", restart);
+  elements.playableShovelBtn?.addEventListener("click", toggleShovelTargeting);
   elements.exitPlayableBtn.addEventListener("click", onExitEditor);
   elements.playableGridBoard.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
@@ -5792,11 +5960,23 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     const dx = event.clientX - swipeStart.x;
     const dy = event.clientY - swipeStart.y;
     swipeStart = null;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) {
+      const cell = event.target.closest(".playable-cell");
+      if (cell) confirmShovelTarget(Number(cell.dataset.cellIndex));
+      return;
+    }
+    if (session?.status === PLAY_STATUS.SHOVEL_TARGETING) return;
     chooseDirection(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
   });
   document.addEventListener("keydown", (event) => {
     if (!isActive || ["INPUT", "TEXTAREA"].includes(event.target?.tagName)) return;
+    if (event.key === "Escape" && session?.status === PLAY_STATUS.SHOVEL_TARGETING) {
+      event.preventDefault();
+      cancelShovelTargeting(session, session.resumeStatus ?? PLAY_STATUS.WAITING);
+      render();
+      scheduleNext();
+      return;
+    }
     const direction = { w: "up", arrowup: "up", s: "down", arrowdown: "down", a: "left", arrowleft: "left", d: "right", arrowright: "right" }[event.key.toLowerCase()];
     if (!direction) return;
     event.preventDefault();
@@ -5847,7 +6027,7 @@ const elements = Object.fromEntries([
   "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
-  "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
+  "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"

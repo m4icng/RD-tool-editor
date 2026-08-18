@@ -51,6 +51,7 @@ const sourceFiles = [
   "js/gameplay/delivery-system.js",
   "js/gameplay/win-condition.js",
   "js/gameplay/simulator.js",
+  "js/gameplay/shovel-booster.js",
   "js/gameplay/playable-controller.js",
   "js/app.js"
 ];

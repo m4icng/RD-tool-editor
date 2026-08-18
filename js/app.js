@@ -71,7 +71,7 @@ const elements = Object.fromEntries([
   "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
-  "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
+  "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"

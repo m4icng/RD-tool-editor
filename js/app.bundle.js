@@ -168,6 +168,31 @@ function applyVisualScaleConfig(container) {
 }
 
 
+// ---- js/core/player-head-layer-rule.js ----
+function isPlayerHeadItem(item) {
+  return item?.kind === "snake";
+}
+
+function activeLayerIndex(level, layerId = level?.activeLayerId) {
+  const layers = Array.isArray(level?.layers) ? level.layers : [];
+  if (layers.length === 0) return -1;
+  const index = layers.findIndex((layer) => layer.id === layerId);
+  return index >= 0 ? index : 0;
+}
+
+function isPlayerHeadLayer(level, layerId = level?.activeLayerId) {
+  return activeLayerIndex(level, layerId) === 0;
+}
+
+function isSharedItemVisibleForLayer(item, level, layerId = level?.activeLayerId) {
+  return !isPlayerHeadItem(item) || isPlayerHeadLayer(level, layerId);
+}
+
+function visibleSharedItemForLayer(item, level, layerId = level?.activeLayerId) {
+  return isSharedItemVisibleForLayer(item, level, layerId) ? item : null;
+}
+
+
 // ---- js/utils/id-generator.js ----
 let sequence = 0;
 
@@ -179,6 +204,7 @@ function createId(prefix = "id") {
 
 
 // ---- js/utils/grid-utils.js ----
+
 
 
 
@@ -359,12 +385,13 @@ function getMergedCell(level, x, y, layerId = level.activeLayerId) {
   if (!level.sharedCells) return getCell(layer ?? { cells: {} }, x, y);
   const shared = level.sharedCells[key] ?? { path: false, item: null, element: null };
   const layerCell = layer?.cells?.[key] ?? {};
+  const sharedItem = visibleSharedItemForLayer(shared.item, level, layer?.id);
   return {
     path: Boolean(shared.path),
     element: shared.element ?? null,
-    item: shared.item ?? layerCell.item ?? null,
+    item: sharedItem ?? layerCell.item ?? null,
     layerItem: layerCell.item ?? null,
-    sharedItem: shared.item ?? null
+    sharedItem
   };
 }
 
@@ -1971,6 +1998,7 @@ function normalizeFileName(value) {
 
 
 
+
 function collectStats(layer) {
   const stats = {
     paths: 0, items: 0, snake: 0, fruits: 0, capacity: 0,
@@ -2129,13 +2157,14 @@ function validateLevel(level) {
     if (trayVisualKeys.has(visualKey)) warnings.push(`Khay ${cell.item.trayId} có visual trùng với khay ${trayVisualKeys.get(visualKey)}.`);
     else trayVisualKeys.set(visualKey, cell.item.trayId);
   });
-  (level?.layers ?? []).forEach((layer) => Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
+  (level?.layers ?? []).forEach((layer, layerIndex) => Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind !== "fruit") return;
     const index = indexOfKey(key);
     if (!roadKeys.has(key)) warnings.push(`Fruit tại Index ${index} trong layer ${layer.layer ?? layer.name} phải nằm trên Path.`);
     if (countBarrierEndpointIndexes.has(index)) errors.push(`Fruit tại Index ${index} không được đặt tại startIndex/endIndex của Count Barrier.`);
     if (cell.item.unknown) warnings.push(`Layer ${layer.layer ?? layer.name} còn Unknown #${cell.item.itemId ?? cell.item.id}.`);
     if (level.sharedCells?.[key]?.item?.kind === "tray") warnings.push(`Fruit tại Index ${index} trùng checkpoint khay.`);
+    if (layerIndex === 0 && isPlayerHeadItem(level.sharedCells?.[key]?.item)) errors.push(`Fruit tại Index ${index} trùng Player Head Layer 1.`);
   }));
   (level?.mysteryFruitElement ?? []).forEach((entry) => {
     const layer = (level.layers ?? []).find((candidate, index) => (Number.isInteger(candidate.layer) ? candidate.layer : index) === entry.layer);
@@ -2454,6 +2483,7 @@ class LevelFileManager {
 
 
 
+
 function junctionKeys(state) {
   const layer = createMergedLayer(state);
   return new Set(Object.keys(layer.cells ?? {}).filter((key) => {
@@ -2497,11 +2527,12 @@ function activeLayerContext(state, position) {
   const layer = state.layers.find((candidate) => candidate.id === state.activeLayerId);
   if (!layer || !position) return null;
   const key = cellKey(position.x, position.y);
+  const rawShared = state.sharedCells?.[key] ?? { path: false, item: null, element: null };
   return {
     layer,
     key,
     layerNumber: Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer),
-    shared: state.sharedCells?.[key] ?? { path: false, item: null, element: null },
+    shared: { ...rawShared, item: visibleSharedItemForLayer(rawShared.item, state, layer.id) },
     layerCell: layer.cells?.[key] ?? { item: null },
     index: positionToIndex(position.x, position.y, state.grid.columns)
   };
@@ -2546,7 +2577,7 @@ function getEraseTargets(state, position) {
   return targets;
 }
 
-function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) {
+function eraseCellLayers(shared, layerCell, mode, { protectPath = false, allowPlayerHeadDelete = true } = {}) {
   const removeLayerItem = () => {
     if (layerCell.item?.kind !== "fruit") return false;
     layerCell.item = null;
@@ -2554,6 +2585,7 @@ function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) 
   };
   const removeSharedItem = () => {
     if (objectCategory(shared.item) !== "item" || ["tray", "truck"].includes(shared.item?.kind)) return false;
+    if (isPlayerHeadItem(shared.item) && !allowPlayerHeadDelete) return false;
     shared.item = null;
     return true;
   };
@@ -2652,7 +2684,10 @@ function eraseAtPosition(state, position, mode = "smart") {
     return { changed: true, removed: "priority-point" };
   }
   const fruitOnOtherLayer = state.layers.some((candidate) => candidate.id !== layer.id && candidate.cells?.[key]?.item?.kind === "fruit");
-  const result = eraseCellLayers(shared, layerCell, mode, { protectPath: mode === "smart" && fruitOnOtherLayer });
+  const result = eraseCellLayers(shared, layerCell, mode, {
+    protectPath: mode === "smart" && fruitOnOtherLayer,
+    allowPlayerHeadDelete: isPlayerHeadLayer(state, layer.id)
+  });
   if (result.removed === "layer-item") {
     setMysteryFruitAt(state, Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer), positionToIndex(position.x, position.y, state.grid.columns), false);
   }
@@ -2710,6 +2745,10 @@ function applyTool(state, x, y, toolOverride = null) {
   } else if (tool === "item") {
     const object = findObject(state.selectedAssetId);
     if (object) {
+      if (isPlayerHeadItem(object) && !isPlayerHeadLayer(state, layer.id)) {
+        state.selectedCell = { x, y };
+        return { changed: false, reason: "player-head-layer-locked", objectId: object.id };
+      }
       const placed = object.uniqueOnMap ? findPlacedObject(state, object.id) : null;
       if (placed && placed.key !== key) {
         state.selectedCell = { x, y };
@@ -2723,7 +2762,8 @@ function applyTool(state, x, y, toolOverride = null) {
           return { changed: false, reason: "fruit-on-barrier-endpoint", objectId: object.id };
         }
         shared.path = true;
-        if (shared.item) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
+        if (shared.item && !isPlayerHeadItem(shared.item)) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
+        if (shared.item && isPlayerHeadLayer(state, layer.id)) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
         layerCell.item = cloneObject(object);
       } else if (object.kind === "mystery-fruit") {
         const layerNumber = Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer);
@@ -3285,7 +3325,7 @@ function showNotification(element, message) {
 
 
 // ---- js/ui/object-palette.js ----
-function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], bridgeAxis = 0, countBarrierCount = 1 } = {}) {
+function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], unavailableReasons = {}, bridgeAxis = 0, countBarrierCount = 1 } = {}) {
   container.innerHTML = "";
   if (objects.length === 0) {
     const empty = document.createElement("div");
@@ -3299,11 +3339,12 @@ function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Ch�
     const button = document.createElement("button");
     button.type = "button";
     const isUnavailable = unavailable.has(object.id);
+    const unavailableReason = unavailableReasons[object.id] ?? "Đã có trên map";
     button.className = `asset-btn${String(object.id) === String(selectedId) ? " active" : ""}${isUnavailable ? " unavailable" : ""}`;
     button.dataset.asset = object.id;
-    button.dataset.tooltip = `ID: ${object.id}${isUnavailable ? " · Đã có trên map" : ""}`;
+    button.dataset.tooltip = `ID: ${object.id}${isUnavailable ? ` · ${unavailableReason}` : ""}`;
     button.title = button.dataset.tooltip;
-    button.setAttribute("aria-label", `${object.label}. ID: ${object.id}${isUnavailable ? ". Đã có trên map" : ""}`);
+    button.setAttribute("aria-label", `${object.label}. ID: ${object.id}${isUnavailable ? `. ${unavailableReason}` : ""}`);
     if (isUnavailable) button.setAttribute("aria-disabled", "true");
     button.innerHTML = `<span class="asset-icon"></span><span class="asset-label"></span>`;
     button.firstElementChild.textContent = object.icon;
@@ -4887,6 +4928,7 @@ function isShovelRestoring(session) {
 
 
 
+
 const PLAY_STATUS = Object.freeze({
   READY: "ready",
   MOVING: "moving",
@@ -4906,6 +4948,9 @@ const PLAY_STATUS = Object.freeze({
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
 const DIRECTION_LABELS = Object.freeze({ up: "↑ Lên", down: "↓ Xuống", left: "← Trái", right: "→ Phải" });
 const FRUIT_ICONS = Object.freeze({ apple: "🍎", banana: "🍌", grape: "🍇", eggplant: "🍆" });
+const DEFAULT_PLAY_SPEED = 12;
+const DELIVERY_ITEMS_PER_SECOND = 4;
+const DELIVERY_INTERVAL_MS = 1000 / DELIVERY_ITEMS_PER_SECOND;
 const STATUS_COPY = Object.freeze({
   ready: ["Sẵn sàng", "Chọn một hướng hợp lệ để bắt đầu."],
   moving: ["Đang chạy", "Rắn đang tự di chuyển trên đoạn đường hiện tại."],
@@ -5165,7 +5210,7 @@ function validatePlayableLevel(level) {
     const sharedCell = level.sharedCells?.[cellKey(x, y)];
     const sharedPath = sharedCell?.path ?? cell.path;
     if (!sharedPath) errors.push(`${cell.item.label ?? cell.item.kind} tại Index ${index} trong fruit layer ${layerIndex + 1} phải nằm trên đường đi.`);
-    if (sharedCell?.item) errors.push(`Fruit layer ${layerIndex + 1} tại Index ${index} trùng ${sharedCell.item.kind} dùng chung.`);
+    if (sharedCell?.item && (!isPlayerHeadItem(sharedCell.item) || layerIndex === 0)) errors.push(`Fruit layer ${layerIndex + 1} tại Index ${index} trùng ${sharedCell.item.kind} dùng chung.`);
     if (barrierEndpointIndexes.has(index)) errors.push(`Fruit layer ${layerIndex + 1} không được đặt tại endpoint Count Barrier Index ${index}.`);
     if (cell.item.unknown || !FRUIT_TYPES.includes(cell.item.fruitType)) errors.push(`Unknown item #${cell.item.itemId ?? cell.item.id} trong fruit layer ${layerIndex + 1} chưa được Playable hỗ trợ.`);
   });
@@ -5212,7 +5257,7 @@ function createTrayRuntime(entry) {
   };
 }
 
-function createPlayableSession(level, { mode = "continuous", speed = 9 } = {}) {
+function createPlayableSession(level, { mode = "continuous", speed = DEFAULT_PLAY_SPEED } = {}) {
   const report = validatePlayableLevel(level);
   if (!report.valid) throw new Error(report.errors.join(" "));
   const layer = structuredClone(report.layer);
@@ -5846,7 +5891,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         deliverNextCargo(session);
         render();
         scheduleNext();
-      }, 280);
+      }, DELIVERY_INTERVAL_MS);
       return;
     }
     if (![PLAY_STATUS.MOVING, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(session.status)) return;
@@ -6019,6 +6064,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
 
 
 
+
 const byId = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
@@ -6030,7 +6076,7 @@ const elements = Object.fromEntries([
   "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
-  "jsonFileNameInput", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
+  "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
 ].map((id) => [id, byId(id)]));
 
 const editor = new EditorState(loadSavedState());
@@ -6217,7 +6263,8 @@ function renderAll() {
   const paletteObjects = objectsByCategory(activePaletteCategory);
   renderObjectPalette(elements.assetPalette, paletteObjects, editor.data.selectedAssetId, {
     emptyLabel: activePaletteCategory === "element" ? "Element sẽ được bổ sung ở bước tiếp theo." : `Chưa có ${activePaletteCategory}.`,
-    unavailableIds: hasPlacedObject("snake-start") ? ["snake-start"] : [],
+    unavailableIds: (hasPlacedObject("snake-start") || !isPlayerHeadLayer(editor.data)) ? ["snake-start"] : [],
+    unavailableReasons: { "snake-start": hasPlacedObject("snake-start") ? "Đã có trên map" : "Chỉ đặt tại Layer 1" },
     bridgeAxis: editor.data.selectedBridgeAxis ?? 0,
     countBarrierCount: normalizeCountBarrierCount(editor.data.selectedCountBarrierCount)
   });
@@ -6294,9 +6341,12 @@ function renderJsonWorkspace() {
   const report = validateLevel(editor.data);
   const documentData = serializeLevel(editor.data);
   elements.jsonPreview.textContent = stringifyJson(documentData);
-  elements.jsonValidationStatus.textContent = report.exportable ? "Hợp lệ · sẵn sàng export" : `${report.errors.length + report.warnings.length} lỗi cần sửa`;
-  elements.jsonDownloadBtn.disabled = !report.exportable;
-  byId("exportBtn").disabled = !report.exportable;
+  elements.jsonValidationStatus.textContent = report.valid
+    ? (report.warnings.length ? `Hợp lệ · ${report.warnings.length} cảnh báo` : "Hợp lệ · sẵn sàng lưu")
+    : `${report.errors.length} lỗi · vẫn có thể lưu`;
+  elements.jsonDownloadBtn.disabled = false;
+  byId("exportBtn").disabled = false;
+  renderLevelValidityBadge(report);
   elements.jsonDirtyStatus.textContent = fileDirty ? "Có thay đổi chưa lưu" : "Đã đồng bộ file";
   elements.jsonDirtyStatus.classList.toggle("clean", !fileDirty);
   elements.chooseFolderBtn.disabled = !fileManager.supported || folderFileState.loading;
@@ -6308,6 +6358,49 @@ function renderJsonWorkspace() {
   renderFolderFiles();
 }
 
+function renderLevelValidityBadge(report) {
+  if (!elements.levelValidityBadge || !elements.levelValidationPopover) return;
+  const invalid = !report.valid;
+  elements.levelValidityBadge.textContent = invalid ? "! Invalid" : "Valid";
+  elements.levelValidityBadge.classList.toggle("valid", !invalid);
+  elements.levelValidityBadge.classList.toggle("invalid", invalid);
+  elements.levelValidityBadge.title = invalid ? "Level hiện đang có lỗi" : "Level hợp lệ";
+  const issues = invalid ? report.errors : report.warnings;
+  const summary = invalid
+    ? `Level hiện đang có ${report.errors.length} lỗi`
+    : report.warnings.length ? `Level hợp lệ, có ${report.warnings.length} cảnh báo` : "Level hợp lệ";
+  const issueRows = issues.length
+    ? issues.slice(0, 8).map((message) => `<li>${escapeHtml(message)}</li>`).join("")
+    : "<li>Không có lỗi validation.</li>";
+  const more = issues.length > 8 ? `<p>Còn ${issues.length - 8} mục khác trong panel Kiểm tra level.</p>` : "";
+  elements.levelValidationPopover.innerHTML = `<strong>${summary}</strong><ul>${issueRows}</ul>${more}<button class="btn" type="button" data-show-validation-panel>Xem lỗi</button>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getFolderFilePlayableStatus(file) {
+  if (file.status === "invalid") return { valid: false, label: "JSON lỗi", errorMessage: file.errorMessage };
+  if (file.status === "unreadable") return { valid: false, label: "Không đọc được", errorMessage: file.errorMessage };
+  try {
+    const level = deserializeLevel(file.data, { fileName: file.name });
+    const report = validatePlayableLevel(level);
+    return {
+      valid: report.valid,
+      label: report.valid ? "Hợp lệ" : "Không hợp lệ",
+      errorMessage: report.valid ? null : report.errors[0]
+    };
+  } catch (error) {
+    return { valid: false, label: "Không hợp lệ", errorMessage: error.message };
+  }
+}
+
 function folderStatusText() {
   if (!fileManager.supported) return "Trình duyệt không hỗ trợ mở folder trực tiếp; vẫn có thể Nhập file và Tải xuống.";
   if (folderFileState.loading) return `Loading folder${folderFileState.directoryName ? ` ${folderFileState.directoryName}` : ""}...`;
@@ -6315,7 +6408,7 @@ function folderStatusText() {
   if (!fileManager.connected) return "Chưa chọn thư mục. File mới sẽ được tải xuống.";
   if (folderFileState.permission === "prompt" || folderFileState.permission === "denied") return `${folderFileState.directoryName} · Cần cấp lại quyền để mở folder.`;
   if (folderFileState.permission === "unknown") return `${folderFileState.directoryName} · Đang kiểm tra quyền truy cập.`;
-  const invalidCount = folderFiles.filter((file) => file.status !== "valid").length;
+  const invalidCount = folderFiles.filter((file) => !getFolderFilePlayableStatus(file).valid).length;
   return `${folderFileState.directoryName} · ${folderFiles.length} file JSON${invalidCount ? ` · ${invalidCount} file lỗi` : ""}`;
 }
 
@@ -6343,18 +6436,18 @@ function renderFolderFiles() {
     return;
   }
   folderFiles.forEach((file) => {
+    const playableStatus = getFolderFilePlayableStatus(file);
     const row = document.createElement("div");
-    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${file.status !== "valid" ? " file-error" : ""}`;
+    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${playableStatus.valid ? "" : " file-error"}`;
     row.dataset.fileName = file.name;
     const copy = document.createElement("div");
     copy.className = "json-file-copy";
     const title = document.createElement("strong");
-    title.textContent = `${file.status === "valid" ? "" : "! "}${file.name}`;
+    title.textContent = `${playableStatus.valid ? "" : "! "}${file.name}`;
     const meta = document.createElement("small");
-    const statusLabel = file.status === "valid" ? "Hợp lệ" : file.status === "invalid" ? "JSON lỗi" : "Không đọc được";
     const updatedAt = file.lastModified ? new Date(file.lastModified).toLocaleString("vi-VN") : "Không rõ thời gian";
-    meta.textContent = `${statusLabel} · ${Math.max(1, Math.ceil(file.size / 1024))} KB · ${updatedAt}`;
-    if (file.errorMessage) meta.title = file.errorMessage;
+    meta.textContent = `${playableStatus.label} · ${Math.max(1, Math.ceil(file.size / 1024))} KB · ${updatedAt}`;
+    if (playableStatus.errorMessage) meta.title = playableStatus.errorMessage;
     copy.append(title, meta);
     const actions = document.createElement("div");
     actions.className = "json-file-actions";
@@ -6365,7 +6458,6 @@ function renderFolderFiles() {
       if (action === "open" && file.status !== "valid") {
         button.title = file.errorMessage ?? "File không thể mở vào editor.";
       }
-      if (action === "save" && !validateLevel(editor.data).exportable) button.disabled = true;
       actions.appendChild(button);
     });
     row.append(copy, actions);
@@ -6555,6 +6647,8 @@ const input = new InputController({
       const result = mutate((state) => applyTool(state, targetX, targetY, eraseOverride ? "smart-erase" : null));
       if (result?.reason === "unique-object-exists") {
         showNotification(elements.toast, "Map chỉ được có một đầu rắn. Hãy xóa đầu rắn hiện tại trước khi đặt lại.");
+      } else if (result?.reason === "player-head-layer-locked") {
+        showNotification(elements.toast, "Đầu rắn chỉ được đặt hoặc xóa tại Layer 1.");
       } else if (result?.reason === "tray-visual-outside-grid") {
         showNotification(elements.toast, "Không thể đặt khay: vị trí visual mặc định phía trên nằm ngoài map.");
       } else if (result?.reason === "tray-checkpoint-needs-road") {
@@ -7178,9 +7272,9 @@ function canReplaceCurrentLevel() {
 
 async function downloadCurrentLevel() {
   const report = validateLevel(editor.data);
-  if (!report.exportable) return showNotification(elements.toast, "Chưa thể Export: hãy sửa toàn bộ lỗi level trước.");
   editor.data.fileName = normalizeFileName(elements.jsonFileNameInput.value || editor.data.fileName);
   const documentData = serializeLevel(editor.data);
+  const invalidSuffix = report.valid ? "" : ` · Level hiện có ${report.errors.length} lỗi`;
   if (fileManager.connected && folderFileState.permission === "granted") {
     try {
       await fileManager.write(editor.data.fileName, documentData);
@@ -7190,7 +7284,7 @@ async function downloadCurrentLevel() {
       rememberSelectedDataFileName(editor.data.fileName);
       await scanFolder();
       renderAll();
-      showNotification(elements.toast, `Đã lưu ${editor.data.fileName} vào ${folderFileState.directoryName}.`);
+      showNotification(elements.toast, `Đã lưu ${editor.data.fileName} vào ${folderFileState.directoryName}${invalidSuffix}.`);
       return;
     } catch (error) {
       showNotification(elements.toast, `Không thể lưu vào folder: ${error.message}`);
@@ -7206,7 +7300,7 @@ async function downloadCurrentLevel() {
   fileDirty = false;
   editor.data.fileDirty = false;
   renderAll();
-  showNotification(elements.toast, `Đã tải xuống ${editor.data.fileName}`);
+  showNotification(elements.toast, `Đã tải xuống ${editor.data.fileName}${invalidSuffix}`);
 }
 
 function openImportedData(raw, fileName) {
@@ -7250,6 +7344,27 @@ elements.jsonFileNameInput.addEventListener("change", () => {
   fileDirty = true;
   editor.data.fileDirty = true;
   renderAll();
+});
+elements.levelValidityBadge.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const hidden = elements.levelValidationPopover.classList.toggle("hidden");
+  elements.levelValidityBadge.setAttribute("aria-expanded", String(!hidden));
+});
+elements.levelValidationPopover.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!event.target.closest("[data-show-validation-panel]")) return;
+  elements.levelValidationPopover.classList.add("hidden");
+  elements.levelValidityBadge.setAttribute("aria-expanded", "false");
+  switchTab("level");
+  const validationDetails = document.querySelector(".validation-details");
+  if (validationDetails) {
+    validationDetails.open = true;
+    validationDetails.scrollIntoView({ block: "nearest" });
+  }
+});
+document.addEventListener("click", () => {
+  elements.levelValidationPopover.classList.add("hidden");
+  elements.levelValidityBadge.setAttribute("aria-expanded", "false");
 });
 
 elements.newLevelBtn.addEventListener("click", () => {
@@ -7368,12 +7483,12 @@ elements.jsonFileList.addEventListener("click", async (event) => {
     } else if (button.dataset.fileAction === "save") {
       if (!confirm(`Lưu đè toàn bộ nội dung hiện tại vào ${name}?`)) return;
       const report = validateLevel(editor.data);
-      if (!report.exportable) return showNotification(elements.toast, "Không thể lưu đè khi level còn lỗi.");
       await fileManager.write(name, serializeLevel(editor.data));
       editor.data.fileName = name; editor.data.sourceFileName = name; fileDirty = false;
       editor.data.fileDirty = false;
       rememberSelectedDataFileName(name);
-      await scanFolder(); showNotification(elements.toast, `Đã lưu đè ${name}`);
+      await scanFolder();
+      showNotification(elements.toast, report.valid ? `Đã lưu đè ${name}` : `Đã lưu đè ${name} · Level hiện có ${report.errors.length} lỗi`);
     } else if (button.dataset.fileAction === "rename") {
       const proposed = prompt("Tên file mới:", name);
       if (!proposed) return;

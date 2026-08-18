@@ -1,5 +1,6 @@
 import { findObject, cloneObject } from "../objects/object-registry.js";
 import { TERRAIN_ASSET_IDS } from "../core/constants.js";
+import { isPlayerHeadItem, isPlayerHeadLayer, visibleSharedItemForLayer } from "../core/player-head-layer-rule.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { isGateElement, normalizeGateDirection } from "../objects/gate-object.js";
 import {
@@ -69,11 +70,12 @@ function activeLayerContext(state, position) {
   const layer = state.layers.find((candidate) => candidate.id === state.activeLayerId);
   if (!layer || !position) return null;
   const key = cellKey(position.x, position.y);
+  const rawShared = state.sharedCells?.[key] ?? { path: false, item: null, element: null };
   return {
     layer,
     key,
     layerNumber: Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer),
-    shared: state.sharedCells?.[key] ?? { path: false, item: null, element: null },
+    shared: { ...rawShared, item: visibleSharedItemForLayer(rawShared.item, state, layer.id) },
     layerCell: layer.cells?.[key] ?? { item: null },
     index: positionToIndex(position.x, position.y, state.grid.columns)
   };
@@ -118,7 +120,7 @@ export function getEraseTargets(state, position) {
   return targets;
 }
 
-function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) {
+function eraseCellLayers(shared, layerCell, mode, { protectPath = false, allowPlayerHeadDelete = true } = {}) {
   const removeLayerItem = () => {
     if (layerCell.item?.kind !== "fruit") return false;
     layerCell.item = null;
@@ -126,6 +128,7 @@ function eraseCellLayers(shared, layerCell, mode, { protectPath = false } = {}) 
   };
   const removeSharedItem = () => {
     if (objectCategory(shared.item) !== "item" || ["tray", "truck"].includes(shared.item?.kind)) return false;
+    if (isPlayerHeadItem(shared.item) && !allowPlayerHeadDelete) return false;
     shared.item = null;
     return true;
   };
@@ -224,7 +227,10 @@ export function eraseAtPosition(state, position, mode = "smart") {
     return { changed: true, removed: "priority-point" };
   }
   const fruitOnOtherLayer = state.layers.some((candidate) => candidate.id !== layer.id && candidate.cells?.[key]?.item?.kind === "fruit");
-  const result = eraseCellLayers(shared, layerCell, mode, { protectPath: mode === "smart" && fruitOnOtherLayer });
+  const result = eraseCellLayers(shared, layerCell, mode, {
+    protectPath: mode === "smart" && fruitOnOtherLayer,
+    allowPlayerHeadDelete: isPlayerHeadLayer(state, layer.id)
+  });
   if (result.removed === "layer-item") {
     setMysteryFruitAt(state, Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer), positionToIndex(position.x, position.y, state.grid.columns), false);
   }
@@ -282,6 +288,10 @@ export function applyTool(state, x, y, toolOverride = null) {
   } else if (tool === "item") {
     const object = findObject(state.selectedAssetId);
     if (object) {
+      if (isPlayerHeadItem(object) && !isPlayerHeadLayer(state, layer.id)) {
+        state.selectedCell = { x, y };
+        return { changed: false, reason: "player-head-layer-locked", objectId: object.id };
+      }
       const placed = object.uniqueOnMap ? findPlacedObject(state, object.id) : null;
       if (placed && placed.key !== key) {
         state.selectedCell = { x, y };
@@ -295,7 +305,8 @@ export function applyTool(state, x, y, toolOverride = null) {
           return { changed: false, reason: "fruit-on-barrier-endpoint", objectId: object.id };
         }
         shared.path = true;
-        if (shared.item) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
+        if (shared.item && !isPlayerHeadItem(shared.item)) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
+        if (shared.item && isPlayerHeadLayer(state, layer.id)) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
         layerCell.item = cloneObject(object);
       } else if (object.kind === "mystery-fruit") {
         const layerNumber = Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer);

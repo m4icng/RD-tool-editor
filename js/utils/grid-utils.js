@@ -1,6 +1,7 @@
 import { normalizeCountBarrierCount, normalizeCountBarrierElement, nextCountBarrierSequence } from "../objects/count-barrier-object.js";
 import { nextTunnelSequence, normalizeTunnelDraft, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { nextOneWaySequence, normalizeOneWayDraft, normalizeOneWayElement } from "../objects/one-way-object.js";
+import { visibleSharedItemForLayer } from "../core/player-head-layer-rule.js";
 
 export const cellKey = (x, y) => `${x},${y}`;
 
@@ -179,12 +180,13 @@ export function getMergedCell(level, x, y, layerId = level.activeLayerId) {
   if (!level.sharedCells) return getCell(layer ?? { cells: {} }, x, y);
   const shared = level.sharedCells[key] ?? { path: false, item: null, element: null };
   const layerCell = layer?.cells?.[key] ?? {};
+  const sharedItem = visibleSharedItemForLayer(shared.item, level, layer?.id);
   return {
     path: Boolean(shared.path),
     element: shared.element ?? null,
-    item: shared.item ?? layerCell.item ?? null,
+    item: sharedItem ?? layerCell.item ?? null,
     layerItem: layerCell.item ?? null,
-    sharedItem: shared.item ?? null
+    sharedItem
   };
 }
 

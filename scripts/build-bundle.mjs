@@ -8,6 +8,7 @@ const sourceFiles = [
   "js/core/event-bus.js",
   "js/core/history-manager.js",
   "js/core/visual-scale.js",
+  "js/core/player-head-layer-rule.js",
   "js/utils/id-generator.js",
   "js/utils/grid-utils.js",
   "js/utils/math-utils.js",

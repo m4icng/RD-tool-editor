@@ -1,4 +1,4 @@
-export function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], bridgeAxis = 0, countBarrierCount = 1 } = {}) {
+export function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], unavailableReasons = {}, bridgeAxis = 0, countBarrierCount = 1 } = {}) {
   container.innerHTML = "";
   if (objects.length === 0) {
     const empty = document.createElement("div");
@@ -12,11 +12,12 @@ export function renderObjectPalette(container, objects, selectedId, { emptyLabel
     const button = document.createElement("button");
     button.type = "button";
     const isUnavailable = unavailable.has(object.id);
+    const unavailableReason = unavailableReasons[object.id] ?? "Đã có trên map";
     button.className = `asset-btn${String(object.id) === String(selectedId) ? " active" : ""}${isUnavailable ? " unavailable" : ""}`;
     button.dataset.asset = object.id;
-    button.dataset.tooltip = `ID: ${object.id}${isUnavailable ? " · Đã có trên map" : ""}`;
+    button.dataset.tooltip = `ID: ${object.id}${isUnavailable ? ` · ${unavailableReason}` : ""}`;
     button.title = button.dataset.tooltip;
-    button.setAttribute("aria-label", `${object.label}. ID: ${object.id}${isUnavailable ? ". Đã có trên map" : ""}`);
+    button.setAttribute("aria-label", `${object.label}. ID: ${object.id}${isUnavailable ? `. ${unavailableReason}` : ""}`);
     if (isUnavailable) button.setAttribute("aria-disabled", "true");
     button.innerHTML = `<span class="asset-icon"></span><span class="asset-label"></span>`;
     button.firstElementChild.textContent = object.icon;

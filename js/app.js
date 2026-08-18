@@ -1,5 +1,6 @@
 import { EditorState, createInitialState, createLayer, reindexLayers } from "./core/editor-state.js";
 import { FRUIT_TYPES, LEGACY_STORAGE_KEYS, STORAGE_KEY, TOOL_LABELS } from "./core/constants.js";
+import { isPlayerHeadLayer } from "./core/player-head-layer-rule.js";
 import { OBJECTS, findObject, objectsByCategory } from "./objects/object-registry.js";
 import { isBridgeElement, normalizeBridgeAxis } from "./objects/bridge-object.js";
 import { isGateElement, normalizeGateDirection } from "./objects/gate-object.js";
@@ -46,7 +47,7 @@ import { migrateLevel } from "./data/migration.js";
 import { LevelFileManager } from "./data/file-manager.js";
 import { downloadJson, readJsonFile, stringifyJson } from "./utils/file-utils.js";
 import { getMergedCell, getTrayVisualPosition, indexToPosition, isMysteryFruitAt, positionToIndex, setMysteryFruitAt } from "./utils/grid-utils.js";
-import { createPlayableController } from "./gameplay/playable-controller.js";
+import { createPlayableController, validatePlayableLevel } from "./gameplay/playable-controller.js";
 import { renderDataSummary } from "./ui/data-summary.js";
 import { initPanelResizers } from "./ui/panel-resizer.js";
 import { createGridIndexTooltip } from "./ui/grid-index-tooltip.js";
@@ -74,7 +75,7 @@ const elements = Object.fromEntries([
   "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
-  "jsonFileNameInput", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
+  "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
 ].map((id) => [id, byId(id)]));
 
 const editor = new EditorState(loadSavedState());
@@ -261,7 +262,8 @@ function renderAll() {
   const paletteObjects = objectsByCategory(activePaletteCategory);
   renderObjectPalette(elements.assetPalette, paletteObjects, editor.data.selectedAssetId, {
     emptyLabel: activePaletteCategory === "element" ? "Element sẽ được bổ sung ở bước tiếp theo." : `Chưa có ${activePaletteCategory}.`,
-    unavailableIds: hasPlacedObject("snake-start") ? ["snake-start"] : [],
+    unavailableIds: (hasPlacedObject("snake-start") || !isPlayerHeadLayer(editor.data)) ? ["snake-start"] : [],
+    unavailableReasons: { "snake-start": hasPlacedObject("snake-start") ? "Đã có trên map" : "Chỉ đặt tại Layer 1" },
     bridgeAxis: editor.data.selectedBridgeAxis ?? 0,
     countBarrierCount: normalizeCountBarrierCount(editor.data.selectedCountBarrierCount)
   });
@@ -338,9 +340,12 @@ function renderJsonWorkspace() {
   const report = validateLevel(editor.data);
   const documentData = serializeLevel(editor.data);
   elements.jsonPreview.textContent = stringifyJson(documentData);
-  elements.jsonValidationStatus.textContent = report.exportable ? "Hợp lệ · sẵn sàng export" : `${report.errors.length + report.warnings.length} lỗi cần sửa`;
-  elements.jsonDownloadBtn.disabled = !report.exportable;
-  byId("exportBtn").disabled = !report.exportable;
+  elements.jsonValidationStatus.textContent = report.valid
+    ? (report.warnings.length ? `Hợp lệ · ${report.warnings.length} cảnh báo` : "Hợp lệ · sẵn sàng lưu")
+    : `${report.errors.length} lỗi · vẫn có thể lưu`;
+  elements.jsonDownloadBtn.disabled = false;
+  byId("exportBtn").disabled = false;
+  renderLevelValidityBadge(report);
   elements.jsonDirtyStatus.textContent = fileDirty ? "Có thay đổi chưa lưu" : "Đã đồng bộ file";
   elements.jsonDirtyStatus.classList.toggle("clean", !fileDirty);
   elements.chooseFolderBtn.disabled = !fileManager.supported || folderFileState.loading;
@@ -352,6 +357,49 @@ function renderJsonWorkspace() {
   renderFolderFiles();
 }
 
+function renderLevelValidityBadge(report) {
+  if (!elements.levelValidityBadge || !elements.levelValidationPopover) return;
+  const invalid = !report.valid;
+  elements.levelValidityBadge.textContent = invalid ? "! Invalid" : "Valid";
+  elements.levelValidityBadge.classList.toggle("valid", !invalid);
+  elements.levelValidityBadge.classList.toggle("invalid", invalid);
+  elements.levelValidityBadge.title = invalid ? "Level hiện đang có lỗi" : "Level hợp lệ";
+  const issues = invalid ? report.errors : report.warnings;
+  const summary = invalid
+    ? `Level hiện đang có ${report.errors.length} lỗi`
+    : report.warnings.length ? `Level hợp lệ, có ${report.warnings.length} cảnh báo` : "Level hợp lệ";
+  const issueRows = issues.length
+    ? issues.slice(0, 8).map((message) => `<li>${escapeHtml(message)}</li>`).join("")
+    : "<li>Không có lỗi validation.</li>";
+  const more = issues.length > 8 ? `<p>Còn ${issues.length - 8} mục khác trong panel Kiểm tra level.</p>` : "";
+  elements.levelValidationPopover.innerHTML = `<strong>${summary}</strong><ul>${issueRows}</ul>${more}<button class="btn" type="button" data-show-validation-panel>Xem lỗi</button>`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getFolderFilePlayableStatus(file) {
+  if (file.status === "invalid") return { valid: false, label: "JSON lỗi", errorMessage: file.errorMessage };
+  if (file.status === "unreadable") return { valid: false, label: "Không đọc được", errorMessage: file.errorMessage };
+  try {
+    const level = deserializeLevel(file.data, { fileName: file.name });
+    const report = validatePlayableLevel(level);
+    return {
+      valid: report.valid,
+      label: report.valid ? "Hợp lệ" : "Không hợp lệ",
+      errorMessage: report.valid ? null : report.errors[0]
+    };
+  } catch (error) {
+    return { valid: false, label: "Không hợp lệ", errorMessage: error.message };
+  }
+}
+
 function folderStatusText() {
   if (!fileManager.supported) return "Trình duyệt không hỗ trợ mở folder trực tiếp; vẫn có thể Nhập file và Tải xuống.";
   if (folderFileState.loading) return `Loading folder${folderFileState.directoryName ? ` ${folderFileState.directoryName}` : ""}...`;
@@ -359,7 +407,7 @@ function folderStatusText() {
   if (!fileManager.connected) return "Chưa chọn thư mục. File mới sẽ được tải xuống.";
   if (folderFileState.permission === "prompt" || folderFileState.permission === "denied") return `${folderFileState.directoryName} · Cần cấp lại quyền để mở folder.`;
   if (folderFileState.permission === "unknown") return `${folderFileState.directoryName} · Đang kiểm tra quyền truy cập.`;
-  const invalidCount = folderFiles.filter((file) => file.status !== "valid").length;
+  const invalidCount = folderFiles.filter((file) => !getFolderFilePlayableStatus(file).valid).length;
   return `${folderFileState.directoryName} · ${folderFiles.length} file JSON${invalidCount ? ` · ${invalidCount} file lỗi` : ""}`;
 }
 
@@ -387,18 +435,18 @@ function renderFolderFiles() {
     return;
   }
   folderFiles.forEach((file) => {
+    const playableStatus = getFolderFilePlayableStatus(file);
     const row = document.createElement("div");
-    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${file.status !== "valid" ? " file-error" : ""}`;
+    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${playableStatus.valid ? "" : " file-error"}`;
     row.dataset.fileName = file.name;
     const copy = document.createElement("div");
     copy.className = "json-file-copy";
     const title = document.createElement("strong");
-    title.textContent = `${file.status === "valid" ? "" : "! "}${file.name}`;
+    title.textContent = `${playableStatus.valid ? "" : "! "}${file.name}`;
     const meta = document.createElement("small");
-    const statusLabel = file.status === "valid" ? "Hợp lệ" : file.status === "invalid" ? "JSON lỗi" : "Không đọc được";
     const updatedAt = file.lastModified ? new Date(file.lastModified).toLocaleString("vi-VN") : "Không rõ thời gian";
-    meta.textContent = `${statusLabel} · ${Math.max(1, Math.ceil(file.size / 1024))} KB · ${updatedAt}`;
-    if (file.errorMessage) meta.title = file.errorMessage;
+    meta.textContent = `${playableStatus.label} · ${Math.max(1, Math.ceil(file.size / 1024))} KB · ${updatedAt}`;
+    if (playableStatus.errorMessage) meta.title = playableStatus.errorMessage;
     copy.append(title, meta);
     const actions = document.createElement("div");
     actions.className = "json-file-actions";
@@ -409,7 +457,6 @@ function renderFolderFiles() {
       if (action === "open" && file.status !== "valid") {
         button.title = file.errorMessage ?? "File không thể mở vào editor.";
       }
-      if (action === "save" && !validateLevel(editor.data).exportable) button.disabled = true;
       actions.appendChild(button);
     });
     row.append(copy, actions);
@@ -599,6 +646,8 @@ const input = new InputController({
       const result = mutate((state) => applyTool(state, targetX, targetY, eraseOverride ? "smart-erase" : null));
       if (result?.reason === "unique-object-exists") {
         showNotification(elements.toast, "Map chỉ được có một đầu rắn. Hãy xóa đầu rắn hiện tại trước khi đặt lại.");
+      } else if (result?.reason === "player-head-layer-locked") {
+        showNotification(elements.toast, "Đầu rắn chỉ được đặt hoặc xóa tại Layer 1.");
       } else if (result?.reason === "tray-visual-outside-grid") {
         showNotification(elements.toast, "Không thể đặt khay: vị trí visual mặc định phía trên nằm ngoài map.");
       } else if (result?.reason === "tray-checkpoint-needs-road") {
@@ -1222,9 +1271,9 @@ function canReplaceCurrentLevel() {
 
 async function downloadCurrentLevel() {
   const report = validateLevel(editor.data);
-  if (!report.exportable) return showNotification(elements.toast, "Chưa thể Export: hãy sửa toàn bộ lỗi level trước.");
   editor.data.fileName = normalizeFileName(elements.jsonFileNameInput.value || editor.data.fileName);
   const documentData = serializeLevel(editor.data);
+  const invalidSuffix = report.valid ? "" : ` · Level hiện có ${report.errors.length} lỗi`;
   if (fileManager.connected && folderFileState.permission === "granted") {
     try {
       await fileManager.write(editor.data.fileName, documentData);
@@ -1234,7 +1283,7 @@ async function downloadCurrentLevel() {
       rememberSelectedDataFileName(editor.data.fileName);
       await scanFolder();
       renderAll();
-      showNotification(elements.toast, `Đã lưu ${editor.data.fileName} vào ${folderFileState.directoryName}.`);
+      showNotification(elements.toast, `Đã lưu ${editor.data.fileName} vào ${folderFileState.directoryName}${invalidSuffix}.`);
       return;
     } catch (error) {
       showNotification(elements.toast, `Không thể lưu vào folder: ${error.message}`);
@@ -1250,7 +1299,7 @@ async function downloadCurrentLevel() {
   fileDirty = false;
   editor.data.fileDirty = false;
   renderAll();
-  showNotification(elements.toast, `Đã tải xuống ${editor.data.fileName}`);
+  showNotification(elements.toast, `Đã tải xuống ${editor.data.fileName}${invalidSuffix}`);
 }
 
 function openImportedData(raw, fileName) {
@@ -1294,6 +1343,27 @@ elements.jsonFileNameInput.addEventListener("change", () => {
   fileDirty = true;
   editor.data.fileDirty = true;
   renderAll();
+});
+elements.levelValidityBadge.addEventListener("click", (event) => {
+  event.stopPropagation();
+  const hidden = elements.levelValidationPopover.classList.toggle("hidden");
+  elements.levelValidityBadge.setAttribute("aria-expanded", String(!hidden));
+});
+elements.levelValidationPopover.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!event.target.closest("[data-show-validation-panel]")) return;
+  elements.levelValidationPopover.classList.add("hidden");
+  elements.levelValidityBadge.setAttribute("aria-expanded", "false");
+  switchTab("level");
+  const validationDetails = document.querySelector(".validation-details");
+  if (validationDetails) {
+    validationDetails.open = true;
+    validationDetails.scrollIntoView({ block: "nearest" });
+  }
+});
+document.addEventListener("click", () => {
+  elements.levelValidationPopover.classList.add("hidden");
+  elements.levelValidityBadge.setAttribute("aria-expanded", "false");
 });
 
 elements.newLevelBtn.addEventListener("click", () => {
@@ -1412,12 +1482,12 @@ elements.jsonFileList.addEventListener("click", async (event) => {
     } else if (button.dataset.fileAction === "save") {
       if (!confirm(`Lưu đè toàn bộ nội dung hiện tại vào ${name}?`)) return;
       const report = validateLevel(editor.data);
-      if (!report.exportable) return showNotification(elements.toast, "Không thể lưu đè khi level còn lỗi.");
       await fileManager.write(name, serializeLevel(editor.data));
       editor.data.fileName = name; editor.data.sourceFileName = name; fileDirty = false;
       editor.data.fileDirty = false;
       rememberSelectedDataFileName(name);
-      await scanFolder(); showNotification(elements.toast, `Đã lưu đè ${name}`);
+      await scanFolder();
+      showNotification(elements.toast, report.valid ? `Đã lưu đè ${name}` : `Đã lưu đè ${name} · Level hiện có ${report.errors.length} lỗi`);
     } else if (button.dataset.fileAction === "rename") {
       const proposed = prompt("Tên file mới:", name);
       if (!proposed) return;

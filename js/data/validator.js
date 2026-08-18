@@ -1,4 +1,5 @@
 import { FRUIT_TYPES } from "../core/constants.js";
+import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
@@ -164,13 +165,14 @@ export function validateLevel(level) {
     if (trayVisualKeys.has(visualKey)) warnings.push(`Khay ${cell.item.trayId} có visual trùng với khay ${trayVisualKeys.get(visualKey)}.`);
     else trayVisualKeys.set(visualKey, cell.item.trayId);
   });
-  (level?.layers ?? []).forEach((layer) => Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
+  (level?.layers ?? []).forEach((layer, layerIndex) => Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind !== "fruit") return;
     const index = indexOfKey(key);
     if (!roadKeys.has(key)) warnings.push(`Fruit tại Index ${index} trong layer ${layer.layer ?? layer.name} phải nằm trên Path.`);
     if (countBarrierEndpointIndexes.has(index)) errors.push(`Fruit tại Index ${index} không được đặt tại startIndex/endIndex của Count Barrier.`);
     if (cell.item.unknown) warnings.push(`Layer ${layer.layer ?? layer.name} còn Unknown #${cell.item.itemId ?? cell.item.id}.`);
     if (level.sharedCells?.[key]?.item?.kind === "tray") warnings.push(`Fruit tại Index ${index} trùng checkpoint khay.`);
+    if (layerIndex === 0 && isPlayerHeadItem(level.sharedCells?.[key]?.item)) errors.push(`Fruit tại Index ${index} trùng Player Head Layer 1.`);
   }));
   (level?.mysteryFruitElement ?? []).forEach((entry) => {
     const layer = (level.layers ?? []).find((candidate, index) => (Number.isInteger(candidate.layer) ? candidate.layer : index) === entry.layer);

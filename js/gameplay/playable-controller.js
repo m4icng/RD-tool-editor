@@ -1,5 +1,6 @@
 import { DIRECTIONS, FRUIT_TYPES } from "../core/constants.js";
 import { applyVisualScaleConfig } from "../core/visual-scale.js";
+import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
 import { bridgeAllowsDifferentAxisOverlap, isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { gateDirectionClass, gateDirectionFromMovement, gateDirectionLabel, isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
@@ -55,6 +56,9 @@ export const PLAY_STATUS = Object.freeze({
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
 const DIRECTION_LABELS = Object.freeze({ up: "↑ Lên", down: "↓ Xuống", left: "← Trái", right: "→ Phải" });
 const FRUIT_ICONS = Object.freeze({ apple: "🍎", banana: "🍌", grape: "🍇", eggplant: "🍆" });
+const DEFAULT_PLAY_SPEED = 12;
+const DELIVERY_ITEMS_PER_SECOND = 4;
+const DELIVERY_INTERVAL_MS = 1000 / DELIVERY_ITEMS_PER_SECOND;
 const STATUS_COPY = Object.freeze({
   ready: ["Sẵn sàng", "Chọn một hướng hợp lệ để bắt đầu."],
   moving: ["Đang chạy", "Rắn đang tự di chuyển trên đoạn đường hiện tại."],
@@ -314,7 +318,7 @@ export function validatePlayableLevel(level) {
     const sharedCell = level.sharedCells?.[cellKey(x, y)];
     const sharedPath = sharedCell?.path ?? cell.path;
     if (!sharedPath) errors.push(`${cell.item.label ?? cell.item.kind} tại Index ${index} trong fruit layer ${layerIndex + 1} phải nằm trên đường đi.`);
-    if (sharedCell?.item) errors.push(`Fruit layer ${layerIndex + 1} tại Index ${index} trùng ${sharedCell.item.kind} dùng chung.`);
+    if (sharedCell?.item && (!isPlayerHeadItem(sharedCell.item) || layerIndex === 0)) errors.push(`Fruit layer ${layerIndex + 1} tại Index ${index} trùng ${sharedCell.item.kind} dùng chung.`);
     if (barrierEndpointIndexes.has(index)) errors.push(`Fruit layer ${layerIndex + 1} không được đặt tại endpoint Count Barrier Index ${index}.`);
     if (cell.item.unknown || !FRUIT_TYPES.includes(cell.item.fruitType)) errors.push(`Unknown item #${cell.item.itemId ?? cell.item.id} trong fruit layer ${layerIndex + 1} chưa được Playable hỗ trợ.`);
   });
@@ -361,7 +365,7 @@ function createTrayRuntime(entry) {
   };
 }
 
-export function createPlayableSession(level, { mode = "continuous", speed = 9 } = {}) {
+export function createPlayableSession(level, { mode = "continuous", speed = DEFAULT_PLAY_SPEED } = {}) {
   const report = validatePlayableLevel(level);
   if (!report.valid) throw new Error(report.errors.join(" "));
   const layer = structuredClone(report.layer);
@@ -995,7 +999,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
         deliverNextCargo(session);
         render();
         scheduleNext();
-      }, 280);
+      }, DELIVERY_INTERVAL_MS);
       return;
     }
     if (![PLAY_STATUS.MOVING, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(session.status)) return;

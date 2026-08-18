@@ -98,7 +98,11 @@
       <div class="sidebar-scroll hidden" id="jsonControls">
         <section class="control-section">
           <div class="section-heading"><h2>Data JSON</h2><span>RailwayDash v1</span></div>
-          <label class="json-file-name json-sidebar-file-name"><span>Tên file</span><input id="jsonFileNameInput" type="text" value="untitled-level.json" spellcheck="false"></label>
+          <label class="json-file-name json-sidebar-file-name">
+            <span class="json-file-name-heading"><span>Tên file</span><button class="level-validity-badge valid" id="levelValidityBadge" type="button" aria-expanded="false" aria-controls="levelValidationPopover">Valid</button></span>
+            <input id="jsonFileNameInput" type="text" value="untitled-level.json" spellcheck="false">
+          </label>
+          <div class="level-validation-popover hidden" id="levelValidationPopover"></div>
           <div class="topbar-actions json-sidebar-actions hidden" id="jsonActions">
             <button class="btn" id="newLevelBtn" type="button">＋ Level mới</button>
             <button class="btn" id="jsonImportBtn" type="button">Nhập file</button>
@@ -218,7 +222,7 @@
               <div class="playable-blocker hidden" id="playableBlocker"></div>
               <div class="playable-settings">
                 <label><span>Chế độ</span><select id="playModeSelect"><option value="continuous">Chơi liên tục</option><option value="step">Từng bước</option></select></label>
-                <label><span>Tốc độ</span><select id="playSpeedSelect"><option value="6">Chậm · 6 ô/s</option><option value="9" selected>Thường · 9 ô/s</option><option value="12">Nhanh · 12 ô/s</option></select></label>
+                <label><span>Tốc độ</span><select id="playSpeedSelect"><option value="6">Chậm · 6 ô/s</option><option value="9">Thường · 9 ô/s</option><option value="12" selected>Nhanh · 12 ô/s</option></select></label>
               </div>
               <div class="playable-actions"><button class="btn" id="playPauseBtn" type="button">Pause</button><button class="btn" id="playRestartBtn" type="button">Restart</button></div>
               <div class="playable-direction" id="playableDirectionHint"></div>

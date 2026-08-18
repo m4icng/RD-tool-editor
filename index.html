@@ -30,6 +30,13 @@
           <div class="dimension-card dimension-pair">
             <label><span>Width</span><div class="dimension-stepper"><button type="button" data-map-dimension="columns" data-delta="-1">−</button><input id="mapWidthInput" type="number" min="1" step="1" value="17"><button type="button" data-map-dimension="columns" data-delta="1">+</button></div></label>
             <label><span>Height</span><div class="dimension-stepper"><button type="button" data-map-dimension="rows" data-delta="-1">−</button><input id="mapHeightInput" type="number" min="1" step="1" value="28"><button type="button" data-map-dimension="rows" data-delta="1">+</button></div></label>
+            <div class="resize-edge-controls" aria-label="Resize map theo 4 hướng">
+              <strong>RESIZE 4 HƯỚNG</strong>
+              <div class="resize-edge-row"><span>▲ Top</span><div><button type="button" data-map-resize-edge="top" data-delta="-1">−</button><button type="button" data-map-resize-edge="top" data-delta="1">+</button></div></div>
+              <div class="resize-edge-row"><span>▼ Bottom</span><div><button type="button" data-map-resize-edge="bottom" data-delta="-1">−</button><button type="button" data-map-resize-edge="bottom" data-delta="1">+</button></div></div>
+              <div class="resize-edge-row"><span>◀ Left</span><div><button type="button" data-map-resize-edge="left" data-delta="-1">−</button><button type="button" data-map-resize-edge="left" data-delta="1">+</button></div></div>
+              <div class="resize-edge-row"><span>▶ Right</span><div><button type="button" data-map-resize-edge="right" data-delta="-1">−</button><button type="button" data-map-resize-edge="right" data-delta="1">+</button></div></div>
+            </div>
           </div>
         </section>
 
@@ -207,7 +214,7 @@
               <div class="grid-board playable-board" id="playableGridBoard" role="grid" aria-label="Map chơi thử"></div>
             </div>
             <div class="playable-end-overlay hidden" id="playableEndOverlay" role="dialog" aria-modal="true" aria-labelledby="playableEndTitle">
-              <div class="playable-end-card"><span id="playableEndIcon">🏁</span><h2 id="playableEndTitle">Hoàn thành</h2><p id="playableEndCopy"></p><div><button class="btn btn-primary" id="playAgainBtn" type="button">Chơi lại</button><button class="btn" id="exitPlayableBtn" type="button">Về Editor</button></div></div>
+              <div class="playable-end-card"><span id="playableEndIcon">🏁</span><h2 id="playableEndTitle">Hoàn thành</h2><p id="playableEndCopy"></p><div><button class="btn btn-primary hidden" id="playReviveBtn" type="button">Revive</button><button class="btn btn-primary" id="playAgainBtn" type="button">Chơi lại</button><button class="btn" id="exitPlayableBtn" type="button">Về Editor</button></div></div>
             </div>
           </div>
           <footer class="canvas-hint"><span>Chỉ nhập hướng khi trạng thái đang chờ</span><span><kbd>WASD</kbd> · <kbd>↑↓←→</kbd> · vuốt chuột</span></footer>

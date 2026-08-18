@@ -1,4 +1,4 @@
-import { FRUIT_SHORT } from "../core/constants.js";
+import { applyBlockItemVisual } from "../core/block-visuals.js";
 import { applyVisualScaleConfig } from "../core/visual-scale.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { gateDirectionClass, isGateElement } from "../objects/gate-object.js";
@@ -125,11 +125,10 @@ export function renderGrid(container, editorData) {
           && !editorData.mysteryFruitDebug;
         const icon = document.createElement("span");
         icon.className = `placed-icon ${data.item.kind}${isHiddenFruit ? " mystery-fruit-preview" : ""}`;
-        icon.textContent = data.item.icon;
         if (data.item.kind === "fruit") {
-          const badge = document.createElement("small");
-          badge.textContent = isHiddenFruit ? "?" : data.item.unknown ? `#${data.item.itemId ?? data.item.id}` : FRUIT_SHORT[data.item.fruitType];
-          icon.appendChild(badge);
+          applyBlockItemVisual(icon, data.item, { mystery: isHiddenFruit });
+        } else {
+          icon.textContent = data.item.icon;
         }
         cell.appendChild(icon);
       }

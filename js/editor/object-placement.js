@@ -297,7 +297,12 @@ export function applyTool(state, x, y, toolOverride = null) {
         state.selectedCell = { x, y };
         return { changed: false, reason: "unique-object-exists", objectId: object.id };
       }
-      if (object.kind === "fruit") {
+      if (isPlayerHeadItem(object)) {
+        if (shared.item && shared.item.id !== object.id) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
+        if (layerCell.item) return { changed: false, reason: "fruit-position-occupied", objectId: object.id };
+        shared.item = cloneObject(object);
+        shared.path = true;
+      } else if (object.kind === "fruit") {
         const index = positionToIndex(x, y, state.grid.columns);
         const barrier = findCountBarrierAtIndex(state, index);
         if (barrier && (barrier.startIndex === index || barrier.endIndex === index)) {

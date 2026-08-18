@@ -1,4 +1,5 @@
 import { FRUIT_TYPES } from "../core/constants.js";
+import { BLOCK_ITEM_GLYPH, applyBlockItemVisual, blockLabelForFruitType } from "../core/block-visuals.js";
 import {
   cellKey,
   getTrayVisualDirection,
@@ -11,12 +12,10 @@ import { createId } from "../utils/id-generator.js";
 
 export const TRAY_CAPACITY = 9;
 
-const FRUIT_META = Object.freeze({
-  apple: { label: "Táo", icon: "🍎" },
-  banana: { label: "Chuối", icon: "🍌" },
-  grape: { label: "Nho", icon: "🍇" },
-  eggplant: { label: "Cà tím", icon: "🍆" }
-});
+const FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
+  type,
+  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+])));
 
 const TRAY_DIRECTION_META = Object.freeze({
   up: "↑ Phía trên",
@@ -187,7 +186,7 @@ function createRecipeControl(type, amount, total, layerIndex) {
   const row = document.createElement("div");
   row.className = "tray-recipe-row";
   row.innerHTML = '<span class="tray-fruit-icon"></span><span class="tray-fruit-name"></span><span class="tray-counter"><button type="button">−</button><output></output><button type="button">+</button></span>';
-  row.children[0].textContent = meta.icon;
+  applyBlockItemVisual(row.children[0], type);
   row.children[1].textContent = meta.label;
   const [decrease, output, increase] = row.children[2].children;
   decrease.dataset.recipeStep = "-1";

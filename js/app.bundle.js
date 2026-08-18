@@ -60,8 +60,8 @@ const COUNT_BARRIER_ASSET_ID = "count-barrier";
 const TUNNEL_ASSET_ID = "tunnel";
 const ONE_WAY_ASSET_ID = "one-way";
 
-const FRUIT_TYPES = Object.freeze(["apple", "banana", "grape", "eggplant"]);
-const FRUIT_SHORT = Object.freeze({ apple: "T", banana: "C", grape: "N", eggplant: "CT" });
+const FRUIT_TYPES = Object.freeze(["apple", "banana", "grape", "eggplant", "block5", "block6", "block7"]);
+const FRUIT_SHORT = Object.freeze({ apple: "B1", banana: "B2", grape: "B3", eggplant: "B4", block5: "B5", block6: "B6", block7: "B7" });
 const DIRECTIONS = Object.freeze({
   up: { x: 0, y: -1 },
   right: { x: 1, y: 0 },
@@ -492,11 +492,91 @@ const FRUIT_ITEM_IDS = Object.freeze({
   apple: 1,
   banana: 2,
   grape: 3,
-  eggplant: 4
+  eggplant: 4,
+  block5: 5,
+  block6: 6,
+  block7: 7
 });
 
 function createFruit(fruitType, label, icon) {
   return { id: FRUIT_ITEM_IDS[fruitType] ?? String(fruitType), kind: "fruit", category: "item", fruitType, label, icon };
+}
+
+
+// ---- js/core/block-visuals.js ----
+
+
+const TRAIN_HEAD_ICON = "🚂";
+const BLOCK_ITEM_GLYPH = "■";
+
+const BLOCK_ITEM_COLORS = Object.freeze({
+  1: "#e53935",
+  2: "#f6d33f",
+  3: "#2f7eea",
+  4: "#f062a7",
+  5: "#8e44ad",
+  6: "#34a853",
+  7: "#f28c28"
+});
+
+const BLOCK_ITEM_LABELS = Object.freeze({
+  1: "Block đỏ",
+  2: "Block vàng",
+  3: "Block xanh biển",
+  4: "Block hồng",
+  5: "Block tím",
+  6: "Block xanh lá",
+  7: "Block cam"
+});
+
+function blockItemIdFromFruitType(fruitType) {
+  return Number(FRUIT_ITEM_IDS[fruitType]) || null;
+}
+
+function blockItemIdFromItem(itemOrType) {
+  if (typeof itemOrType === "string" && FRUIT_TYPES.includes(itemOrType)) return blockItemIdFromFruitType(itemOrType);
+  const directId = Number(itemOrType?.itemId ?? itemOrType?.id);
+  if (Number.isInteger(directId) && directId > 0) return directId;
+  return blockItemIdFromFruitType(itemOrType?.fruitType);
+}
+
+function blockVisualMeta(itemOrType) {
+  const itemId = blockItemIdFromItem(itemOrType);
+  return {
+    itemId,
+    color: BLOCK_ITEM_COLORS[itemId] ?? "#94a3b8",
+    label: BLOCK_ITEM_LABELS[itemId] ?? `Block #${itemId ?? "?"}`
+  };
+}
+
+function blockLabelForFruitType(fruitType) {
+  return blockVisualMeta(fruitType).label;
+}
+
+function applyBlockItemVisual(element, itemOrType, { mystery = false } = {}) {
+  element.classList.add("block-item-visual");
+  if (mystery) {
+    element.classList.add("mystery-fruit-preview");
+    element.textContent = "❓";
+    element.title = "Mystery Item";
+    element.removeAttribute("data-item-id");
+    element.style.removeProperty("--block-color");
+    return element;
+  }
+  const meta = blockVisualMeta(itemOrType);
+  element.classList.remove("mystery-fruit-preview");
+  element.textContent = "";
+  element.title = meta.label;
+  element.dataset.itemId = String(meta.itemId ?? "");
+  element.style.setProperty("--block-color", meta.color);
+  return element;
+}
+
+function createBlockSwatch(itemOrType, className = "block-swatch") {
+  const swatch = document.createElement("span");
+  swatch.className = className;
+  applyBlockItemVisual(swatch, itemOrType);
+  return swatch;
 }
 
 
@@ -1318,13 +1398,17 @@ function remapOneWayIndexes(entries = [], fromWidth, toWidth) {
 
 
 
+
 const objects = [
-  { id: "snake-start", kind: "snake", category: "item", label: "Đầu rắn", icon: "🐍", direction: "right", uniqueOnMap: true },
+  { id: "snake-start", kind: "snake", category: "item", label: "Train Head", icon: TRAIN_HEAD_ICON, direction: "right", uniqueOnMap: true },
   createEmptyTray(),
-  createFruit("apple", "Táo", "🍎"),
-  createFruit("banana", "Chuối", "🍌"),
-  createFruit("grape", "Nho", "🍇"),
-  createFruit("eggplant", "Cà tím", "🍆"),
+  createFruit("apple", "Block 1", BLOCK_ITEM_GLYPH),
+  createFruit("banana", "Block 2", BLOCK_ITEM_GLYPH),
+  createFruit("grape", "Block 3", BLOCK_ITEM_GLYPH),
+  createFruit("eggplant", "Block 4", BLOCK_ITEM_GLYPH),
+  createFruit("block5", "Block 5", BLOCK_ITEM_GLYPH),
+  createFruit("block6", "Block 6", BLOCK_ITEM_GLYPH),
+  createFruit("block7", "Block 7", BLOCK_ITEM_GLYPH),
   createBridge(),
   createGate(),
   createCountBarrierTool(),
@@ -1551,11 +1635,12 @@ function migrateLevel(input) {
 
 
 
+
 const TYPE_BY_ITEM_ID = Object.freeze(Object.fromEntries(Object.entries(FRUIT_ITEM_IDS).map(([type, id]) => [String(id), type])));
-const GAME_FORMAT_FRUIT_META = Object.freeze({
-  apple: { label: "Táo", icon: "🍎" }, banana: { label: "Chuối", icon: "🍌" },
-  grape: { label: "Nho", icon: "🍇" }, eggplant: { label: "Cà tím", icon: "🍆" }
-});
+const GAME_FORMAT_FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
+  type,
+  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+])));
 
 function assertArray(value, name) {
   if (!Array.isArray(value)) throw new Error(`${name} phải là một mảng.`);
@@ -1791,7 +1876,7 @@ function deserializeLevel(rawData, { fileName = "untitled-level.json" } = {}) {
   });
   raw.spawns.forEach((spawn) => {
     const { x, y } = indexToPosition(spawn.index, width);
-    ensureShared(cellKey(x, y)).item = { id: "snake-start", kind: "snake", category: "item", label: "Đầu rắn", icon: "🐍", direction: "right" };
+    ensureShared(cellKey(x, y)).item = { id: "snake-start", kind: "snake", category: "item", label: "Train Head", icon: TRAIN_HEAD_ICON, direction: "right" };
   });
 
   const sortedItemLayers = raw.itemLayers.slice().sort((a, b) => a.layer - b.layer);
@@ -2754,7 +2839,12 @@ function applyTool(state, x, y, toolOverride = null) {
         state.selectedCell = { x, y };
         return { changed: false, reason: "unique-object-exists", objectId: object.id };
       }
-      if (object.kind === "fruit") {
+      if (isPlayerHeadItem(object)) {
+        if (shared.item && shared.item.id !== object.id) return { changed: false, reason: "shared-position-occupied", objectId: shared.item.id };
+        if (layerCell.item) return { changed: false, reason: "fruit-position-occupied", objectId: object.id };
+        shared.item = cloneObject(object);
+        shared.path = true;
+      } else if (object.kind === "fruit") {
         const index = positionToIndex(x, y, state.grid.columns);
         const barrier = findCountBarrierAtIndex(state, index);
         if (barrier && (barrier.startIndex === index || barrier.endIndex === index)) {
@@ -3146,11 +3236,10 @@ function renderGrid(container, editorData) {
           && !editorData.mysteryFruitDebug;
         const icon = document.createElement("span");
         icon.className = `placed-icon ${data.item.kind}${isHiddenFruit ? " mystery-fruit-preview" : ""}`;
-        icon.textContent = data.item.icon;
         if (data.item.kind === "fruit") {
-          const badge = document.createElement("small");
-          badge.textContent = isHiddenFruit ? "?" : data.item.unknown ? `#${data.item.itemId ?? data.item.id}` : FRUIT_SHORT[data.item.fruitType];
-          icon.appendChild(badge);
+          applyBlockItemVisual(icon, data.item, { mystery: isHiddenFruit });
+        } else {
+          icon.textContent = data.item.icon;
         }
         cell.appendChild(icon);
       }
@@ -3325,6 +3414,7 @@ function showNotification(element, message) {
 
 
 // ---- js/ui/object-palette.js ----
+
 function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], unavailableReasons = {}, bridgeAxis = 0, countBarrierCount = 1 } = {}) {
   container.innerHTML = "";
   if (objects.length === 0) {
@@ -3349,6 +3439,10 @@ function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Ch�
     button.innerHTML = `<span class="asset-icon"></span><span class="asset-label"></span>`;
     button.firstElementChild.textContent = object.icon;
     button.lastElementChild.textContent = object.label;
+    if (object.kind === "fruit") {
+      button.classList.add("block-item-asset");
+      applyBlockItemVisual(button.firstElementChild, object);
+    }
     if (object.kind === "bridge") {
       button.classList.add("bridge-asset");
       button.firstElementChild.classList.toggle("vertical-bridge-icon", Number(bridgeAxis) === 1);
@@ -3408,14 +3502,13 @@ function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Ch�
 
 
 
+
 const TRAY_CAPACITY = 9;
 
-const FRUIT_META = Object.freeze({
-  apple: { label: "Táo", icon: "🍎" },
-  banana: { label: "Chuối", icon: "🍌" },
-  grape: { label: "Nho", icon: "🍇" },
-  eggplant: { label: "Cà tím", icon: "🍆" }
-});
+const FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
+  type,
+  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+])));
 
 const TRAY_DIRECTION_META = Object.freeze({
   up: "↑ Phía trên",
@@ -3586,7 +3679,7 @@ function createRecipeControl(type, amount, total, layerIndex) {
   const row = document.createElement("div");
   row.className = "tray-recipe-row";
   row.innerHTML = '<span class="tray-fruit-icon"></span><span class="tray-fruit-name"></span><span class="tray-counter"><button type="button">−</button><output></output><button type="button">+</button></span>';
-  row.children[0].textContent = meta.icon;
+  applyBlockItemVisual(row.children[0], type);
   row.children[1].textContent = meta.label;
   const [decrease, output, increase] = row.children[2].children;
   decrease.dataset.recipeStep = "-1";
@@ -3769,12 +3862,11 @@ function renderTrayEditor(container, state) {
 // ---- js/ui/data-summary.js ----
 
 
-const DATA_FRUIT_META = Object.freeze({
-  apple: { label: "Táo", icon: "🍎" },
-  banana: { label: "Chuối", icon: "🍌" },
-  grape: { label: "Nho", icon: "🍇" },
-  eggplant: { label: "Cà tím", icon: "🍆" }
-});
+
+const DATA_FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
+  type,
+  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+])));
 
 function emptyFruitCounts() {
   return Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0]));
@@ -3866,7 +3958,7 @@ function createFruitChips(counts, { includeZero = false } = {}) {
   types.forEach((type) => {
     const chip = document.createElement("span");
     chip.className = `data-fruit-chip${counts[type] === 0 ? " empty" : ""}`;
-    chip.textContent = `${DATA_FRUIT_META[type].icon} ${counts[type]}`;
+    chip.append(createBlockSwatch(type), document.createTextNode(String(counts[type])));
     chip.title = `${DATA_FRUIT_META[type].label}: ${counts[type]}`;
     chips.appendChild(chip);
   });
@@ -3900,7 +3992,7 @@ function renderFruitBalance(summary) {
     const label = document.createElement("strong");
     const note = document.createElement("small");
     const value = document.createElement("span");
-    icon.textContent = DATA_FRUIT_META[type].icon;
+    applyBlockItemVisual(icon, type);
     label.textContent = DATA_FRUIT_META[type].label;
     note.textContent = current === required ? "Đã cân bằng" : current < required ? `Thiếu ${required - current}` : `Dư ${current - required}`;
     value.className = "fruit-balance-value";
@@ -4510,71 +4602,256 @@ function renderInspector(container, editorData) {
 
 
 
+const RESIZE_EDGES = new Set(["top", "bottom", "left", "right"]);
+
 function isMapSizeWithinBounds(grid) {
   return Number.isInteger(grid?.columns) && grid.columns >= 1 && Number.isInteger(grid?.rows) && grid.rows >= 1;
 }
 
-function hasDataOutsideGrid(state, nextGrid) {
-  const scopes = [{ cells: state.sharedCells ?? {} }, ...(state.layers ?? [])];
-  if (scopes.some((scope) => Object.entries(scope.cells ?? {}).some(([key, cell]) => {
-    const { x, y } = parseCellKey(key);
-    return (x >= nextGrid.columns || y >= nextGrid.rows) && Boolean(cell.path || cell.item || cell.element);
-  }))) return true;
-  return Object.entries(state.sharedCells ?? {}).some(([key, cell]) => {
-    if (!["tray", "truck"].includes(cell.item?.kind)) return false;
-    const visual = getTrayVisualPosition(cell.item, parseCellKey(key));
-    return !isInsideGrid(nextGrid, visual.x, visual.y);
-  }) || [...normalizeTunnelElement(state.tunnelElement), ...(normalizeTunnelDraft(state.tunnelDraft) ? [normalizeTunnelDraft(state.tunnelDraft)] : [])].some((tunnel) => tunnel.entryPoints.some((point) => {
-    const x = point.index % state.grid.columns;
-    const y = Math.floor(point.index / state.grid.columns);
-    return !isInsideGrid(nextGrid, x, y);
-  })) || [...normalizeOneWayElement(state.oneWayElement), ...(normalizeOneWayDraft(state.oneWayDraft) ? [normalizeOneWayDraft(state.oneWayDraft)] : [])].some((oneWay) => oneWay.entryPoints.some((point) => {
-    const x = point.index % state.grid.columns;
-    const y = Math.floor(point.index / state.grid.columns);
-    return !isInsideGrid(nextGrid, x, y);
-  }));
+function hasCellData(cell) {
+  return Boolean(cell?.path || cell?.item || cell?.element);
 }
 
-function changeMapDimension(state, dimension, nextValue) {
-  if (!['columns', 'rows'].includes(dimension)) return { changed: false, reason: "dimension" };
-  const value = Number(nextValue);
-  if (!Number.isInteger(value) || value < 1) return { changed: false, reason: "limit" };
-  const nextGrid = { ...state.grid, [dimension]: value };
-  if (value < state.grid[dimension] && hasDataOutsideGrid(state, nextGrid)) return { changed: false, reason: "occupied" };
-  if (value === state.grid[dimension]) return { changed: false, reason: null };
+function isEmptySharedCell(cell) {
+  return !cell?.path && !cell?.item && !cell?.element;
+}
+
+function isPositionOnEdge(position, grid, edge) {
+  if (edge === "top") return position.y === 0;
+  if (edge === "bottom") return position.y === grid.rows - 1;
+  if (edge === "left") return position.x === 0;
+  if (edge === "right") return position.x === grid.columns - 1;
+  return false;
+}
+
+function isIndexOnEdge(index, grid, edge) {
+  return isPositionOnEdge(indexToPosition(index, grid.columns), grid, edge);
+}
+
+function hasTrayVisualInArea(state, containsPosition) {
+  return Object.entries(state.sharedCells ?? {}).some(([key, cell]) => {
+    if (!["tray", "truck"].includes(cell?.item?.kind)) return false;
+    return containsPosition(getTrayVisualPosition(cell.item, parseCellKey(key)));
+  });
+}
+
+function hasIndexedDataInArea(state, containsPosition) {
+  const grid = state.grid;
+  const containsIndex = (index) => containsPosition(indexToPosition(index, grid.columns));
+  if (normalizeMysteryFruitElement(state.mysteryFruitElement)
+    .some((entry) => entry.index.some(containsIndex))) return true;
+  if (normalizeCountBarrierElement(state.countBarrierElement)
+    .some((entry) => entry.index.some(containsIndex) || containsIndex(entry.startIndex) || containsIndex(entry.endIndex))) return true;
+  if ([...normalizeTunnelElement(state.tunnelElement), ...(normalizeTunnelDraft(state.tunnelDraft) ? [normalizeTunnelDraft(state.tunnelDraft)] : [])]
+    .some((entry) => entry.entryPoints.some((point) => containsIndex(point.index)))) return true;
+  return [...normalizeOneWayElement(state.oneWayElement), ...(normalizeOneWayDraft(state.oneWayDraft) ? [normalizeOneWayDraft(state.oneWayDraft)] : [])]
+    .some((entry) => entry.entryPoints.some((point) => containsIndex(point.index)));
+}
+
+function hasPositionDataInArea(state, containsPosition) {
+  const sharedHasData = Object.entries(state.sharedCells ?? {}).some(([key, cell]) =>
+    containsPosition(parseCellKey(key)) && hasCellData(cell)
+  );
+  if (sharedHasData) return true;
+  const layerHasData = (state.layers ?? []).some((layer) => Object.entries(layer.cells ?? {}).some(([key, cell]) =>
+    containsPosition(parseCellKey(key)) && hasCellData(cell)
+  ));
+  if (layerHasData) return true;
+  if (Object.keys(state.priorityPoints ?? {}).some((key) => containsPosition(parseCellKey(key)))) return true;
+  return hasTrayVisualInArea(state, containsPosition) || hasIndexedDataInArea(state, containsPosition);
+}
+
+function hasDataOnResizeEdge(state, edge) {
+  if (!RESIZE_EDGES.has(edge) || !isMapSizeWithinBounds(state?.grid)) return false;
   ensureTerrainState(state);
-  const previousGrid = { ...state.grid };
-  state.grid = nextGrid;
-  state.countBarrierElement = remapCountBarrierIndexes(state.countBarrierElement, previousGrid.columns, nextGrid.columns);
-  state.tunnelElement = remapTunnelIndexes(state.tunnelElement, previousGrid.columns, nextGrid.columns);
-  if (state.tunnelDraft) {
-    state.tunnelDraft.entryPoints = state.tunnelDraft.entryPoints.map((point) => {
-      const x = point.index % previousGrid.columns;
-      const y = Math.floor(point.index / previousGrid.columns);
-      return { ...point, index: (y * nextGrid.columns) + x };
+  return hasPositionDataInArea(state, (position) => isPositionOnEdge(position, state.grid, edge));
+}
+
+function hasDataOutsideGrid(state, nextGrid) {
+  if (!isMapSizeWithinBounds(state?.grid) || !isMapSizeWithinBounds(nextGrid)) return false;
+  ensureTerrainState(state);
+  return hasPositionDataInArea(state, (position) => !isInsideGrid(nextGrid, position.x, position.y));
+}
+
+function createEdgeOperation(grid, edge, delta) {
+  if (!RESIZE_EDGES.has(edge)) return { changed: false, reason: "edge" };
+  if (![1, -1].includes(delta)) return { changed: false, reason: "delta" };
+
+  const nextGrid = { ...grid };
+  if (edge === "top" || edge === "bottom") nextGrid.rows += delta;
+  if (edge === "left" || edge === "right") nextGrid.columns += delta;
+  if (!isMapSizeWithinBounds(nextGrid)) return { changed: false, reason: "limit" };
+
+  const mapPosition = ({ x, y }) => {
+    if (delta < 0 && isPositionOnEdge({ x, y }, grid, edge)) return null;
+    if (edge === "top") return { x, y: y + delta };
+    if (edge === "left") return { x: x + delta, y };
+    return { x, y };
+  };
+  const isCreatedPosition = ({ x, y }) =>
+    delta > 0 && (
+      (edge === "top" && y === 0) ||
+      (edge === "bottom" && y === nextGrid.rows - 1) ||
+      (edge === "left" && x === 0) ||
+      (edge === "right" && x === nextGrid.columns - 1)
+    );
+
+  return { changed: true, previousGrid: { ...grid }, nextGrid, mapPosition, isCreatedPosition };
+}
+
+function createDimensionOperation(grid, dimension, nextValue) {
+  if (!["columns", "rows"].includes(dimension)) return { changed: false, reason: "dimension" };
+  const value = Math.floor(Number(nextValue));
+  if (!Number.isInteger(value) || value < 1) return { changed: false, reason: "limit" };
+  if (value === grid[dimension]) return { changed: false, reason: null };
+
+  const nextGrid = { ...grid, [dimension]: value };
+  const mapPosition = ({ x, y }) => isInsideGrid(nextGrid, x, y) ? { x, y } : null;
+  const isCreatedPosition = ({ x, y }) =>
+    (dimension === "columns" && value > grid.columns && x >= grid.columns) ||
+    (dimension === "rows" && value > grid.rows && y >= grid.rows);
+
+  return { changed: true, previousGrid: { ...grid }, nextGrid, mapPosition, isCreatedPosition };
+}
+
+function remapCellMap(cells, operation, remapCell = (cell) => cell) {
+  const nextCells = {};
+  Object.entries(cells ?? {}).forEach(([key, cell]) => {
+    const oldPosition = parseCellKey(key);
+    const nextPosition = operation.mapPosition(oldPosition);
+    if (!nextPosition || !isInsideGrid(operation.nextGrid, nextPosition.x, nextPosition.y)) return;
+    const nextCell = remapCell(structuredClone(cell), oldPosition, nextPosition);
+    if (!nextCell) return;
+    nextCells[cellKey(nextPosition.x, nextPosition.y)] = nextCell;
+  });
+  return nextCells;
+}
+
+function remapIndex(index, operation) {
+  if (!Number.isInteger(index)) return null;
+  const oldPosition = indexToPosition(index, operation.previousGrid.columns);
+  const nextPosition = operation.mapPosition(oldPosition);
+  if (!nextPosition || !isInsideGrid(operation.nextGrid, nextPosition.x, nextPosition.y)) return null;
+  return positionToIndex(nextPosition.x, nextPosition.y, operation.nextGrid.columns);
+}
+
+function remapMysteryFruit(entries, operation) {
+  return normalizeMysteryFruitElement(entries).flatMap((entry) => {
+    const indexes = [...new Set(entry.index.map((index) => remapIndex(index, operation)).filter(Number.isInteger))]
+      .sort((a, b) => a - b);
+    return indexes.length > 0 ? [{ ...entry, index: indexes }] : [];
+  });
+}
+
+function remapCountBarriers(entries, operation) {
+  return normalizeCountBarrierElement(entries).flatMap((entry) => {
+    const indexes = [...new Set(entry.index.map((index) => remapIndex(index, operation)).filter(Number.isInteger))]
+      .sort((a, b) => a - b);
+    if (indexes.length < 2) return [];
+    const startIndex = remapIndex(entry.startIndex, operation);
+    const endIndex = remapIndex(entry.endIndex, operation);
+    return [{
+      ...entry,
+      startIndex: indexes.includes(startIndex) ? startIndex : indexes[0],
+      endIndex: indexes.includes(endIndex) ? endIndex : indexes[indexes.length - 1],
+      index: indexes
+    }];
+  });
+}
+
+function remapPairedEntryPoints(entries, operation, normalizer) {
+  return normalizer(entries).flatMap((entry) => {
+    const entryPoints = entry.entryPoints.flatMap((point) => {
+      const index = remapIndex(point.index, operation);
+      return Number.isInteger(index) ? [{ ...point, index }] : [];
     });
-  }
-  state.oneWayElement = remapOneWayIndexes(state.oneWayElement, previousGrid.columns, nextGrid.columns);
-  if (state.oneWayDraft) {
-    state.oneWayDraft.entryPoints = state.oneWayDraft.entryPoints.map((point) => {
-      const x = point.index % previousGrid.columns;
-      const y = Math.floor(point.index / previousGrid.columns);
-      return { ...point, index: (y * nextGrid.columns) + x };
-    });
-  }
-  if (value > previousGrid[dimension]) {
-    for (let y = 0; y < nextGrid.rows; y += 1) {
-      for (let x = 0; x < nextGrid.columns; x += 1) {
-        if (x < previousGrid.columns && y < previousGrid.rows) continue;
-        state.grassCells[`${x},${y}`] = true;
-      }
+    return entryPoints.length === 2 ? [{ ...entry, entryPoints }] : [];
+  });
+}
+
+function remapDraft(draft, operation, normalizer) {
+  const normalized = normalizer(draft);
+  if (!normalized) return null;
+  const entryPoints = normalized.entryPoints.flatMap((point) => {
+    const index = remapIndex(point.index, operation);
+    return Number.isInteger(index) ? [{ ...point, index }] : [];
+  });
+  if (entryPoints.length !== normalized.entryPoints.length) return null;
+  return normalizer({ ...normalized, entryPoints });
+}
+
+function addCreatedGrassCells(state, operation) {
+  for (let y = 0; y < operation.nextGrid.rows; y += 1) {
+    for (let x = 0; x < operation.nextGrid.columns; x += 1) {
+      if (!operation.isCreatedPosition({ x, y })) continue;
+      if (state.sharedCells?.[cellKey(x, y)]?.path) continue;
+      state.grassCells[cellKey(x, y)] = true;
     }
-  } else {
-    state.grassCells = trimCells(state.grassCells, nextGrid);
-    state.priorityPoints = trimCells(state.priorityPoints, nextGrid);
   }
-  if (state.selectedCell && (state.selectedCell.x >= nextGrid.columns || state.selectedCell.y >= nextGrid.rows)) state.selectedCell = null;
+}
+
+function cleanupResizeSelections(state) {
+  const activeTray = state.activeTrayCell ? state.sharedCells?.[cellKey(state.activeTrayCell.x, state.activeTrayCell.y)]?.item : null;
+  if (state.activeTrayCell && !["tray", "truck"].includes(activeTray?.kind)) state.activeTrayCell = null;
+  const barrierIds = new Set((state.countBarrierElement ?? []).map((entry) => entry.barrierId));
+  if (Number.isInteger(state.activeBarrierId) && !barrierIds.has(state.activeBarrierId)) state.activeBarrierId = null;
+  if (Number.isInteger(state.drawingCountBarrierId) && !barrierIds.has(state.drawingCountBarrierId)) {
+    state.drawingCountBarrierId = null;
+  }
+  const tunnelIds = new Set((state.tunnelElement ?? []).map((entry) => entry.tunnelId));
+  if (Number.isInteger(state.activeTunnelId) && !tunnelIds.has(state.activeTunnelId)) state.activeTunnelId = null;
+  const oneWayIds = new Set((state.oneWayElement ?? []).map((entry) => entry.oneWayId));
+  if (Number.isInteger(state.activeOneWayId) && !oneWayIds.has(state.activeOneWayId)) state.activeOneWayId = null;
+}
+
+function applyResizeOperation(state, operation) {
+  ensureTerrainState(state);
+
+  state.sharedCells = remapCellMap(state.sharedCells, operation, (cell, oldPosition) => {
+    if (["tray", "truck"].includes(cell.item?.kind)) {
+      const trayPosition = operation.mapPosition(getTrayVisualPosition(cell.item, oldPosition));
+      if (!trayPosition || !isInsideGrid(operation.nextGrid, trayPosition.x, trayPosition.y)) cell.item = null;
+      else cell.item.trayPosition = trayPosition;
+    }
+    return isEmptySharedCell(cell) ? null : cell;
+  });
+  state.layers = (state.layers ?? []).map((layer) => ({
+    ...layer,
+    cells: remapCellMap(layer.cells, operation, (cell) => hasCellData(cell) ? cell : null)
+  }));
+  state.grassCells = remapCellMap(state.grassCells, operation, () => true);
+  state.priorityPoints = remapCellMap(state.priorityPoints, operation, (source) => source);
+  state.mysteryFruitElement = remapMysteryFruit(state.mysteryFruitElement, operation);
+  state.countBarrierElement = remapCountBarriers(state.countBarrierElement, operation);
+  state.tunnelElement = remapPairedEntryPoints(state.tunnelElement, operation, normalizeTunnelElement);
+  state.tunnelDraft = remapDraft(state.tunnelDraft, operation, normalizeTunnelDraft);
+  state.oneWayElement = remapPairedEntryPoints(state.oneWayElement, operation, normalizeOneWayElement);
+  state.oneWayDraft = remapDraft(state.oneWayDraft, operation, normalizeOneWayDraft);
+  state.selectedCell = state.selectedCell ? operation.mapPosition(state.selectedCell) : null;
+  state.activeTrayCell = state.activeTrayCell ? operation.mapPosition(state.activeTrayCell) : null;
+  state.grid = operation.nextGrid;
+  addCreatedGrassCells(state, operation);
+  cleanupResizeSelections(state);
+  ensureTerrainState(state);
   return { changed: true, reason: null };
+}
+
+function resizeMapEdge(state, edge, delta, { allowRemove = true } = {}) {
+  const operation = createEdgeOperation(state.grid, edge, Number(delta));
+  if (!operation.changed) return operation;
+  if (Number(delta) < 0 && !allowRemove && hasDataOnResizeEdge(state, edge)) {
+    return { changed: false, reason: "occupied" };
+  }
+  return applyResizeOperation(state, operation);
+}
+
+function changeMapDimension(state, dimension, nextValue, { allowRemove = false } = {}) {
+  const operation = createDimensionOperation(state.grid, dimension, nextValue);
+  if (!operation.changed) return operation;
+  if (state.grid[dimension] > operation.nextGrid[dimension] && !allowRemove && hasDataOutsideGrid(state, operation.nextGrid)) {
+    return { changed: false, reason: "occupied" };
+  }
+  return applyResizeOperation(state, operation);
 }
 
 
@@ -4918,7 +5195,133 @@ function isShovelRestoring(session) {
 }
 
 
+// ---- js/gameplay/tray-fill-system.js ----
+
+function activeTrayLayer(tray) {
+  return tray.layers[tray.activeIndex] ?? null;
+}
+
+function layerIsComplete(layer) {
+  return FRUIT_TYPES.every((type) => (layer.delivered[type] ?? 0) >= (layer.recipe[type] ?? 0));
+}
+
+function advanceCompletedTrayLayers(tray) {
+  const before = tray.activeIndex;
+  while (activeTrayLayer(tray) && layerIsComplete(activeTrayLayer(tray))) tray.activeIndex += 1;
+  return tray.activeIndex - before;
+}
+
+function fillFruitIntoTray(tray, fruitType) {
+  advanceCompletedTrayLayers(tray);
+  const layer = activeTrayLayer(tray);
+  if (!layer || (layer.recipe[fruitType] ?? 0) <= (layer.delivered[fruitType] ?? 0)) {
+    return { filled: false, completedLayerCount: 0 };
+  }
+  layer.delivered[fruitType] += 1;
+  const completedLayerCount = advanceCompletedTrayLayers(tray);
+  if (tray.activeIndex >= tray.layers.length && !tray.completed) {
+    tray.completed = true;
+  }
+  return { filled: true, completedLayerCount };
+}
+
+function fillFruitIntoAnyTray(session, fruitType) {
+  for (const tray of session.trays ?? []) {
+    const result = fillFruitIntoTray(tray, fruitType);
+    if (result.filled) return { ...result, tray };
+  }
+  return { filled: false, completedLayerCount: 0, tray: null };
+}
+
+function nextDeliverableCargoIndex(session, tray) {
+  advanceCompletedTrayLayers(tray);
+  const layer = activeTrayLayer(tray);
+  if (!layer) return -1;
+  return session.snake.body.findIndex((segment, index) => {
+    if (index === 0 || !segment.fruitType) return false;
+    return (layer.recipe[segment.fruitType] ?? 0) > (layer.delivered[segment.fruitType] ?? 0);
+  });
+}
+
+
+// ---- js/gameplay/lose-revive.js ----
+
+const LOSE_REASON = Object.freeze({
+  SELF_COLLISION: "self-collision",
+  OTHER: "other"
+});
+
+function canReviveLoseReason(reason) {
+  return reason === LOSE_REASON.SELF_COLLISION;
+}
+
+function markLose(session, { message, reason = LOSE_REASON.OTHER, status }) {
+  session.status = status;
+  session.lastReason = message;
+  session.loseReason = reason;
+  session.reviveAvailable = canReviveLoseReason(reason);
+  session.delivery = null;
+  session.deliveryEffect = null;
+  session.teleporting = false;
+  session.tailDisabled = false;
+}
+
+function reviveSession(session, { onTrayLayerComplete = () => {}, onAfterFill = () => {} } = {}) {
+  if (!session || !canReviveLoseReason(session.loseReason)) {
+    return { revived: false, reason: "revive-unavailable", transferred: 0, target: 0 };
+  }
+  const cargo = session.snake.body.slice(1);
+  const target = Math.floor(cargo.length * 0.8);
+  if (target <= 0) {
+    session.reviveAvailable = false;
+    session.loseReason = null;
+    return { revived: true, reason: "no-transfer-target", transferred: 0, target };
+  }
+
+  const originalBody = session.snake.body.map((part) => ({ ...part }));
+  const removedIndexes = new Set();
+  let transferred = 0;
+  session.reviving = true;
+  session.tailDisabled = true;
+  session.delivery = null;
+  session.deliveryEffect = null;
+
+  for (let index = 1; index < originalBody.length && transferred < target; index += 1) {
+    const segment = originalBody[index];
+    if (!segment.fruitType) continue;
+    const result = fillFruitIntoAnyTray(session, segment.fruitType);
+    if (!result.filled) continue;
+    removedIndexes.add(index);
+    transferred += 1;
+    onTrayLayerComplete(result.completedLayerCount);
+    onAfterFill();
+  }
+
+  if (transferred > 0) {
+    const positions = originalBody.map(({ x, y }) => ({ x, y }));
+    session.snake.body = originalBody
+      .filter((_, index) => index === 0 || !removedIndexes.has(index))
+      .map((part, index) => ({
+        ...part,
+        ...positions[index],
+        direction: session.snake.direction,
+        hiddenInTunnel: false,
+        hiddenInShovel: false
+      }));
+  }
+
+  session.reviving = false;
+  session.tailDisabled = false;
+  session.reviveAvailable = false;
+  session.loseReason = null;
+  return { revived: true, transferred, target };
+}
+
+
 // ---- js/gameplay/playable-controller.js ----
+
+
+
 
 
 
@@ -4942,12 +5345,12 @@ const PLAY_STATUS = Object.freeze({
   SHOVEL_TARGETING: SHOVEL_STATUS.TARGETING,
   SHOVEL_TELEPORTING: SHOVEL_STATUS.TELEPORTING,
   SHOVEL_AWAIT_DIRECTION: SHOVEL_STATUS.AWAIT_DIRECTION,
-  SHOVEL_RESTORE_TAIL: SHOVEL_STATUS.RESTORE_TAIL
+  SHOVEL_RESTORE_TAIL: SHOVEL_STATUS.RESTORE_TAIL,
+  REVIVING: "reviving"
 });
 
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
 const DIRECTION_LABELS = Object.freeze({ up: "↑ Lên", down: "↓ Xuống", left: "← Trái", right: "→ Phải" });
-const FRUIT_ICONS = Object.freeze({ apple: "🍎", banana: "🍌", grape: "🍇", eggplant: "🍆" });
 const DEFAULT_PLAY_SPEED = 12;
 const DELIVERY_ITEMS_PER_SECOND = 4;
 const DELIVERY_INTERVAL_MS = 1000 / DELIVERY_ITEMS_PER_SECOND;
@@ -4961,6 +5364,7 @@ const STATUS_COPY = Object.freeze({
   lost: ["Thua", "Rắn đã va chạm hoặc không còn hướng hợp lệ."],
   blocked: ["Chưa thể chơi", "Hãy sửa các lỗi level được liệt kê bên dưới."],
   teleporting: ["Đang qua Tunnel", "Train đang được đặt lại theo cổng ra."],
+  reviving: ["Đang Revive", "Train đang tự chuyển Fruit vào khay và rebuild lại."],
   [SHOVEL_STATUS.TARGETING]: ["Chọn điểm Xẻng", "Chọn một PriorityPoint đang sáng để dịch chuyển Head."],
   [SHOVEL_STATUS.TELEPORTING]: ["Đang dùng Xẻng", "Tail đang tạm ẩn và Head được đưa tới điểm đích."],
   [SHOVEL_STATUS.AWAIT_DIRECTION]: ["Chờ hướng sau Xẻng", "Head đã tới PriorityPoint mới. Chọn hướng tiếp tục."],
@@ -5024,6 +5428,7 @@ function nextTailPosition(session, body, direction) {
 function tailLogicDisabled(session) {
   return Boolean(
     session?.teleporting
+    || session?.reviving
     || session?.tailDisabled
     || session?.status === SHOVEL_STATUS.TARGETING
     || session?.status === SHOVEL_STATUS.TELEPORTING
@@ -5233,7 +5638,7 @@ function validatePlayableLevel(level) {
   });
   FRUIT_TYPES.forEach((type) => {
     if (fruitTotals[type] !== recipeTotals[type]) {
-      errors.push(`${FRUIT_ICONS[type]} ${type}: map có ${fruitTotals[type]}, recipe cần ${recipeTotals[type]}.`);
+      errors.push(`${blockLabelForFruitType(type)} ${type}: map có ${fruitTotals[type]}, recipe cần ${recipeTotals[type]}.`);
     }
   });
   return { valid: errors.length === 0, errors, layer, fruitLayers };
@@ -5289,6 +5694,9 @@ function createPlayableSession(level, { mode = "continuous", speed = DEFAULT_PLA
     status: PLAY_STATUS.READY,
     resumeStatus: PLAY_STATUS.READY,
     lastReason: null,
+    loseReason: null,
+    reviveAvailable: false,
+    reviving: false,
     delivery: null,
     deliveryEffect: null,
     teleporting: false,
@@ -5322,7 +5730,7 @@ function advanceFruitLayerIfCleared(session) {
     const headCell = session.layer.cells[cellKey(head.x, head.y)];
     if (headCell?.item?.kind === "fruit") {
       const tail = session.snake.body[session.snake.body.length - 1];
-      session.snake.body.push({ ...tail, fruitType: headCell.item.fruitType });
+      session.snake.body.push({ ...tail, fruitType: headCell.item.fruitType, itemId: blockItemIdFromItem(headCell.item) });
       headCell.item = null;
       session.remainingFruits -= 1;
     }
@@ -5382,20 +5790,6 @@ function updateOneWayRuntime(session, headIndex) {
   }
 }
 
-function activeTrayLayer(tray) {
-  return tray.layers[tray.activeIndex] ?? null;
-}
-
-function layerIsComplete(layer) {
-  return FRUIT_TYPES.every((type) => (layer.delivered[type] ?? 0) >= (layer.recipe[type] ?? 0));
-}
-
-function advanceCompletedTrayLayers(tray) {
-  const before = tray.activeIndex;
-  while (activeTrayLayer(tray) && layerIsComplete(activeTrayLayer(tray))) tray.activeIndex += 1;
-  return tray.activeIndex - before;
-}
-
 function decrementCountBarriers(session, amount = 1) {
   const step = Math.max(0, Math.floor(Number(amount)) || 0);
   if (step === 0) return [];
@@ -5419,16 +5813,6 @@ function removeUnlockedBarrierEndpointFruits(session, barriers) {
   });
 }
 
-function nextDeliverableCargoIndex(session, tray) {
-  advanceCompletedTrayLayers(tray);
-  const layer = activeTrayLayer(tray);
-  if (!layer) return -1;
-  return session.snake.body.findIndex((segment, index) => {
-    if (index === 0 || !segment.fruitType) return false;
-    return (layer.recipe[segment.fruitType] ?? 0) > (layer.delivered[segment.fruitType] ?? 0);
-  });
-}
-
 function beginCheckpointDelivery(session, tray) {
   if (!tray || nextDeliverableCargoIndex(session, tray) < 1) return false;
   session.delivery = { trayId: tray.id };
@@ -5449,23 +5833,19 @@ function deliverNextCargo(session) {
 
   const positions = session.snake.body.map(({ x, y }) => ({ x, y }));
   const [segment] = session.snake.body.splice(cargoIndex, 1);
-  const layer = activeTrayLayer(tray);
-  layer.delivered[segment.fruitType] += 1;
+  const fillResult = fillFruitIntoTray(tray, segment.fruitType);
   session.snake.body = session.snake.body.map((part, index) => ({ ...part, ...positions[index] }));
   session.deliveryEffect = {
     fruitType: segment.fruitType,
+    itemId: segment.itemId,
     checkpointKey: tray.checkpointKey,
     visualKey: tray.visualKey,
     nonce: `${Date.now()}-${session.snake.body.length}`
   };
 
-  const completedLayerCount = advanceCompletedTrayLayers(tray);
-  const unlockedBarriers = decrementCountBarriers(session, completedLayerCount);
+  const unlockedBarriers = decrementCountBarriers(session, fillResult.completedLayerCount);
   removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
   advanceFruitLayerIfCleared(session);
-  if (tray.activeIndex >= tray.layers.length && !tray.completed) {
-    tray.completed = true;
-  }
   if (nextDeliverableCargoIndex(session, tray) < 1) {
     session.delivery = null;
     setPostDeliveryStatus(session);
@@ -5492,14 +5872,37 @@ function nextAutoDirection(session, available) {
   return null;
 }
 
+function directionBlockedBySelfCollision(session, direction) {
+  const head = session.snake.body[0];
+  const vector = DIRECTIONS[direction];
+  const nextPosition = { x: head.x + vector.x, y: head.y + vector.y };
+  const nextIndex = positionToIndex(nextPosition.x, nextPosition.y, session.grid.columns);
+  const headCell = session.layer.cells[cellKey(head.x, head.y)];
+  const nextCell = session.layer.cells[cellKey(nextPosition.x, nextPosition.y)];
+  if (!gateAllowsMovement(headCell?.element, direction) || !gateAllowsMovement(nextCell?.element, direction)) return false;
+  if (!oneWayAllowsMovement(session, nextIndex, direction)) return false;
+  if (!cellIsTraversable(session, nextPosition, direction, { ignoreSelfCollision: true })) return false;
+  const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && !part.hiddenInShovel && part.x === nextPosition.x && part.y === nextPosition.y);
+  return hitsSelf && !bridgeAllowsDifferentAxisOverlap(session.layer, session.snake, nextPosition, direction);
+}
+
+function loseReasonForBlockedDirections(session, directions = Object.keys(DIRECTIONS)) {
+  return directions.some((direction) => directionBlockedBySelfCollision(session, direction))
+    ? LOSE_REASON.SELF_COLLISION
+    : LOSE_REASON.OTHER;
+}
+
+function loseSession(session, message, reason = LOSE_REASON.OTHER) {
+  markLose(session, { message, reason, status: PLAY_STATUS.LOST });
+}
+
 function setPostDeliveryStatus(session) {
   if (allFruitLayersComplete(session) && allTraysComplete(session)) {
     session.status = PLAY_STATUS.WON;
     return;
   }
   if (availableDirections(session).length === 0) {
-    session.status = PLAY_STATUS.LOST;
-    session.lastReason = "Không còn hướng hợp lệ sau checkpoint giao hàng.";
+    loseSession(session, "Không còn hướng hợp lệ sau checkpoint giao hàng.", loseReasonForBlockedDirections(session));
     return;
   }
   session.status = PLAY_STATUS.WAITING;
@@ -5517,17 +5920,19 @@ function setPostMoveStatus(session) {
   if (isBridgeElement(headCell?.element)) {
     if (available.includes(session.snake.direction)) session.status = PLAY_STATUS.MOVING;
     else {
-      session.status = PLAY_STATUS.LOST;
-      session.lastReason = "Bridge yêu cầu rắn tiếp tục đi thẳng nhưng phía trước không hợp lệ.";
+      loseSession(
+        session,
+        "Bridge yêu cầu rắn tiếp tục đi thẳng nhưng phía trước không hợp lệ.",
+        loseReasonForBlockedDirections(session, [session.snake.direction])
+      );
     }
     return;
   }
   if (isDecisionStopPoint(session, key)) {
     if (available.length === 0) {
-      session.status = PLAY_STATUS.LOST;
-      session.lastReason = session.turnpointKeys.includes(key)
+      loseSession(session, session.turnpointKeys.includes(key)
         ? "Không còn hướng di chuyển hợp lệ tại PriorityPoint."
-        : "Không còn hướng hợp lệ tại checkpoint khay.";
+        : "Không còn hướng hợp lệ tại checkpoint khay.", loseReasonForBlockedDirections(session));
     } else session.status = PLAY_STATUS.WAITING;
     return;
   }
@@ -5536,16 +5941,20 @@ function setPostMoveStatus(session) {
     session.snake.direction = autoDirection;
     session.status = PLAY_STATUS.MOVING;
   } else if (available.length === 0) {
-    session.status = PLAY_STATUS.LOST;
-    session.lastReason = "Rắn đã tới ngõ cụt và không thể quay đầu khi đang có đuôi.";
+    loseSession(session, "Rắn đã tới ngõ cụt và không thể quay đầu khi đang có đuôi.", loseReasonForBlockedDirections(session));
   } else {
-    session.status = PLAY_STATUS.LOST;
-    session.lastReason = "Ngã rẽ cần PriorityPoint để rắn dừng và chọn hướng.";
+    loseSession(session, "Ngã rẽ cần PriorityPoint để rắn dừng và chọn hướng.");
   }
 }
 
 function movePlayableSession(session, direction) {
-  if (!availableDirections(session).includes(direction)) return { moved: false, reason: "invalid-direction" };
+  if (!availableDirections(session).includes(direction)) {
+    if (directionBlockedBySelfCollision(session, direction)) {
+      loseSession(session, "Đầu tàu tự đâm vào thân.", LOSE_REASON.SELF_COLLISION);
+      return { moved: false, reason: "self-collision", status: session.status };
+    }
+    return { moved: false, reason: "invalid-direction" };
+  }
   session.deliveryEffect = null;
   const vector = DIRECTIONS[direction];
   const previousBody = session.snake.body.map((part) => ({ ...part }));
@@ -5589,7 +5998,7 @@ function movePlayableSession(session, direction) {
   const cell = session.layer.cells[key];
   if (cell.item?.kind === "fruit") {
     const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
-    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, hiddenInShovel: isShovelRestoring(session) });
+    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, itemId: blockItemIdFromItem(cell.item), hiddenInShovel: isShovelRestoring(session) });
     cell.item = null;
     session.remainingFruits -= 1;
     advanceFruitLayerIfCleared(session);
@@ -5601,8 +6010,18 @@ function movePlayableSession(session, direction) {
   return { moved: true, status: session.status };
 }
 
-function itemIcon(item) {
-  return item.icon ?? FRUIT_ICONS[item.fruitType] ?? "◆";
+function renderNeededBlocks(container, needs, layer) {
+  container.replaceChildren();
+  if (!layer) {
+    container.textContent = "✓";
+    return;
+  }
+  needs.forEach((type) => {
+    const item = document.createElement("span");
+    item.className = "tray-need-item";
+    item.append(createBlockSwatch(type), document.createTextNode(String((layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0))));
+    container.appendChild(item);
+  });
 }
 
 function statusText(status) {
@@ -5724,7 +6143,8 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
             && !level.mysteryFruitDebug;
           const icon = document.createElement("span");
           icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}`;
-          icon.textContent = hiddenFruit ? "?" : itemIcon(cellData.item);
+          if (cellData.item.kind === "fruit") applyBlockItemVisual(icon, cellData.item, { mystery: hiddenFruit });
+          else icon.textContent = cellData.item.icon;
           cell.appendChild(icon);
           if (tray) {
             const layer = activeTrayLayer(tray);
@@ -5732,10 +6152,8 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
             const needBadge = document.createElement("span");
             const badgeSide = tray.x >= level.grid.columns / 2 ? " align-left" : " align-right";
             needBadge.className = `playable-tray-needs${badgeSide}${session?.delivery?.trayId === tray.id ? " receiving" : ""}`;
-            needBadge.textContent = layer
-              ? needs.map((type) => `${FRUIT_ICONS[type]}${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(" ")
-              : "✓";
-            needBadge.title = layer ? `Khay cần: ${needBadge.textContent}` : "Khay đã hoàn thành";
+            renderNeededBlocks(needBadge, needs, layer);
+            needBadge.title = layer ? `Khay cần: ${needs.map((type) => `${blockLabelForFruitType(type)} x${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(", ")}` : "Khay đã hoàn thành";
             cell.appendChild(needBadge);
           }
         }
@@ -5748,7 +6166,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
           const needs = FRUIT_TYPES.filter((type) => layer && (layer.recipe[type] ?? 0) > (layer.delivered[type] ?? 0));
           const needBadge = document.createElement("span");
           needBadge.className = `playable-tray-needs${tray.x >= level.grid.columns / 2 ? " align-left" : " align-right"}${session?.delivery?.trayId === tray.id ? " receiving" : ""}`;
-          needBadge.textContent = layer ? needs.map((type) => `${FRUIT_ICONS[type]}${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(" ") : "✓";
+          renderNeededBlocks(needBadge, needs, layer);
           cell.appendChild(needBadge);
         }
         if (checkpointTray) {
@@ -5760,7 +6178,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         if (session?.deliveryEffect?.checkpointKey === key) {
           const flyingFruit = document.createElement("span");
           flyingFruit.className = "delivery-flying-fruit";
-          flyingFruit.textContent = FRUIT_ICONS[session.deliveryEffect.fruitType] ?? "●";
+          applyBlockItemVisual(flyingFruit, session.deliveryEffect);
           flyingFruit.dataset.effect = session.deliveryEffect.nonce;
           cell.appendChild(flyingFruit);
         }
@@ -5769,7 +6187,8 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
           const token = document.createElement("span");
           const tokenDirection = snakePart.direction ? ` dir-${snakePart.direction}` : "";
           token.className = `playable-token ${snakePart.index === 0 ? "head" : "cargo"}${tokenDirection}`;
-          token.textContent = snakePart.index === 0 ? "🐍" : FRUIT_ICONS[snakePart.fruitType] ?? "●";
+          if (snakePart.index === 0) token.textContent = TRAIN_HEAD_ICON;
+          else applyBlockItemVisual(token, snakePart);
           cell.appendChild(token);
         }
         elements.playableGridBoard.appendChild(cell);
@@ -5792,8 +6211,8 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     cargo.forEach((segment) => {
       const chip = document.createElement("span");
       chip.className = "cargo-chip";
-      chip.textContent = FRUIT_ICONS[segment.fruitType] ?? "●";
-      chip.title = segment.fruitType;
+      applyBlockItemVisual(chip, segment);
+      chip.title = blockLabelForFruitType(segment.fruitType);
       elements.playableCargo.appendChild(chip);
     });
   }
@@ -5816,7 +6235,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         const delivered = layer.delivered[type] ?? 0;
         const required = layer.recipe[type] ?? 0;
         chip.className = `recipe-chip${delivered >= required ? " done" : ""}`;
-        chip.textContent = `${FRUIT_ICONS[type]} ${delivered}/${required}`;
+        chip.append(createBlockSwatch(type), document.createTextNode(`${delivered}/${required}`));
         recipes.appendChild(chip);
       });
       card.appendChild(recipes);
@@ -5872,10 +6291,21 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
       elements.playableEndIcon.textContent = "🏆";
       elements.playableEndTitle.textContent = "Hoàn thành màn chơi";
       elements.playableEndCopy.textContent = "Tất cả khay chứa đã nhận đủ recipe.";
+      if (elements.playReviveBtn) elements.playReviveBtn.classList.add("hidden");
+      elements.playAgainBtn.textContent = "Chơi lại";
+      elements.playAgainBtn.classList.remove("hidden");
+      elements.exitPlayableBtn.textContent = "Về Editor";
     } else if (status === PLAY_STATUS.LOST) {
       elements.playableEndIcon.textContent = "💥";
       elements.playableEndTitle.textContent = "Bạn đã thua";
       elements.playableEndCopy.textContent = session.lastReason ?? "Rắn không thể tiếp tục di chuyển.";
+      if (elements.playReviveBtn) {
+        elements.playReviveBtn.classList.toggle("hidden", !session.reviveAvailable);
+        elements.playReviveBtn.disabled = !session.reviveAvailable;
+      }
+      elements.playAgainBtn.textContent = "Restart";
+      elements.playAgainBtn.classList.remove("hidden");
+      elements.exitPlayableBtn.textContent = "Give Up";
     }
     renderBoard();
     renderCargo();
@@ -5904,7 +6334,14 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
 
   function chooseDirection(direction) {
     if (!isActive || !session || ![PLAY_STATUS.READY, PLAY_STATUS.WAITING, PLAY_STATUS.SHOVEL_AWAIT_DIRECTION].includes(session.status)) return false;
-    if (!availableDirections(session).includes(direction)) return false;
+    if (!availableDirections(session).includes(direction)) {
+      if (directionBlockedBySelfCollision(session, direction)) {
+        loseSession(session, "Đầu tàu tự đâm vào thân.", LOSE_REASON.SELF_COLLISION);
+        clearTimer();
+        render();
+      }
+      return false;
+    }
     if (session.status === PLAY_STATUS.SHOVEL_AWAIT_DIRECTION) beginShovelTailRestore(session);
     session.status = isShovelRestoring(session) ? PLAY_STATUS.SHOVEL_RESTORE_TAIL : PLAY_STATUS.MOVING;
     movePlayableSession(session, direction);
@@ -5936,6 +6373,37 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     session.status = PLAY_STATUS.SHOVEL_TELEPORTING;
     if (!teleportWithShovel(session, targetKey)) return false;
     render();
+    return true;
+  }
+
+  function revive() {
+    if (!session || session.status !== PLAY_STATUS.LOST || !session.reviveAvailable) return false;
+    clearTimer();
+    session.status = PLAY_STATUS.REVIVING;
+    render();
+    const result = reviveSession(session, {
+      onTrayLayerComplete(completedLayerCount) {
+        const unlockedBarriers = decrementCountBarriers(session, completedLayerCount);
+        removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
+      },
+      onAfterFill() {
+        advanceFruitLayerIfCleared(session);
+      }
+    });
+    if (!result.revived) return false;
+    session.lastReason = result.transferred > 0
+      ? `Revive đã chuyển ${result.transferred}/${result.target} Fruit vào khay.`
+      : "Revive không có Fruit phù hợp để chuyển vào khay.";
+    session.delivery = null;
+    session.deliveryEffect = null;
+    if (allFruitLayersComplete(session) && allTraysComplete(session)) {
+      session.status = PLAY_STATUS.WON;
+    } else {
+      session.status = session.snake.direction ? PLAY_STATUS.WAITING : PLAY_STATUS.READY;
+      session.resumeStatus = session.status;
+    }
+    render();
+    scheduleNext();
     return true;
   }
 
@@ -5993,6 +6461,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
   });
   elements.playPauseBtn.addEventListener("click", togglePause);
   elements.playRestartBtn.addEventListener("click", restart);
+  elements.playReviveBtn?.addEventListener("click", revive);
   elements.playAgainBtn.addEventListener("click", restart);
   elements.playableShovelBtn?.addEventListener("click", toggleShovelTargeting);
   elements.exitPlayableBtn.addEventListener("click", onExitEditor);
@@ -6074,7 +6543,7 @@ const elements = Object.fromEntries([
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
   "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
-  "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
+  "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playReviveBtn", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
 ].map((id) => [id, byId(id)]));
@@ -6648,7 +7117,7 @@ const input = new InputController({
       if (result?.reason === "unique-object-exists") {
         showNotification(elements.toast, "Map chỉ được có một đầu rắn. Hãy xóa đầu rắn hiện tại trước khi đặt lại.");
       } else if (result?.reason === "player-head-layer-locked") {
-        showNotification(elements.toast, "Đầu rắn chỉ được đặt hoặc xóa tại Layer 1.");
+        showNotification(elements.toast, "Train Head chỉ được đặt hoặc xóa tại Layer 1.");
       } else if (result?.reason === "tray-visual-outside-grid") {
         showNotification(elements.toast, "Không thể đặt khay: vị trí visual mặc định phía trên nằm ngoài map.");
       } else if (result?.reason === "tray-checkpoint-needs-road") {
@@ -6839,22 +7308,43 @@ document.querySelector(".palette-tabs").addEventListener("click", (event) => {
   activePaletteCategory = button.dataset.paletteTab;
   renderAll();
 });
+function confirmResizeRemove() {
+  return confirm("Khu vực này đang chứa dữ liệu.\n\nChọn OK để xóa và loại bỏ dữ liệu hoặc Cancel để hủy.");
+}
+
 document.querySelector(".dimension-card").addEventListener("click", (event) => {
+  const edgeButton = event.target.closest("[data-map-resize-edge]");
+  if (edgeButton) {
+    const edge = edgeButton.dataset.mapResizeEdge;
+    const delta = Number(edgeButton.dataset.delta);
+    if (delta < 0 && hasDataOnResizeEdge(editor.data, edge) && !confirmResizeRemove()) return;
+    const probe = resizeMapEdge(structuredClone(editor.data), edge, delta, { allowRemove: true });
+    if (!probe.changed) {
+      if (probe.reason === "limit") showNotification(elements.toast, "Kích thước map tối thiểu là 1 ô.");
+      return;
+    }
+    const result = mutate((state) => resizeMapEdge(state, edge, delta, { allowRemove: true }));
+    if (!result.changed && result.reason === "limit") showNotification(elements.toast, "Kích thước map tối thiểu là 1 ô.");
+    return;
+  }
   const button = event.target.closest("[data-map-dimension]");
   if (!button) return;
   const dimension = button.dataset.mapDimension;
   const next = editor.data.grid[dimension] + Number(button.dataset.delta);
   const result = changeMapDimension(structuredClone(editor.data), dimension, next);
-  if (!result.changed && result.reason === "occupied") return showNotification(elements.toast, "Không thể giảm: hãy xóa hoặc di chuyển dữ liệu ngoài vùng mới");
+  if (!result.changed && result.reason === "occupied" && !confirmResizeRemove()) return;
   if (!result.changed) return;
-  mutate((state) => changeMapDimension(state, dimension, next));
+  mutate((state) => changeMapDimension(state, dimension, next, { allowRemove: true }));
 });
 [elements.mapWidthInput, elements.mapHeightInput].forEach((inputElement) => inputElement.addEventListener("change", () => {
   const dimension = inputElement === elements.mapWidthInput ? "columns" : "rows";
   const next = Math.max(1, Math.floor(Number(inputElement.value) || 1));
   const probe = changeMapDimension(structuredClone(editor.data), dimension, next);
-  if (!probe.changed && probe.reason === "occupied") showNotification(elements.toast, "Không thể giảm: vùng bị cắt vẫn còn dữ liệu.");
-  else if (probe.changed) mutate((state) => changeMapDimension(state, dimension, next));
+  if (!probe.changed && probe.reason === "occupied") {
+    if (confirmResizeRemove()) mutate((state) => changeMapDimension(state, dimension, next, { allowRemove: true }));
+    else renderAll();
+  }
+  else if (probe.changed) mutate((state) => changeMapDimension(state, dimension, next, { allowRemove: true }));
   else renderAll();
 }));
 elements.layerSelect.addEventListener("change", () => {

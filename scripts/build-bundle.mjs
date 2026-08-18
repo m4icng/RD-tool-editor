@@ -15,6 +15,7 @@ const sourceFiles = [
   "js/utils/file-utils.js",
   "js/objects/path-object.js",
   "js/objects/fruit-object.js",
+  "js/core/block-visuals.js",
   "js/objects/truck-object.js",
   "js/objects/tray-object.js",
   "js/objects/obstacle-object.js",
@@ -53,6 +54,8 @@ const sourceFiles = [
   "js/gameplay/win-condition.js",
   "js/gameplay/simulator.js",
   "js/gameplay/shovel-booster.js",
+  "js/gameplay/tray-fill-system.js",
+  "js/gameplay/lose-revive.js",
   "js/gameplay/playable-controller.js",
   "js/app.js"
 ];

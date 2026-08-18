@@ -36,7 +36,7 @@ import { selectCell, changeSelectedTruckCapacity } from "./editor/selection-mana
 import { renderGrid } from "./editor/grid-renderer.js";
 import { InputController } from "./editor/input-controller.js";
 import { CameraController } from "./editor/camera-controller.js";
-import { changeMapDimension } from "./ui/level-settings.js";
+import { changeMapDimension, hasDataOnResizeEdge, resizeMapEdge } from "./ui/level-settings.js";
 import { renderObjectPalette } from "./ui/object-palette.js";
 import { getSelectedCellIndex, renderInspector } from "./ui/inspector-panel.js";
 import { activateTab, renderToolbar } from "./ui/toolbar.js";
@@ -73,7 +73,7 @@ const elements = Object.fromEntries([
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
   "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
-  "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playAgainBtn", "exitPlayableBtn",
+  "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playReviveBtn", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
 ].map((id) => [id, byId(id)]));
@@ -647,7 +647,7 @@ const input = new InputController({
       if (result?.reason === "unique-object-exists") {
         showNotification(elements.toast, "Map chỉ được có một đầu rắn. Hãy xóa đầu rắn hiện tại trước khi đặt lại.");
       } else if (result?.reason === "player-head-layer-locked") {
-        showNotification(elements.toast, "Đầu rắn chỉ được đặt hoặc xóa tại Layer 1.");
+        showNotification(elements.toast, "Train Head chỉ được đặt hoặc xóa tại Layer 1.");
       } else if (result?.reason === "tray-visual-outside-grid") {
         showNotification(elements.toast, "Không thể đặt khay: vị trí visual mặc định phía trên nằm ngoài map.");
       } else if (result?.reason === "tray-checkpoint-needs-road") {
@@ -838,22 +838,43 @@ document.querySelector(".palette-tabs").addEventListener("click", (event) => {
   activePaletteCategory = button.dataset.paletteTab;
   renderAll();
 });
+function confirmResizeRemove() {
+  return confirm("Khu vực này đang chứa dữ liệu.\n\nChọn OK để xóa và loại bỏ dữ liệu hoặc Cancel để hủy.");
+}
+
 document.querySelector(".dimension-card").addEventListener("click", (event) => {
+  const edgeButton = event.target.closest("[data-map-resize-edge]");
+  if (edgeButton) {
+    const edge = edgeButton.dataset.mapResizeEdge;
+    const delta = Number(edgeButton.dataset.delta);
+    if (delta < 0 && hasDataOnResizeEdge(editor.data, edge) && !confirmResizeRemove()) return;
+    const probe = resizeMapEdge(structuredClone(editor.data), edge, delta, { allowRemove: true });
+    if (!probe.changed) {
+      if (probe.reason === "limit") showNotification(elements.toast, "Kích thước map tối thiểu là 1 ô.");
+      return;
+    }
+    const result = mutate((state) => resizeMapEdge(state, edge, delta, { allowRemove: true }));
+    if (!result.changed && result.reason === "limit") showNotification(elements.toast, "Kích thước map tối thiểu là 1 ô.");
+    return;
+  }
   const button = event.target.closest("[data-map-dimension]");
   if (!button) return;
   const dimension = button.dataset.mapDimension;
   const next = editor.data.grid[dimension] + Number(button.dataset.delta);
   const result = changeMapDimension(structuredClone(editor.data), dimension, next);
-  if (!result.changed && result.reason === "occupied") return showNotification(elements.toast, "Không thể giảm: hãy xóa hoặc di chuyển dữ liệu ngoài vùng mới");
+  if (!result.changed && result.reason === "occupied" && !confirmResizeRemove()) return;
   if (!result.changed) return;
-  mutate((state) => changeMapDimension(state, dimension, next));
+  mutate((state) => changeMapDimension(state, dimension, next, { allowRemove: true }));
 });
 [elements.mapWidthInput, elements.mapHeightInput].forEach((inputElement) => inputElement.addEventListener("change", () => {
   const dimension = inputElement === elements.mapWidthInput ? "columns" : "rows";
   const next = Math.max(1, Math.floor(Number(inputElement.value) || 1));
   const probe = changeMapDimension(structuredClone(editor.data), dimension, next);
-  if (!probe.changed && probe.reason === "occupied") showNotification(elements.toast, "Không thể giảm: vùng bị cắt vẫn còn dữ liệu.");
-  else if (probe.changed) mutate((state) => changeMapDimension(state, dimension, next));
+  if (!probe.changed && probe.reason === "occupied") {
+    if (confirmResizeRemove()) mutate((state) => changeMapDimension(state, dimension, next, { allowRemove: true }));
+    else renderAll();
+  }
+  else if (probe.changed) mutate((state) => changeMapDimension(state, dimension, next, { allowRemove: true }));
   else renderAll();
 }));
 elements.layerSelect.addEventListener("change", () => {

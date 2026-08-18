@@ -51,8 +51,8 @@ export const COUNT_BARRIER_ASSET_ID = "count-barrier";
 export const TUNNEL_ASSET_ID = "tunnel";
 export const ONE_WAY_ASSET_ID = "one-way";
 
-export const FRUIT_TYPES = Object.freeze(["apple", "banana", "grape", "eggplant"]);
-export const FRUIT_SHORT = Object.freeze({ apple: "T", banana: "C", grape: "N", eggplant: "CT" });
+export const FRUIT_TYPES = Object.freeze(["apple", "banana", "grape", "eggplant", "block5", "block6", "block7"]);
+export const FRUIT_SHORT = Object.freeze({ apple: "B1", banana: "B2", grape: "B3", eggplant: "B4", block5: "B5", block6: "B6", block7: "B7" });
 export const DIRECTIONS = Object.freeze({
   up: { x: 0, y: -1 },
   right: { x: 1, y: 0 },

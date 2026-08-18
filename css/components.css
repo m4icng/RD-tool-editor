@@ -28,6 +28,14 @@
 .dimension-stepper button { min-height: 34px; border: 0; background: #f4f7fb; cursor: pointer; font-size: 15px; font-weight: 850; }
 .dimension-stepper input { min-width: 0; border: 0; border-inline: 1px solid var(--line); color: var(--text); font-size: 12px; font-weight: 850; text-align: center; appearance: textfield; }
 .dimension-stepper input::-webkit-inner-spin-button { appearance: none; }
+.resize-edge-controls { display: grid; gap: 6px; margin-top: 2px; padding-top: 10px; border-top: 1px solid var(--line); }
+.resize-edge-controls > strong { color: var(--text); font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.resize-edge-row { display: grid; grid-template-columns: minmax(0,1fr) 72px; align-items: center; gap: 8px; color: #536076; font-size: 11px; font-weight: 800; }
+.resize-edge-row > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resize-edge-row > div { display: grid; grid-template-columns: repeat(2,34px); overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.resize-edge-row button { min-height: 28px; border: 0; background: #f4f7fb; color: #536076; cursor: pointer; font-size: 14px; font-weight: 900; }
+.resize-edge-row button + button { border-left: 1px solid var(--line); }
+.resize-edge-row button:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
 .tool-list { display: grid; gap: 7px; }
 .tool-menu { position: relative; }
 .tool-btn { display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; width: 100%; min-height: 46px; padding: 6px 10px 6px 7px; border: 1px solid transparent; border-radius: 11px; background: transparent; cursor: pointer; text-align: left; }
@@ -258,6 +266,7 @@
 .runtime-heading span { display: grid; min-width: 24px; height: 22px; place-items: center; padding: 0 6px; border-radius: 999px; background: #eef2f7; color: #657288; font-size: 10px; font-weight: 850; }
 .cargo-strip { display: flex; min-height: 48px; align-items: center; gap: 6px; overflow-x: auto; padding: 7px; border: 1px dashed #cbd5e2; border-radius: 10px; background: #fafbfd; }
 .cargo-chip { display: grid; min-width: 34px; height: 34px; place-items: center; border: 1px solid #f2cfdc; border-radius: 10px; background: #fff0f5; font-size: 20px; }
+.cargo-chip.block-item-visual { width: 34px; min-width: 34px; border-radius: 6px !important; }
 .cargo-empty { width: 100%; color: var(--muted); font-size: 10px; text-align: center; }
 .runtime-trays { display: grid; gap: 8px; }
 .runtime-tray { padding: 9px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
@@ -266,5 +275,5 @@
 .runtime-tray > div:first-child { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
 .runtime-tray small { color: var(--muted); font-size: 9px; }
 .recipe-strip { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
-.recipe-chip { padding: 4px 6px; border-radius: 999px; background: #eef2f7; color: #57657a; font-size: 9px; font-weight: 780; }
+.recipe-chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border-radius: 999px; background: #eef2f7; color: #57657a; font-size: 9px; font-weight: 780; }
 .recipe-chip.done { background: var(--green-soft); color: #26734d; }

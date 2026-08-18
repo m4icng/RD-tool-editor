@@ -6,6 +6,7 @@ import { nextCountBarrierSequence, normalizeCountBarrierElement } from "../objec
 import { isValidTunnelDirection, nextTunnelSequence, normalizeTunnelDirection, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { isValidOneWayDirection, nextOneWaySequence, normalizeOneWayDirection, normalizeOneWayElement } from "../objects/one-way-object.js";
 import { FRUIT_ITEM_IDS } from "../objects/fruit-object.js";
+import { BLOCK_ITEM_GLYPH, TRAIN_HEAD_ICON, blockLabelForFruitType } from "../core/block-visuals.js";
 import {
   cellKey,
   ensureTerrainState,
@@ -17,10 +18,10 @@ import {
 } from "../utils/grid-utils.js";
 
 const TYPE_BY_ITEM_ID = Object.freeze(Object.fromEntries(Object.entries(FRUIT_ITEM_IDS).map(([type, id]) => [String(id), type])));
-const GAME_FORMAT_FRUIT_META = Object.freeze({
-  apple: { label: "Táo", icon: "🍎" }, banana: { label: "Chuối", icon: "🍌" },
-  grape: { label: "Nho", icon: "🍇" }, eggplant: { label: "Cà tím", icon: "🍆" }
-});
+const GAME_FORMAT_FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
+  type,
+  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+])));
 
 function assertArray(value, name) {
   if (!Array.isArray(value)) throw new Error(`${name} phải là một mảng.`);
@@ -256,7 +257,7 @@ export function deserializeLevel(rawData, { fileName = "untitled-level.json" } =
   });
   raw.spawns.forEach((spawn) => {
     const { x, y } = indexToPosition(spawn.index, width);
-    ensureShared(cellKey(x, y)).item = { id: "snake-start", kind: "snake", category: "item", label: "Đầu rắn", icon: "🐍", direction: "right" };
+    ensureShared(cellKey(x, y)).item = { id: "snake-start", kind: "snake", category: "item", label: "Train Head", icon: TRAIN_HEAD_ICON, direction: "right" };
   });
 
   const sortedItemLayers = raw.itemLayers.slice().sort((a, b) => a.layer - b.layer);

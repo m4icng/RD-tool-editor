@@ -6,14 +6,18 @@ import { createCountBarrierTool } from "./count-barrier-object.js";
 import { createTunnelTool } from "./tunnel-object.js";
 import { createOneWayTool } from "./one-way-object.js";
 import { MYSTERY_FRUIT_ASSET_ID, TERRAIN_ASSET_IDS } from "../core/constants.js";
+import { BLOCK_ITEM_GLYPH, TRAIN_HEAD_ICON } from "../core/block-visuals.js";
 
 const objects = [
-  { id: "snake-start", kind: "snake", category: "item", label: "Đầu rắn", icon: "🐍", direction: "right", uniqueOnMap: true },
+  { id: "snake-start", kind: "snake", category: "item", label: "Train Head", icon: TRAIN_HEAD_ICON, direction: "right", uniqueOnMap: true },
   createEmptyTray(),
-  createFruit("apple", "Táo", "🍎"),
-  createFruit("banana", "Chuối", "🍌"),
-  createFruit("grape", "Nho", "🍇"),
-  createFruit("eggplant", "Cà tím", "🍆"),
+  createFruit("apple", "Block 1", BLOCK_ITEM_GLYPH),
+  createFruit("banana", "Block 2", BLOCK_ITEM_GLYPH),
+  createFruit("grape", "Block 3", BLOCK_ITEM_GLYPH),
+  createFruit("eggplant", "Block 4", BLOCK_ITEM_GLYPH),
+  createFruit("block5", "Block 5", BLOCK_ITEM_GLYPH),
+  createFruit("block6", "Block 6", BLOCK_ITEM_GLYPH),
+  createFruit("block7", "Block 7", BLOCK_ITEM_GLYPH),
   createBridge(),
   createGate(),
   createCountBarrierTool(),

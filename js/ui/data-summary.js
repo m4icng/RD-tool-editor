@@ -1,12 +1,11 @@
 import { FRUIT_TYPES } from "../core/constants.js";
+import { BLOCK_ITEM_GLYPH, applyBlockItemVisual, blockLabelForFruitType, createBlockSwatch } from "../core/block-visuals.js";
 import { positionToIndex } from "../utils/grid-utils.js";
 
-const DATA_FRUIT_META = Object.freeze({
-  apple: { label: "Táo", icon: "🍎" },
-  banana: { label: "Chuối", icon: "🍌" },
-  grape: { label: "Nho", icon: "🍇" },
-  eggplant: { label: "Cà tím", icon: "🍆" }
-});
+const DATA_FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
+  type,
+  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+])));
 
 function emptyFruitCounts() {
   return Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0]));
@@ -98,7 +97,7 @@ function createFruitChips(counts, { includeZero = false } = {}) {
   types.forEach((type) => {
     const chip = document.createElement("span");
     chip.className = `data-fruit-chip${counts[type] === 0 ? " empty" : ""}`;
-    chip.textContent = `${DATA_FRUIT_META[type].icon} ${counts[type]}`;
+    chip.append(createBlockSwatch(type), document.createTextNode(String(counts[type])));
     chip.title = `${DATA_FRUIT_META[type].label}: ${counts[type]}`;
     chips.appendChild(chip);
   });
@@ -132,7 +131,7 @@ function renderFruitBalance(summary) {
     const label = document.createElement("strong");
     const note = document.createElement("small");
     const value = document.createElement("span");
-    icon.textContent = DATA_FRUIT_META[type].icon;
+    applyBlockItemVisual(icon, type);
     label.textContent = DATA_FRUIT_META[type].label;
     note.textContent = current === required ? "Đã cân bằng" : current < required ? `Thiếu ${required - current}` : `Dư ${current - required}`;
     value.className = "fruit-balance-value";

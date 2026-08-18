@@ -1,3 +1,5 @@
+import { applyBlockItemVisual } from "../core/block-visuals.js";
+
 export function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Chưa có object trong nhóm này.", unavailableIds = [], unavailableReasons = {}, bridgeAxis = 0, countBarrierCount = 1 } = {}) {
   container.innerHTML = "";
   if (objects.length === 0) {
@@ -22,6 +24,10 @@ export function renderObjectPalette(container, objects, selectedId, { emptyLabel
     button.innerHTML = `<span class="asset-icon"></span><span class="asset-label"></span>`;
     button.firstElementChild.textContent = object.icon;
     button.lastElementChild.textContent = object.label;
+    if (object.kind === "fruit") {
+      button.classList.add("block-item-asset");
+      applyBlockItemVisual(button.firstElementChild, object);
+    }
     if (object.kind === "bridge") {
       button.classList.add("bridge-asset");
       button.firstElementChild.classList.toggle("vertical-bridge-icon", Number(bridgeAxis) === 1);

@@ -1,6 +1,7 @@
 import { DIRECTIONS, FRUIT_TYPES } from "../core/constants.js";
 import { applyVisualScaleConfig } from "../core/visual-scale.js";
 import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
+import { TRAIN_HEAD_ICON, applyBlockItemVisual, blockItemIdFromItem, blockLabelForFruitType, createBlockSwatch } from "../core/block-visuals.js";
 import { bridgeAllowsDifferentAxisOverlap, isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { gateDirectionClass, gateDirectionFromMovement, gateDirectionLabel, isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
@@ -36,6 +37,8 @@ import {
   teleportWithShovel,
   validShovelTargetKeys
 } from "./shovel-booster.js";
+import { LOSE_REASON, markLose, reviveSession } from "./lose-revive.js";
+import { activeTrayLayer, fillFruitIntoTray, nextDeliverableCargoIndex } from "./tray-fill-system.js";
 
 export const PLAY_STATUS = Object.freeze({
   READY: "ready",
@@ -50,12 +53,12 @@ export const PLAY_STATUS = Object.freeze({
   SHOVEL_TARGETING: SHOVEL_STATUS.TARGETING,
   SHOVEL_TELEPORTING: SHOVEL_STATUS.TELEPORTING,
   SHOVEL_AWAIT_DIRECTION: SHOVEL_STATUS.AWAIT_DIRECTION,
-  SHOVEL_RESTORE_TAIL: SHOVEL_STATUS.RESTORE_TAIL
+  SHOVEL_RESTORE_TAIL: SHOVEL_STATUS.RESTORE_TAIL,
+  REVIVING: "reviving"
 });
 
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
 const DIRECTION_LABELS = Object.freeze({ up: "↑ Lên", down: "↓ Xuống", left: "← Trái", right: "→ Phải" });
-const FRUIT_ICONS = Object.freeze({ apple: "🍎", banana: "🍌", grape: "🍇", eggplant: "🍆" });
 const DEFAULT_PLAY_SPEED = 12;
 const DELIVERY_ITEMS_PER_SECOND = 4;
 const DELIVERY_INTERVAL_MS = 1000 / DELIVERY_ITEMS_PER_SECOND;
@@ -69,6 +72,7 @@ const STATUS_COPY = Object.freeze({
   lost: ["Thua", "Rắn đã va chạm hoặc không còn hướng hợp lệ."],
   blocked: ["Chưa thể chơi", "Hãy sửa các lỗi level được liệt kê bên dưới."],
   teleporting: ["Đang qua Tunnel", "Train đang được đặt lại theo cổng ra."],
+  reviving: ["Đang Revive", "Train đang tự chuyển Fruit vào khay và rebuild lại."],
   [SHOVEL_STATUS.TARGETING]: ["Chọn điểm Xẻng", "Chọn một PriorityPoint đang sáng để dịch chuyển Head."],
   [SHOVEL_STATUS.TELEPORTING]: ["Đang dùng Xẻng", "Tail đang tạm ẩn và Head được đưa tới điểm đích."],
   [SHOVEL_STATUS.AWAIT_DIRECTION]: ["Chờ hướng sau Xẻng", "Head đã tới PriorityPoint mới. Chọn hướng tiếp tục."],
@@ -132,6 +136,7 @@ function nextTailPosition(session, body, direction) {
 function tailLogicDisabled(session) {
   return Boolean(
     session?.teleporting
+    || session?.reviving
     || session?.tailDisabled
     || session?.status === SHOVEL_STATUS.TARGETING
     || session?.status === SHOVEL_STATUS.TELEPORTING
@@ -341,7 +346,7 @@ export function validatePlayableLevel(level) {
   });
   FRUIT_TYPES.forEach((type) => {
     if (fruitTotals[type] !== recipeTotals[type]) {
-      errors.push(`${FRUIT_ICONS[type]} ${type}: map có ${fruitTotals[type]}, recipe cần ${recipeTotals[type]}.`);
+      errors.push(`${blockLabelForFruitType(type)} ${type}: map có ${fruitTotals[type]}, recipe cần ${recipeTotals[type]}.`);
     }
   });
   return { valid: errors.length === 0, errors, layer, fruitLayers };
@@ -397,6 +402,9 @@ export function createPlayableSession(level, { mode = "continuous", speed = DEFA
     status: PLAY_STATUS.READY,
     resumeStatus: PLAY_STATUS.READY,
     lastReason: null,
+    loseReason: null,
+    reviveAvailable: false,
+    reviving: false,
     delivery: null,
     deliveryEffect: null,
     teleporting: false,
@@ -430,7 +438,7 @@ function advanceFruitLayerIfCleared(session) {
     const headCell = session.layer.cells[cellKey(head.x, head.y)];
     if (headCell?.item?.kind === "fruit") {
       const tail = session.snake.body[session.snake.body.length - 1];
-      session.snake.body.push({ ...tail, fruitType: headCell.item.fruitType });
+      session.snake.body.push({ ...tail, fruitType: headCell.item.fruitType, itemId: blockItemIdFromItem(headCell.item) });
       headCell.item = null;
       session.remainingFruits -= 1;
     }
@@ -490,20 +498,6 @@ function updateOneWayRuntime(session, headIndex) {
   }
 }
 
-function activeTrayLayer(tray) {
-  return tray.layers[tray.activeIndex] ?? null;
-}
-
-function layerIsComplete(layer) {
-  return FRUIT_TYPES.every((type) => (layer.delivered[type] ?? 0) >= (layer.recipe[type] ?? 0));
-}
-
-function advanceCompletedTrayLayers(tray) {
-  const before = tray.activeIndex;
-  while (activeTrayLayer(tray) && layerIsComplete(activeTrayLayer(tray))) tray.activeIndex += 1;
-  return tray.activeIndex - before;
-}
-
 function decrementCountBarriers(session, amount = 1) {
   const step = Math.max(0, Math.floor(Number(amount)) || 0);
   if (step === 0) return [];
@@ -527,16 +521,6 @@ function removeUnlockedBarrierEndpointFruits(session, barriers) {
   });
 }
 
-function nextDeliverableCargoIndex(session, tray) {
-  advanceCompletedTrayLayers(tray);
-  const layer = activeTrayLayer(tray);
-  if (!layer) return -1;
-  return session.snake.body.findIndex((segment, index) => {
-    if (index === 0 || !segment.fruitType) return false;
-    return (layer.recipe[segment.fruitType] ?? 0) > (layer.delivered[segment.fruitType] ?? 0);
-  });
-}
-
 function beginCheckpointDelivery(session, tray) {
   if (!tray || nextDeliverableCargoIndex(session, tray) < 1) return false;
   session.delivery = { trayId: tray.id };
@@ -557,23 +541,19 @@ export function deliverNextCargo(session) {
 
   const positions = session.snake.body.map(({ x, y }) => ({ x, y }));
   const [segment] = session.snake.body.splice(cargoIndex, 1);
-  const layer = activeTrayLayer(tray);
-  layer.delivered[segment.fruitType] += 1;
+  const fillResult = fillFruitIntoTray(tray, segment.fruitType);
   session.snake.body = session.snake.body.map((part, index) => ({ ...part, ...positions[index] }));
   session.deliveryEffect = {
     fruitType: segment.fruitType,
+    itemId: segment.itemId,
     checkpointKey: tray.checkpointKey,
     visualKey: tray.visualKey,
     nonce: `${Date.now()}-${session.snake.body.length}`
   };
 
-  const completedLayerCount = advanceCompletedTrayLayers(tray);
-  const unlockedBarriers = decrementCountBarriers(session, completedLayerCount);
+  const unlockedBarriers = decrementCountBarriers(session, fillResult.completedLayerCount);
   removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
   advanceFruitLayerIfCleared(session);
-  if (tray.activeIndex >= tray.layers.length && !tray.completed) {
-    tray.completed = true;
-  }
   if (nextDeliverableCargoIndex(session, tray) < 1) {
     session.delivery = null;
     setPostDeliveryStatus(session);
@@ -600,14 +580,37 @@ function nextAutoDirection(session, available) {
   return null;
 }
 
+function directionBlockedBySelfCollision(session, direction) {
+  const head = session.snake.body[0];
+  const vector = DIRECTIONS[direction];
+  const nextPosition = { x: head.x + vector.x, y: head.y + vector.y };
+  const nextIndex = positionToIndex(nextPosition.x, nextPosition.y, session.grid.columns);
+  const headCell = session.layer.cells[cellKey(head.x, head.y)];
+  const nextCell = session.layer.cells[cellKey(nextPosition.x, nextPosition.y)];
+  if (!gateAllowsMovement(headCell?.element, direction) || !gateAllowsMovement(nextCell?.element, direction)) return false;
+  if (!oneWayAllowsMovement(session, nextIndex, direction)) return false;
+  if (!cellIsTraversable(session, nextPosition, direction, { ignoreSelfCollision: true })) return false;
+  const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && !part.hiddenInShovel && part.x === nextPosition.x && part.y === nextPosition.y);
+  return hitsSelf && !bridgeAllowsDifferentAxisOverlap(session.layer, session.snake, nextPosition, direction);
+}
+
+function loseReasonForBlockedDirections(session, directions = Object.keys(DIRECTIONS)) {
+  return directions.some((direction) => directionBlockedBySelfCollision(session, direction))
+    ? LOSE_REASON.SELF_COLLISION
+    : LOSE_REASON.OTHER;
+}
+
+function loseSession(session, message, reason = LOSE_REASON.OTHER) {
+  markLose(session, { message, reason, status: PLAY_STATUS.LOST });
+}
+
 function setPostDeliveryStatus(session) {
   if (allFruitLayersComplete(session) && allTraysComplete(session)) {
     session.status = PLAY_STATUS.WON;
     return;
   }
   if (availableDirections(session).length === 0) {
-    session.status = PLAY_STATUS.LOST;
-    session.lastReason = "Không còn hướng hợp lệ sau checkpoint giao hàng.";
+    loseSession(session, "Không còn hướng hợp lệ sau checkpoint giao hàng.", loseReasonForBlockedDirections(session));
     return;
   }
   session.status = PLAY_STATUS.WAITING;
@@ -625,17 +628,19 @@ function setPostMoveStatus(session) {
   if (isBridgeElement(headCell?.element)) {
     if (available.includes(session.snake.direction)) session.status = PLAY_STATUS.MOVING;
     else {
-      session.status = PLAY_STATUS.LOST;
-      session.lastReason = "Bridge yêu cầu rắn tiếp tục đi thẳng nhưng phía trước không hợp lệ.";
+      loseSession(
+        session,
+        "Bridge yêu cầu rắn tiếp tục đi thẳng nhưng phía trước không hợp lệ.",
+        loseReasonForBlockedDirections(session, [session.snake.direction])
+      );
     }
     return;
   }
   if (isDecisionStopPoint(session, key)) {
     if (available.length === 0) {
-      session.status = PLAY_STATUS.LOST;
-      session.lastReason = session.turnpointKeys.includes(key)
+      loseSession(session, session.turnpointKeys.includes(key)
         ? "Không còn hướng di chuyển hợp lệ tại PriorityPoint."
-        : "Không còn hướng hợp lệ tại checkpoint khay.";
+        : "Không còn hướng hợp lệ tại checkpoint khay.", loseReasonForBlockedDirections(session));
     } else session.status = PLAY_STATUS.WAITING;
     return;
   }
@@ -644,16 +649,20 @@ function setPostMoveStatus(session) {
     session.snake.direction = autoDirection;
     session.status = PLAY_STATUS.MOVING;
   } else if (available.length === 0) {
-    session.status = PLAY_STATUS.LOST;
-    session.lastReason = "Rắn đã tới ngõ cụt và không thể quay đầu khi đang có đuôi.";
+    loseSession(session, "Rắn đã tới ngõ cụt và không thể quay đầu khi đang có đuôi.", loseReasonForBlockedDirections(session));
   } else {
-    session.status = PLAY_STATUS.LOST;
-    session.lastReason = "Ngã rẽ cần PriorityPoint để rắn dừng và chọn hướng.";
+    loseSession(session, "Ngã rẽ cần PriorityPoint để rắn dừng và chọn hướng.");
   }
 }
 
 export function movePlayableSession(session, direction) {
-  if (!availableDirections(session).includes(direction)) return { moved: false, reason: "invalid-direction" };
+  if (!availableDirections(session).includes(direction)) {
+    if (directionBlockedBySelfCollision(session, direction)) {
+      loseSession(session, "Đầu tàu tự đâm vào thân.", LOSE_REASON.SELF_COLLISION);
+      return { moved: false, reason: "self-collision", status: session.status };
+    }
+    return { moved: false, reason: "invalid-direction" };
+  }
   session.deliveryEffect = null;
   const vector = DIRECTIONS[direction];
   const previousBody = session.snake.body.map((part) => ({ ...part }));
@@ -697,7 +706,7 @@ export function movePlayableSession(session, direction) {
   const cell = session.layer.cells[key];
   if (cell.item?.kind === "fruit") {
     const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
-    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, hiddenInShovel: isShovelRestoring(session) });
+    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, itemId: blockItemIdFromItem(cell.item), hiddenInShovel: isShovelRestoring(session) });
     cell.item = null;
     session.remainingFruits -= 1;
     advanceFruitLayerIfCleared(session);
@@ -709,8 +718,18 @@ export function movePlayableSession(session, direction) {
   return { moved: true, status: session.status };
 }
 
-function itemIcon(item) {
-  return item.icon ?? FRUIT_ICONS[item.fruitType] ?? "◆";
+function renderNeededBlocks(container, needs, layer) {
+  container.replaceChildren();
+  if (!layer) {
+    container.textContent = "✓";
+    return;
+  }
+  needs.forEach((type) => {
+    const item = document.createElement("span");
+    item.className = "tray-need-item";
+    item.append(createBlockSwatch(type), document.createTextNode(String((layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0))));
+    container.appendChild(item);
+  });
 }
 
 function statusText(status) {
@@ -832,7 +851,8 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
             && !level.mysteryFruitDebug;
           const icon = document.createElement("span");
           icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}`;
-          icon.textContent = hiddenFruit ? "?" : itemIcon(cellData.item);
+          if (cellData.item.kind === "fruit") applyBlockItemVisual(icon, cellData.item, { mystery: hiddenFruit });
+          else icon.textContent = cellData.item.icon;
           cell.appendChild(icon);
           if (tray) {
             const layer = activeTrayLayer(tray);
@@ -840,10 +860,8 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
             const needBadge = document.createElement("span");
             const badgeSide = tray.x >= level.grid.columns / 2 ? " align-left" : " align-right";
             needBadge.className = `playable-tray-needs${badgeSide}${session?.delivery?.trayId === tray.id ? " receiving" : ""}`;
-            needBadge.textContent = layer
-              ? needs.map((type) => `${FRUIT_ICONS[type]}${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(" ")
-              : "✓";
-            needBadge.title = layer ? `Khay cần: ${needBadge.textContent}` : "Khay đã hoàn thành";
+            renderNeededBlocks(needBadge, needs, layer);
+            needBadge.title = layer ? `Khay cần: ${needs.map((type) => `${blockLabelForFruitType(type)} x${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(", ")}` : "Khay đã hoàn thành";
             cell.appendChild(needBadge);
           }
         }
@@ -856,7 +874,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
           const needs = FRUIT_TYPES.filter((type) => layer && (layer.recipe[type] ?? 0) > (layer.delivered[type] ?? 0));
           const needBadge = document.createElement("span");
           needBadge.className = `playable-tray-needs${tray.x >= level.grid.columns / 2 ? " align-left" : " align-right"}${session?.delivery?.trayId === tray.id ? " receiving" : ""}`;
-          needBadge.textContent = layer ? needs.map((type) => `${FRUIT_ICONS[type]}${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(" ") : "✓";
+          renderNeededBlocks(needBadge, needs, layer);
           cell.appendChild(needBadge);
         }
         if (checkpointTray) {
@@ -868,7 +886,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
         if (session?.deliveryEffect?.checkpointKey === key) {
           const flyingFruit = document.createElement("span");
           flyingFruit.className = "delivery-flying-fruit";
-          flyingFruit.textContent = FRUIT_ICONS[session.deliveryEffect.fruitType] ?? "●";
+          applyBlockItemVisual(flyingFruit, session.deliveryEffect);
           flyingFruit.dataset.effect = session.deliveryEffect.nonce;
           cell.appendChild(flyingFruit);
         }
@@ -877,7 +895,8 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
           const token = document.createElement("span");
           const tokenDirection = snakePart.direction ? ` dir-${snakePart.direction}` : "";
           token.className = `playable-token ${snakePart.index === 0 ? "head" : "cargo"}${tokenDirection}`;
-          token.textContent = snakePart.index === 0 ? "🐍" : FRUIT_ICONS[snakePart.fruitType] ?? "●";
+          if (snakePart.index === 0) token.textContent = TRAIN_HEAD_ICON;
+          else applyBlockItemVisual(token, snakePart);
           cell.appendChild(token);
         }
         elements.playableGridBoard.appendChild(cell);
@@ -900,8 +919,8 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
     cargo.forEach((segment) => {
       const chip = document.createElement("span");
       chip.className = "cargo-chip";
-      chip.textContent = FRUIT_ICONS[segment.fruitType] ?? "●";
-      chip.title = segment.fruitType;
+      applyBlockItemVisual(chip, segment);
+      chip.title = blockLabelForFruitType(segment.fruitType);
       elements.playableCargo.appendChild(chip);
     });
   }
@@ -924,7 +943,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
         const delivered = layer.delivered[type] ?? 0;
         const required = layer.recipe[type] ?? 0;
         chip.className = `recipe-chip${delivered >= required ? " done" : ""}`;
-        chip.textContent = `${FRUIT_ICONS[type]} ${delivered}/${required}`;
+        chip.append(createBlockSwatch(type), document.createTextNode(`${delivered}/${required}`));
         recipes.appendChild(chip);
       });
       card.appendChild(recipes);
@@ -980,10 +999,21 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
       elements.playableEndIcon.textContent = "🏆";
       elements.playableEndTitle.textContent = "Hoàn thành màn chơi";
       elements.playableEndCopy.textContent = "Tất cả khay chứa đã nhận đủ recipe.";
+      if (elements.playReviveBtn) elements.playReviveBtn.classList.add("hidden");
+      elements.playAgainBtn.textContent = "Chơi lại";
+      elements.playAgainBtn.classList.remove("hidden");
+      elements.exitPlayableBtn.textContent = "Về Editor";
     } else if (status === PLAY_STATUS.LOST) {
       elements.playableEndIcon.textContent = "💥";
       elements.playableEndTitle.textContent = "Bạn đã thua";
       elements.playableEndCopy.textContent = session.lastReason ?? "Rắn không thể tiếp tục di chuyển.";
+      if (elements.playReviveBtn) {
+        elements.playReviveBtn.classList.toggle("hidden", !session.reviveAvailable);
+        elements.playReviveBtn.disabled = !session.reviveAvailable;
+      }
+      elements.playAgainBtn.textContent = "Restart";
+      elements.playAgainBtn.classList.remove("hidden");
+      elements.exitPlayableBtn.textContent = "Give Up";
     }
     renderBoard();
     renderCargo();
@@ -1012,7 +1042,14 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
 
   function chooseDirection(direction) {
     if (!isActive || !session || ![PLAY_STATUS.READY, PLAY_STATUS.WAITING, PLAY_STATUS.SHOVEL_AWAIT_DIRECTION].includes(session.status)) return false;
-    if (!availableDirections(session).includes(direction)) return false;
+    if (!availableDirections(session).includes(direction)) {
+      if (directionBlockedBySelfCollision(session, direction)) {
+        loseSession(session, "Đầu tàu tự đâm vào thân.", LOSE_REASON.SELF_COLLISION);
+        clearTimer();
+        render();
+      }
+      return false;
+    }
     if (session.status === PLAY_STATUS.SHOVEL_AWAIT_DIRECTION) beginShovelTailRestore(session);
     session.status = isShovelRestoring(session) ? PLAY_STATUS.SHOVEL_RESTORE_TAIL : PLAY_STATUS.MOVING;
     movePlayableSession(session, direction);
@@ -1044,6 +1081,37 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
     session.status = PLAY_STATUS.SHOVEL_TELEPORTING;
     if (!teleportWithShovel(session, targetKey)) return false;
     render();
+    return true;
+  }
+
+  function revive() {
+    if (!session || session.status !== PLAY_STATUS.LOST || !session.reviveAvailable) return false;
+    clearTimer();
+    session.status = PLAY_STATUS.REVIVING;
+    render();
+    const result = reviveSession(session, {
+      onTrayLayerComplete(completedLayerCount) {
+        const unlockedBarriers = decrementCountBarriers(session, completedLayerCount);
+        removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
+      },
+      onAfterFill() {
+        advanceFruitLayerIfCleared(session);
+      }
+    });
+    if (!result.revived) return false;
+    session.lastReason = result.transferred > 0
+      ? `Revive đã chuyển ${result.transferred}/${result.target} Fruit vào khay.`
+      : "Revive không có Fruit phù hợp để chuyển vào khay.";
+    session.delivery = null;
+    session.deliveryEffect = null;
+    if (allFruitLayersComplete(session) && allTraysComplete(session)) {
+      session.status = PLAY_STATUS.WON;
+    } else {
+      session.status = session.snake.direction ? PLAY_STATUS.WAITING : PLAY_STATUS.READY;
+      session.resumeStatus = session.status;
+    }
+    render();
+    scheduleNext();
     return true;
   }
 
@@ -1101,6 +1169,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
   });
   elements.playPauseBtn.addEventListener("click", togglePause);
   elements.playRestartBtn.addEventListener("click", restart);
+  elements.playReviveBtn?.addEventListener("click", revive);
   elements.playAgainBtn.addEventListener("click", restart);
   elements.playableShovelBtn?.addEventListener("click", toggleShovelTargeting);
   elements.exitPlayableBtn.addEventListener("click", onExitEditor);

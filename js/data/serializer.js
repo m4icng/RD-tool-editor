@@ -211,6 +211,11 @@ function validateStructure(raw) {
     trayIds.add(tray.trayId);
     assertIndex(tray.deliverPoint?.index, total, `trays[${i}].deliverPoint`);
     assertIndex(tray.trayPosition?.index, total, `trays[${i}].trayPosition`);
+    const deliverPoint = indexToPosition(tray.deliverPoint.index, width);
+    const trayPosition = indexToPosition(tray.trayPosition.index, width);
+    if (deliverPoint.x !== trayPosition.x || deliverPoint.y !== trayPosition.y + 1) {
+      throw new Error(`trays[${i}] phải có trayPosition ngay phía trên deliverPoint.`);
+    }
     assertArray(tray.layers, `trays[${i}].layers`);
     tray.layers.forEach((layer, layerIndex) => {
       if (!Number.isInteger(layer?.layer) || layer.layer < 0) throw new Error(`trays[${i}].layers[${layerIndex}].layer không hợp lệ.`);

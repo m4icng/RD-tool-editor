@@ -60,6 +60,7 @@ import {
   moveTrayLayer,
   removeTrayLayer,
   removeTrayLayerUnknownItem,
+  setTrayDeliverPointIndex,
   setTrayLayerAmount,
   setTrayLayerBlock,
   setTrayVisualIndex,
@@ -1142,6 +1143,11 @@ elements.trayPanel.addEventListener("click", (event) => {
     showNotification(elements.toast, "Đã chuyển xe cũ thành khay chứa sức chứa 9");
     return;
   }
+  const blockOption = event.target.closest("[data-tray-block-option]");
+  if (blockOption) {
+    mutate((state) => setTrayLayerBlock(state, Number(blockOption.dataset.trayLayerIndex), blockOption.dataset.trayBlockOption));
+    return;
+  }
   const tray = event.target.closest("[data-tray-x]");
   if (!tray) return;
   editor.data.activeTrayCell = { x: Number(tray.dataset.trayX), y: Number(tray.dataset.trayY) };
@@ -1209,14 +1215,19 @@ elements.trayPanel.addEventListener("change", (event) => {
   const trayPositionInput = event.target.closest("[data-tray-position-index]");
   if (trayPositionInput) {
     const result = mutate((state) => setTrayVisualIndex(state, trayPositionInput.value));
-    if (result?.reason === "outside-grid") showNotification(elements.toast, "Index trayPosition nằm ngoài map.");
+    if (["outside-grid", "tray-position-outside-grid"].includes(result?.reason)) showNotification(elements.toast, "Index trayPosition nằm ngoài map.");
+    else if (result?.reason === "deliver-point-outside-grid") showNotification(elements.toast, "deliverPoint tự động nằm ngoài map.");
     else if (result?.reason === "footprint-outside-grid") showNotification(elements.toast, "Footprint Tray 3x4 vượt ngoài map.");
+    else if (result?.reason === "deliver-point-occupied") showNotification(elements.toast, "deliverPoint mới đang có item khác.");
     return;
   }
-  const blockPicker = event.target.closest("[data-tray-block-picker]");
-  if (blockPicker) {
-    if (!blockPicker.value) return;
-    mutate((state) => setTrayLayerBlock(state, Number(blockPicker.dataset.trayLayerIndex), blockPicker.value));
+  const trayDeliverInput = event.target.closest("[data-tray-deliver-point-index]");
+  if (trayDeliverInput) {
+    const result = mutate((state) => setTrayDeliverPointIndex(state, trayDeliverInput.value));
+    if (["outside-grid", "deliver-point-outside-grid"].includes(result?.reason)) showNotification(elements.toast, "Index deliverPoint nằm ngoài map.");
+    else if (result?.reason === "tray-position-outside-grid") showNotification(elements.toast, "trayPosition tự động nằm ngoài map.");
+    else if (result?.reason === "footprint-outside-grid") showNotification(elements.toast, "Footprint Tray 3x4 vượt ngoài map.");
+    else if (result?.reason === "deliver-point-occupied") showNotification(elements.toast, "deliverPoint mới đang có item khác.");
     return;
   }
   const amountInput = event.target.closest("[data-tray-layer-amount]");
@@ -1234,7 +1245,7 @@ elements.trayPanel.addEventListener("input", (event) => {
 let draggedTrayLayerIndex = null;
 elements.trayPanel.addEventListener("dragstart", (event) => {
   const card = event.target.closest("[data-tray-layer-index]");
-  if (!card || event.target.closest("button, select, input")) return;
+  if (!card || event.target.closest("button, select, input, summary, .tray-block-dropdown")) return;
   draggedTrayLayerIndex = Number(card.dataset.trayLayerIndex);
   card.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";

@@ -11,6 +11,7 @@ import {
   positionToIndex
 } from "../utils/grid-utils.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
+import { deliverPointFromTrayPosition } from "../objects/tray-position-sync.js";
 import { normalizeTunnelDraft, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { normalizeOneWayDraft, normalizeOneWayElement } from "../objects/one-way-object.js";
 
@@ -222,8 +223,9 @@ function applyResizeOperation(state, operation) {
   state.sharedCells = remapCellMap(state.sharedCells, operation, (cell, oldPosition) => {
     if (["tray", "truck"].includes(cell.item?.kind)) {
       const trayPosition = operation.mapPosition(getTrayVisualPosition(cell.item, oldPosition));
-      if (!trayPosition || !isInsideGrid(operation.nextGrid, trayPosition.x, trayPosition.y)) cell.item = null;
-      else if (!isTrayVisualInsideGrid(operation.nextGrid, { ...cell.item, trayPosition }, oldPosition)) cell.item = null;
+      const deliverPoint = trayPosition ? deliverPointFromTrayPosition(trayPosition) : null;
+      if (!trayPosition || !deliverPoint || !isInsideGrid(operation.nextGrid, trayPosition.x, trayPosition.y) || !isInsideGrid(operation.nextGrid, deliverPoint.x, deliverPoint.y)) cell.item = null;
+      else if (!isTrayVisualInsideGrid(operation.nextGrid, { ...cell.item, trayPosition }, deliverPoint)) cell.item = null;
       else cell.item.trayPosition = trayPosition;
     }
     return isEmptySharedCell(cell) ? null : cell;

@@ -20,12 +20,12 @@ import {
   createMergedLayer,
   ensureTerrainState,
   isInsideGrid,
-  isTrayVisualInsideGrid,
   isPathJunction,
   parseCellKey,
   positionToIndex,
   setMysteryFruitAt
 } from "../utils/grid-utils.js";
+import { validateTrayPair } from "../objects/tray-position-sync.js";
 
 function junctionKeys(state) {
   const layer = createMergedLayer(state);
@@ -399,7 +399,8 @@ export function applyTool(state, x, y, toolOverride = null) {
         if (["tray", "truck"].includes(object.kind)) {
           if (!shared.path) return { changed: false, reason: "tray-checkpoint-needs-road", objectId: object.id };
           const visualPosition = { x, y: y - 1 };
-          if (!isTrayVisualInsideGrid(state.grid, { ...object, trayPosition: visualPosition }, { x, y })) return { changed: false, reason: "tray-visual-outside-grid", objectId: object.id };
+          const trayValidation = validateTrayPair(state.grid, object, visualPosition);
+          if (!trayValidation.valid) return { changed: false, reason: trayValidation.reason === "footprint-outside-grid" ? "tray-visual-outside-grid" : trayValidation.reason, objectId: object.id };
           shared.item = cloneObject(object);
           const trayId = nextTrayId(state);
           shared.item.id = `tray-${trayId}`;

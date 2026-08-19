@@ -675,6 +675,84 @@ function createEmptyTray() {
 }
 
 
+// ---- js/objects/tray-position-sync.js ----
+
+function deliverPointFromTrayPosition(trayPosition) {
+  return { x: trayPosition.x, y: trayPosition.y + 1 };
+}
+
+function trayPositionFromDeliverPoint(deliverPoint) {
+  return { x: deliverPoint.x, y: deliverPoint.y - 1 };
+}
+
+function trayPairIndexes(trayPosition, width) {
+  const deliverPoint = deliverPointFromTrayPosition(trayPosition);
+  return {
+    trayPositionIndex: positionToIndex(trayPosition.x, trayPosition.y, width),
+    deliverPointIndex: positionToIndex(deliverPoint.x, deliverPoint.y, width)
+  };
+}
+
+function validateTrayPair(grid, item, trayPosition) {
+  const deliverPoint = deliverPointFromTrayPosition(trayPosition);
+  if (!isInsideGrid(grid, trayPosition.x, trayPosition.y)) return { valid: false, reason: "tray-position-outside-grid" };
+  if (!isInsideGrid(grid, deliverPoint.x, deliverPoint.y)) return { valid: false, reason: "deliver-point-outside-grid" };
+  if (!isTrayVisualInsideGrid(grid, { ...item, trayPosition }, deliverPoint)) return { valid: false, reason: "footprint-outside-grid" };
+  return { valid: true, trayPosition, deliverPoint };
+}
+
+function moveTrayItemToDeliverPoint(state, context, deliverPoint) {
+  const oldKey = cellKey(context.x, context.y);
+  const newKey = cellKey(deliverPoint.x, deliverPoint.y);
+  if (oldKey === newKey) return true;
+  state.sharedCells ??= {};
+  const oldShared = state.sharedCells[oldKey];
+  if (!oldShared || oldShared.item !== context.item) return false;
+  const nextShared = state.sharedCells[newKey] ?? { path: false, item: null, element: null };
+  if (nextShared.item && nextShared.item !== context.item) return false;
+  oldShared.item = null;
+  if (!oldShared.path && !oldShared.element) delete state.sharedCells[oldKey];
+  nextShared.item = context.item;
+  state.sharedCells[newKey] = nextShared;
+  context.x = deliverPoint.x;
+  context.y = deliverPoint.y;
+  context.cell = nextShared;
+  state.selectedCell = { x: deliverPoint.x, y: deliverPoint.y };
+  state.activeTrayCell = { x: deliverPoint.x, y: deliverPoint.y };
+  return true;
+}
+
+function moveTrayByTrayPosition(state, context, trayPosition) {
+  if (!context || !["tray", "truck"].includes(context.item?.kind)) return { changed: false, reason: "invalid-tray" };
+  const validation = validateTrayPair(state.grid, context.item, trayPosition);
+  if (!validation.valid) return { changed: false, reason: validation.reason };
+  const currentTrayPosition = getTrayVisualPosition(context.item, context);
+  const sameTrayPosition = currentTrayPosition.x === trayPosition.x && currentTrayPosition.y === trayPosition.y;
+  const sameDeliverPoint = context.x === validation.deliverPoint.x && context.y === validation.deliverPoint.y;
+  if (sameTrayPosition && sameDeliverPoint) return { changed: false, reason: null };
+  if (!moveTrayItemToDeliverPoint(state, context, validation.deliverPoint)) return { changed: false, reason: "deliver-point-occupied" };
+  context.item.trayPosition = { x: trayPosition.x, y: trayPosition.y };
+  return { changed: true, reason: null };
+}
+
+function moveTrayByTrayPositionIndex(state, context, index) {
+  const value = Math.floor(Number(index));
+  if (!Number.isInteger(value)) return { changed: false, reason: "invalid-index" };
+  const total = state.grid.columns * state.grid.rows;
+  if (value < 0 || value >= total) return { changed: false, reason: "tray-position-outside-grid" };
+  return moveTrayByTrayPosition(state, context, indexToPosition(value, state.grid.columns));
+}
+
+function moveTrayByDeliverPointIndex(state, context, index) {
+  const value = Math.floor(Number(index));
+  if (!Number.isInteger(value)) return { changed: false, reason: "invalid-index" };
+  const total = state.grid.columns * state.grid.rows;
+  if (value < 0 || value >= total) return { changed: false, reason: "deliver-point-outside-grid" };
+  const deliverPoint = indexToPosition(value, state.grid.columns);
+  return moveTrayByTrayPosition(state, context, trayPositionFromDeliverPoint(deliverPoint));
+}
+
+
 // ---- js/objects/obstacle-object.js ----
 function createObstacle(type = "rock", label = "Chướng ngại", icon = "🪨") {
   return { id: `obstacle-${type}`, kind: "obstacle", obstacleType: type, label, icon };
@@ -1904,6 +1982,11 @@ function validateStructure(raw) {
     trayIds.add(tray.trayId);
     assertIndex(tray.deliverPoint?.index, total, `trays[${i}].deliverPoint`);
     assertIndex(tray.trayPosition?.index, total, `trays[${i}].trayPosition`);
+    const deliverPoint = indexToPosition(tray.deliverPoint.index, width);
+    const trayPosition = indexToPosition(tray.trayPosition.index, width);
+    if (deliverPoint.x !== trayPosition.x || deliverPoint.y !== trayPosition.y + 1) {
+      throw new Error(`trays[${i}] phải có trayPosition ngay phía trên deliverPoint.`);
+    }
     assertArray(tray.layers, `trays[${i}].layers`);
     tray.layers.forEach((layer, layerIndex) => {
       if (!Number.isInteger(layer?.layer) || layer.layer < 0) throw new Error(`trays[${i}].layers[${layerIndex}].layer không hợp lệ.`);
@@ -2296,6 +2379,10 @@ function validateLevel(level) {
     if (cell.item?.kind === "snake" && !cell.path) warnings.push(`Spawn tại Index ${indexOfKey(key)} phải nằm trên Path.`);
     if (cell.item?.kind === "tray") {
       const { x, y } = parseCellKey(key);
+      const trayPosition = getTrayVisualPosition(cell.item, { x, y });
+      if (trayPosition.x !== x || trayPosition.y + 1 !== y) {
+        errors.push(`Khay tại Index ${indexOfKey(key)} có trayPosition không nằm ngay phía trên deliverPoint.`);
+      }
       if (!cell.path) warnings.push(`Checkpoint khay tại Index ${indexOfKey(key)} phải nằm trên Path.`);
       getTrayVisualCells(cell.item, { x, y }).forEach((visual) => {
         if (!isInsideGrid(level.grid, visual.x, visual.y)) {
@@ -2740,6 +2827,7 @@ function getSmartDeleteTarget(state, position) {
 
 
 
+
 function junctionKeys(state) {
   const layer = createMergedLayer(state);
   return new Set(Object.keys(layer.cells ?? {}).filter((key) => {
@@ -3112,7 +3200,8 @@ function applyTool(state, x, y, toolOverride = null) {
         if (["tray", "truck"].includes(object.kind)) {
           if (!shared.path) return { changed: false, reason: "tray-checkpoint-needs-road", objectId: object.id };
           const visualPosition = { x, y: y - 1 };
-          if (!isTrayVisualInsideGrid(state.grid, { ...object, trayPosition: visualPosition }, { x, y })) return { changed: false, reason: "tray-visual-outside-grid", objectId: object.id };
+          const trayValidation = validateTrayPair(state.grid, object, visualPosition);
+          if (!trayValidation.valid) return { changed: false, reason: trayValidation.reason === "footprint-outside-grid" ? "tray-visual-outside-grid" : trayValidation.reason, objectId: object.id };
           shared.item = cloneObject(object);
           const trayId = nextTrayId(state);
           shared.item.id = `tray-${trayId}`;
@@ -3633,6 +3722,7 @@ function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Ch�
 
 
 
+
 const TRAY_CAPACITY = 9;
 
 const FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
@@ -3731,17 +3821,14 @@ function addTrayLayer(state) {
 
 function setTrayVisualIndex(state, index) {
   const context = getSelectedTrayContext(state);
-  const value = Math.floor(Number(index));
-  if (!context || context.item.kind !== "tray" || !Number.isInteger(value)) return { changed: false, reason: "invalid-index" };
-  const total = state.grid.columns * state.grid.rows;
-  if (value < 0 || value >= total) return { changed: false, reason: "outside-grid" };
-  const trayPosition = indexToPosition(value, state.grid.columns);
-  if (!isInsideGrid(state.grid, trayPosition.x, trayPosition.y)) return { changed: false, reason: "outside-grid" };
-  if (!isTrayVisualInsideGrid(state.grid, { ...context.item, trayPosition }, context)) return { changed: false, reason: "footprint-outside-grid" };
-  const current = getTrayVisualPosition(context.item, context);
-  if (current.x === trayPosition.x && current.y === trayPosition.y) return { changed: false, reason: null };
-  context.item.trayPosition = trayPosition;
-  return { changed: true, reason: null };
+  if (!context || context.item.kind !== "tray") return { changed: false, reason: "invalid-tray" };
+  return moveTrayByTrayPositionIndex(state, context, index);
+}
+
+function setTrayDeliverPointIndex(state, index) {
+  const context = getSelectedTrayContext(state);
+  if (!context || context.item.kind !== "tray") return { changed: false, reason: "invalid-tray" };
+  return moveTrayByDeliverPointIndex(state, context, index);
 }
 
 function changeTrayLayerRecipe(state, layerIndex, fruitType, delta) {
@@ -3889,30 +3976,37 @@ function createLayerCard(trayLayer, index, count) {
 
   const recipeGrid = document.createElement("div");
   recipeGrid.className = "tray-block-layer-grid";
-  const picker = document.createElement("label");
+  const picker = document.createElement("div");
   picker.className = "tray-block-picker";
-  picker.innerHTML = '<span>Block</span><span class="tray-block-select-wrap"></span>';
-  const selectWrap = picker.children[1];
-  const select = document.createElement("select");
-  select.dataset.trayBlockPicker = "true";
-  select.setAttribute("aria-label", `Block layer ${index + 1}`);
-  select.dataset.trayLayerIndex = String(index);
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Chọn Block";
-  placeholder.selected = !selectedType;
-  placeholder.disabled = true;
-  select.appendChild(placeholder);
+  picker.innerHTML = '<span>Block</span>';
+  const dropdown = document.createElement("details");
+  dropdown.className = "tray-block-dropdown";
+  dropdown.dataset.selectedBlockId = selectedBlockId == null ? "" : String(selectedBlockId);
+  const summary = document.createElement("summary");
+  summary.setAttribute("aria-label", `Block layer ${index + 1}`);
+  summary.appendChild(createBlockDropLabel(selectedBlockId));
+  const menu = document.createElement("div");
+  menu.className = "tray-block-option-list";
+  menu.setAttribute("role", "listbox");
   FRUIT_TYPES.forEach((type) => {
-    const option = document.createElement("option");
-    option.value = String(FRUIT_META[type].itemId);
-    option.textContent = FRUIT_META[type].optionLabel;
-    option.selected = FRUIT_META[type].itemId === selectedBlockId;
-    select.appendChild(option);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `tray-block-option${FRUIT_META[type].itemId === selectedBlockId ? " active" : ""}`;
+    button.dataset.trayBlockOption = String(FRUIT_META[type].itemId);
+    button.dataset.trayLayerIndex = String(index);
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(FRUIT_META[type].itemId === selectedBlockId));
+    const swatch = document.createElement("span");
+    applyBlockItemVisual(swatch, type);
+    const name = document.createElement("strong");
+    name.textContent = FRUIT_META[type].label;
+    const id = document.createElement("em");
+    id.textContent = `ID ${FRUIT_META[type].itemId}`;
+    button.append(swatch, name, id);
+    menu.appendChild(button);
   });
-  select.value = selectedBlockId == null ? "" : String(selectedBlockId);
-  select.dataset.selectedBlockId = selectedBlockId == null ? "" : String(selectedBlockId);
-  selectWrap.append(createBlockDropLabel(selectedBlockId), select);
+  dropdown.append(summary, menu);
+  picker.appendChild(dropdown);
   recipeGrid.appendChild(picker);
 
   const amount = document.createElement("label");
@@ -3965,11 +4059,21 @@ function createTrayEditor(context, trayIndex, grid) {
   positionControl.innerHTML = '<span><strong>trayPosition</strong><small></small></span><input data-tray-position-index type="number" min="0" step="1" aria-label="Index trayPosition bottom center">';
   const trayPosition = getTrayVisualPosition(context.item, context);
   const trayPositionIndex = positionToIndex(trayPosition.x, trayPosition.y, width);
-  positionControl.children[0].children[1].textContent = `Conveyor bottom-center · Deliver Point giữ Index ${positionToIndex(context.x, context.y, width)}`;
+  const deliverPointIndex = positionToIndex(context.x, context.y, width);
+  positionControl.children[0].children[1].textContent = `Bottom-center · Deliver Point auto ${deliverPointIndex}`;
   const indexInput = positionControl.children[1];
   indexInput.setAttribute("max", String((grid.columns * grid.rows) - 1));
   indexInput.setAttribute("value", String(trayPositionIndex));
   editor.appendChild(positionControl);
+
+  const deliverControl = document.createElement("label");
+  deliverControl.className = "tray-position-picker";
+  deliverControl.innerHTML = '<span><strong>deliverPoint</strong><small></small></span><input data-tray-deliver-point-index type="number" min="0" step="1" aria-label="Index deliverPoint">';
+  deliverControl.children[0].children[1].textContent = `Delivery Point · trayPosition auto ${trayPositionIndex}`;
+  const deliverInput = deliverControl.children[1];
+  deliverInput.setAttribute("max", String((grid.columns * grid.rows) - 1));
+  deliverInput.setAttribute("value", String(deliverPointIndex));
+  editor.appendChild(deliverControl);
 
   const layers = context.item.trayLayers ?? [];
   if (layers.length === 0) {
@@ -4802,6 +4906,7 @@ function renderInspector(container, editorData) {
 
 
 
+
 const RESIZE_EDGES = new Set(["top", "bottom", "left", "right"]);
 
 function isMapSizeWithinBounds(grid) {
@@ -5010,8 +5115,9 @@ function applyResizeOperation(state, operation) {
   state.sharedCells = remapCellMap(state.sharedCells, operation, (cell, oldPosition) => {
     if (["tray", "truck"].includes(cell.item?.kind)) {
       const trayPosition = operation.mapPosition(getTrayVisualPosition(cell.item, oldPosition));
-      if (!trayPosition || !isInsideGrid(operation.nextGrid, trayPosition.x, trayPosition.y)) cell.item = null;
-      else if (!isTrayVisualInsideGrid(operation.nextGrid, { ...cell.item, trayPosition }, oldPosition)) cell.item = null;
+      const deliverPoint = trayPosition ? deliverPointFromTrayPosition(trayPosition) : null;
+      if (!trayPosition || !deliverPoint || !isInsideGrid(operation.nextGrid, trayPosition.x, trayPosition.y) || !isInsideGrid(operation.nextGrid, deliverPoint.x, deliverPoint.y)) cell.item = null;
+      else if (!isTrayVisualInsideGrid(operation.nextGrid, { ...cell.item, trayPosition }, deliverPoint)) cell.item = null;
       else cell.item.trayPosition = trayPosition;
     }
     return isEmptySharedCell(cell) ? null : cell;
@@ -7953,6 +8059,11 @@ elements.trayPanel.addEventListener("click", (event) => {
     showNotification(elements.toast, "Đã chuyển xe cũ thành khay chứa sức chứa 9");
     return;
   }
+  const blockOption = event.target.closest("[data-tray-block-option]");
+  if (blockOption) {
+    mutate((state) => setTrayLayerBlock(state, Number(blockOption.dataset.trayLayerIndex), blockOption.dataset.trayBlockOption));
+    return;
+  }
   const tray = event.target.closest("[data-tray-x]");
   if (!tray) return;
   editor.data.activeTrayCell = { x: Number(tray.dataset.trayX), y: Number(tray.dataset.trayY) };
@@ -8020,14 +8131,19 @@ elements.trayPanel.addEventListener("change", (event) => {
   const trayPositionInput = event.target.closest("[data-tray-position-index]");
   if (trayPositionInput) {
     const result = mutate((state) => setTrayVisualIndex(state, trayPositionInput.value));
-    if (result?.reason === "outside-grid") showNotification(elements.toast, "Index trayPosition nằm ngoài map.");
+    if (["outside-grid", "tray-position-outside-grid"].includes(result?.reason)) showNotification(elements.toast, "Index trayPosition nằm ngoài map.");
+    else if (result?.reason === "deliver-point-outside-grid") showNotification(elements.toast, "deliverPoint tự động nằm ngoài map.");
     else if (result?.reason === "footprint-outside-grid") showNotification(elements.toast, "Footprint Tray 3x4 vượt ngoài map.");
+    else if (result?.reason === "deliver-point-occupied") showNotification(elements.toast, "deliverPoint mới đang có item khác.");
     return;
   }
-  const blockPicker = event.target.closest("[data-tray-block-picker]");
-  if (blockPicker) {
-    if (!blockPicker.value) return;
-    mutate((state) => setTrayLayerBlock(state, Number(blockPicker.dataset.trayLayerIndex), blockPicker.value));
+  const trayDeliverInput = event.target.closest("[data-tray-deliver-point-index]");
+  if (trayDeliverInput) {
+    const result = mutate((state) => setTrayDeliverPointIndex(state, trayDeliverInput.value));
+    if (["outside-grid", "deliver-point-outside-grid"].includes(result?.reason)) showNotification(elements.toast, "Index deliverPoint nằm ngoài map.");
+    else if (result?.reason === "tray-position-outside-grid") showNotification(elements.toast, "trayPosition tự động nằm ngoài map.");
+    else if (result?.reason === "footprint-outside-grid") showNotification(elements.toast, "Footprint Tray 3x4 vượt ngoài map.");
+    else if (result?.reason === "deliver-point-occupied") showNotification(elements.toast, "deliverPoint mới đang có item khác.");
     return;
   }
   const amountInput = event.target.closest("[data-tray-layer-amount]");
@@ -8045,7 +8161,7 @@ elements.trayPanel.addEventListener("input", (event) => {
 let draggedTrayLayerIndex = null;
 elements.trayPanel.addEventListener("dragstart", (event) => {
   const card = event.target.closest("[data-tray-layer-index]");
-  if (!card || event.target.closest("button, select, input")) return;
+  if (!card || event.target.closest("button, select, input, summary, .tray-block-dropdown")) return;
   draggedTrayLayerIndex = Number(card.dataset.trayLayerIndex);
   card.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";

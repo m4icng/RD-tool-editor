@@ -6,7 +6,7 @@ import { isGateElement, isValidGateDirection, normalizeGateDirection } from "../
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
 import { isValidTunnelDirection, normalizeTunnelDirection, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { isValidOneWayDirection, normalizeOneWayDirection, normalizeOneWayElement } from "../objects/one-way-object.js";
-import { createMergedLayer, ensureTerrainState, getTrayVisualCells, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
+import { createMergedLayer, ensureTerrainState, getTrayVisualCells, getTrayVisualPosition, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
 
 export function collectStats(layer) {
   const stats = {
@@ -149,6 +149,10 @@ export function validateLevel(level) {
     if (cell.item?.kind === "snake" && !cell.path) warnings.push(`Spawn tại Index ${indexOfKey(key)} phải nằm trên Path.`);
     if (cell.item?.kind === "tray") {
       const { x, y } = parseCellKey(key);
+      const trayPosition = getTrayVisualPosition(cell.item, { x, y });
+      if (trayPosition.x !== x || trayPosition.y + 1 !== y) {
+        errors.push(`Khay tại Index ${indexOfKey(key)} có trayPosition không nằm ngay phía trên deliverPoint.`);
+      }
       if (!cell.path) warnings.push(`Checkpoint khay tại Index ${indexOfKey(key)} phải nằm trên Path.`);
       getTrayVisualCells(cell.item, { x, y }).forEach((visual) => {
         if (!isInsideGrid(level.grid, visual.x, visual.y)) {

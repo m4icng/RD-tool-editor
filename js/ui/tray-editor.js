@@ -9,12 +9,10 @@ import {
 import {
   cellKey,
   getTrayVisualPosition,
-  indexToPosition,
-  isInsideGrid,
-  isTrayVisualInsideGrid,
   positionToIndex,
 } from "../utils/grid-utils.js";
 import { createId } from "../utils/id-generator.js";
+import { moveTrayByDeliverPointIndex, moveTrayByTrayPositionIndex } from "../objects/tray-position-sync.js";
 
 export const TRAY_CAPACITY = 9;
 
@@ -114,17 +112,14 @@ export function addTrayLayer(state) {
 
 export function setTrayVisualIndex(state, index) {
   const context = getSelectedTrayContext(state);
-  const value = Math.floor(Number(index));
-  if (!context || context.item.kind !== "tray" || !Number.isInteger(value)) return { changed: false, reason: "invalid-index" };
-  const total = state.grid.columns * state.grid.rows;
-  if (value < 0 || value >= total) return { changed: false, reason: "outside-grid" };
-  const trayPosition = indexToPosition(value, state.grid.columns);
-  if (!isInsideGrid(state.grid, trayPosition.x, trayPosition.y)) return { changed: false, reason: "outside-grid" };
-  if (!isTrayVisualInsideGrid(state.grid, { ...context.item, trayPosition }, context)) return { changed: false, reason: "footprint-outside-grid" };
-  const current = getTrayVisualPosition(context.item, context);
-  if (current.x === trayPosition.x && current.y === trayPosition.y) return { changed: false, reason: null };
-  context.item.trayPosition = trayPosition;
-  return { changed: true, reason: null };
+  if (!context || context.item.kind !== "tray") return { changed: false, reason: "invalid-tray" };
+  return moveTrayByTrayPositionIndex(state, context, index);
+}
+
+export function setTrayDeliverPointIndex(state, index) {
+  const context = getSelectedTrayContext(state);
+  if (!context || context.item.kind !== "tray") return { changed: false, reason: "invalid-tray" };
+  return moveTrayByDeliverPointIndex(state, context, index);
 }
 
 export function changeTrayLayerRecipe(state, layerIndex, fruitType, delta) {
@@ -272,30 +267,37 @@ function createLayerCard(trayLayer, index, count) {
 
   const recipeGrid = document.createElement("div");
   recipeGrid.className = "tray-block-layer-grid";
-  const picker = document.createElement("label");
+  const picker = document.createElement("div");
   picker.className = "tray-block-picker";
-  picker.innerHTML = '<span>Block</span><span class="tray-block-select-wrap"></span>';
-  const selectWrap = picker.children[1];
-  const select = document.createElement("select");
-  select.dataset.trayBlockPicker = "true";
-  select.setAttribute("aria-label", `Block layer ${index + 1}`);
-  select.dataset.trayLayerIndex = String(index);
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Chọn Block";
-  placeholder.selected = !selectedType;
-  placeholder.disabled = true;
-  select.appendChild(placeholder);
+  picker.innerHTML = '<span>Block</span>';
+  const dropdown = document.createElement("details");
+  dropdown.className = "tray-block-dropdown";
+  dropdown.dataset.selectedBlockId = selectedBlockId == null ? "" : String(selectedBlockId);
+  const summary = document.createElement("summary");
+  summary.setAttribute("aria-label", `Block layer ${index + 1}`);
+  summary.appendChild(createBlockDropLabel(selectedBlockId));
+  const menu = document.createElement("div");
+  menu.className = "tray-block-option-list";
+  menu.setAttribute("role", "listbox");
   FRUIT_TYPES.forEach((type) => {
-    const option = document.createElement("option");
-    option.value = String(FRUIT_META[type].itemId);
-    option.textContent = FRUIT_META[type].optionLabel;
-    option.selected = FRUIT_META[type].itemId === selectedBlockId;
-    select.appendChild(option);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `tray-block-option${FRUIT_META[type].itemId === selectedBlockId ? " active" : ""}`;
+    button.dataset.trayBlockOption = String(FRUIT_META[type].itemId);
+    button.dataset.trayLayerIndex = String(index);
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(FRUIT_META[type].itemId === selectedBlockId));
+    const swatch = document.createElement("span");
+    applyBlockItemVisual(swatch, type);
+    const name = document.createElement("strong");
+    name.textContent = FRUIT_META[type].label;
+    const id = document.createElement("em");
+    id.textContent = `ID ${FRUIT_META[type].itemId}`;
+    button.append(swatch, name, id);
+    menu.appendChild(button);
   });
-  select.value = selectedBlockId == null ? "" : String(selectedBlockId);
-  select.dataset.selectedBlockId = selectedBlockId == null ? "" : String(selectedBlockId);
-  selectWrap.append(createBlockDropLabel(selectedBlockId), select);
+  dropdown.append(summary, menu);
+  picker.appendChild(dropdown);
   recipeGrid.appendChild(picker);
 
   const amount = document.createElement("label");
@@ -348,11 +350,21 @@ function createTrayEditor(context, trayIndex, grid) {
   positionControl.innerHTML = '<span><strong>trayPosition</strong><small></small></span><input data-tray-position-index type="number" min="0" step="1" aria-label="Index trayPosition bottom center">';
   const trayPosition = getTrayVisualPosition(context.item, context);
   const trayPositionIndex = positionToIndex(trayPosition.x, trayPosition.y, width);
-  positionControl.children[0].children[1].textContent = `Conveyor bottom-center · Deliver Point giữ Index ${positionToIndex(context.x, context.y, width)}`;
+  const deliverPointIndex = positionToIndex(context.x, context.y, width);
+  positionControl.children[0].children[1].textContent = `Bottom-center · Deliver Point auto ${deliverPointIndex}`;
   const indexInput = positionControl.children[1];
   indexInput.setAttribute("max", String((grid.columns * grid.rows) - 1));
   indexInput.setAttribute("value", String(trayPositionIndex));
   editor.appendChild(positionControl);
+
+  const deliverControl = document.createElement("label");
+  deliverControl.className = "tray-position-picker";
+  deliverControl.innerHTML = '<span><strong>deliverPoint</strong><small></small></span><input data-tray-deliver-point-index type="number" min="0" step="1" aria-label="Index deliverPoint">';
+  deliverControl.children[0].children[1].textContent = `Delivery Point · trayPosition auto ${trayPositionIndex}`;
+  const deliverInput = deliverControl.children[1];
+  deliverInput.setAttribute("max", String((grid.columns * grid.rows) - 1));
+  deliverInput.setAttribute("value", String(deliverPointIndex));
+  editor.appendChild(deliverControl);
 
   const layers = context.item.trayLayers ?? [];
   if (layers.length === 0) {

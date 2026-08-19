@@ -18,6 +18,7 @@ const sourceFiles = [
   "js/core/block-visuals.js",
   "js/objects/truck-object.js",
   "js/objects/tray-object.js",
+  "js/objects/tray-position-sync.js",
   "js/objects/obstacle-object.js",
   "js/objects/bridge-object.js",
   "js/objects/gate-object.js",

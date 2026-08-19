@@ -3550,9 +3550,13 @@ function renderGrid(container, editorData) {
 
       if (visualBridge) {
         const bridge = document.createElement("span");
-        bridge.className = "bridge-preview bridge-wide";
+        bridge.className = "bridge-preview bridge-joined";
         bridge.title = `Bridge Center #${visualBridge.centerIndex}`;
-        bridge.textContent = "🟰";
+        for (let segment = 0; segment < 3; segment += 1) {
+          const icon = document.createElement("span");
+          icon.textContent = "🟰";
+          bridge.appendChild(icon);
+        }
         cell.appendChild(bridge);
       }
       if (isGateElement(data.element)) {

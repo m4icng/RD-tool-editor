@@ -33,3 +33,4 @@ Bridge, Gate va Tunnel phai chan placement sai ngay khi GD dat Element.
 - 2026-08-19: Tao plan Element Placement & Visual Rules cho Bridge/Gate/Tunnel.
 - 2026-08-19: Implement placement blocking, auto direction, Bridge footprint visual 3x1 va Level Check invalid rules.
 - 2026-08-19: Cap nhat Bridge visual thanh glyph `🟰` khong border/background, render tai center va scale ngang phu 3 o index.
+- 2026-08-19: Doi Bridge visual sang 3 glyph `🟰` ghep lien trong container 3 cell, neo tam tai `bridgeElement.index`, khong dung scaleX.

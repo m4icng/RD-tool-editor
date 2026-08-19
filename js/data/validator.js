@@ -4,6 +4,7 @@ import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
 import {
+  bridgeItemBlockCells,
   bridgeVisualCells,
   findGatePriorityDirection,
   findTunnelPathDirection,
@@ -151,8 +152,8 @@ export function validateLevel(level) {
     if (visualCells.some((position) => !isInsideGrid(level.grid, position.x, position.y))) {
       errors.push(`⚠ ${bridgeLabel} cần đủ 3 ô theo chiều ngang.`);
     }
-    if (visualCells.some((position) => (level.layers ?? []).some((layer) => layer.cells?.[`${position.x},${position.y}`]?.item?.kind === "fruit"))) {
-      errors.push(`⚠ ${bridgeLabel} overlap Item Block.`);
+    if (bridgeItemBlockCells(level, index).some((position) => (level.layers ?? []).some((layer) => layer.cells?.[`${position.x},${position.y}`]?.item?.kind === "fruit"))) {
+      errors.push(`⚠ ${bridgeLabel} overlap Item Block trong vùng 1 ô xung quanh.`);
     }
   });
   let gateOrder = 0;

@@ -692,7 +692,7 @@ const input = new InputController({
       } else if (result?.reason === "bridge-outside-grid") {
         showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
       } else if (result?.reason === "bridge-item-overlap") {
-        showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
+        showNotification(elements.toast, "Bridge không cho phép Item trong vùng 1 ô xung quanh.");
       } else if (result?.reason === "grass-on-path") {
         showNotification(elements.toast, "Grass không thể trùng Path. Hãy xóa Path trước.");
       } else if (result?.reason === "terrain-on-path") {
@@ -946,7 +946,7 @@ function placeInspectorElement(assetId) {
   else if (result?.reason === "element-position-occupied") showNotification(elements.toast, "Ô này đã có element khác.");
   else if (result?.reason === "bridge-needs-crossroad") showNotification(elements.toast, "Bridge chỉ được đặt tại ngã 4.");
   else if (result?.reason === "bridge-outside-grid") showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
-  else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
+  else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng 1 ô xung quanh.");
   else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
 }
 

@@ -4,7 +4,7 @@ import { cellKey, indexToPosition, isInsideGrid, parseCellKey, positionToIndex }
 export const PLACEMENT_MESSAGES = Object.freeze({
   "bridge-needs-crossroad": "Bridge chỉ được đặt tại ngã 4",
   "bridge-outside-grid": "Bridge cần đủ 3 ô ngang",
-  "bridge-item-overlap": "Bridge không cho phép Item trong vùng visual",
+  "bridge-item-overlap": "Bridge không cho phép Item trong vùng 1 ô xung quanh",
   "gate-needs-priority-point": "Gate phải đứng trước PriorityPoint",
   "tunnel-needs-dead-end": "Tunnel chỉ được đặt tại Dead End"
 });
@@ -42,6 +42,21 @@ export function bridgeVisualCells(state, index) {
   }));
 }
 
+export function bridgeItemBlockCells(state, index) {
+  const center = indexToPosition(index, state.grid.columns);
+  const cells = [];
+  for (let y = center.y - 1; y <= center.y + 1; y += 1) {
+    for (let x = center.x - 1; x <= center.x + 1; x += 1) {
+      cells.push({
+        x,
+        y,
+        index: isInsideGrid(state.grid, x, y) ? positionToIndex(x, y, state.grid.columns) : null
+      });
+    }
+  }
+  return cells;
+}
+
 function hasItemBlockAt(state, x, y) {
   const key = cellKey(x, y);
   return (state.layers ?? []).some((layer) => layer.cells?.[key]?.item?.kind === "fruit");
@@ -57,7 +72,7 @@ export function validateBridgePlacement(state, index) {
   if (!required.every((direction) => connections.has(direction))) {
     return { valid: false, reason: "bridge-needs-crossroad" };
   }
-  if (cells.some((position) => hasItemBlockAt(state, position.x, position.y))) {
+  if (bridgeItemBlockCells(state, index).some((position) => hasItemBlockAt(state, position.x, position.y))) {
     return { valid: false, reason: "bridge-item-overlap" };
   }
   return { valid: true, axis: BRIDGE_AXES.HORIZONTAL };
@@ -96,6 +111,6 @@ export function bridgeOccupiesIndex(state, index) {
     if (cell?.element?.kind !== "bridge") return false;
     const centerPosition = parseCellKey(key);
     const center = positionToIndex(centerPosition.x, centerPosition.y, state.grid.columns);
-    return bridgeVisualCells(state, center).some((position) => position.index === index);
+    return bridgeItemBlockCells(state, center).some((position) => position.index === index);
   });
 }

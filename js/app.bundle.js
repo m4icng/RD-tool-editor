@@ -867,7 +867,7 @@ function gateDirectionFromMovement(direction) {
 const PLACEMENT_MESSAGES = Object.freeze({
   "bridge-needs-crossroad": "Bridge chỉ được đặt tại ngã 4",
   "bridge-outside-grid": "Bridge cần đủ 3 ô ngang",
-  "bridge-item-overlap": "Bridge không cho phép Item trong vùng visual",
+  "bridge-item-overlap": "Bridge không cho phép Item trong vùng 1 ô xung quanh",
   "gate-needs-priority-point": "Gate phải đứng trước PriorityPoint",
   "tunnel-needs-dead-end": "Tunnel chỉ được đặt tại Dead End"
 });
@@ -905,6 +905,21 @@ function bridgeVisualCells(state, index) {
   }));
 }
 
+function bridgeItemBlockCells(state, index) {
+  const center = indexToPosition(index, state.grid.columns);
+  const cells = [];
+  for (let y = center.y - 1; y <= center.y + 1; y += 1) {
+    for (let x = center.x - 1; x <= center.x + 1; x += 1) {
+      cells.push({
+        x,
+        y,
+        index: isInsideGrid(state.grid, x, y) ? positionToIndex(x, y, state.grid.columns) : null
+      });
+    }
+  }
+  return cells;
+}
+
 function hasItemBlockAt(state, x, y) {
   const key = cellKey(x, y);
   return (state.layers ?? []).some((layer) => layer.cells?.[key]?.item?.kind === "fruit");
@@ -920,7 +935,7 @@ function validateBridgePlacement(state, index) {
   if (!required.every((direction) => connections.has(direction))) {
     return { valid: false, reason: "bridge-needs-crossroad" };
   }
-  if (cells.some((position) => hasItemBlockAt(state, position.x, position.y))) {
+  if (bridgeItemBlockCells(state, index).some((position) => hasItemBlockAt(state, position.x, position.y))) {
     return { valid: false, reason: "bridge-item-overlap" };
   }
   return { valid: true, axis: BRIDGE_AXES.HORIZONTAL };
@@ -959,7 +974,7 @@ function bridgeOccupiesIndex(state, index) {
     if (cell?.element?.kind !== "bridge") return false;
     const centerPosition = parseCellKey(key);
     const center = positionToIndex(centerPosition.x, centerPosition.y, state.grid.columns);
-    return bridgeVisualCells(state, center).some((position) => position.index === index);
+    return bridgeItemBlockCells(state, center).some((position) => position.index === index);
   });
 }
 
@@ -2476,8 +2491,8 @@ function validateLevel(level) {
     if (visualCells.some((position) => !isInsideGrid(level.grid, position.x, position.y))) {
       errors.push(`⚠ ${bridgeLabel} cần đủ 3 ô theo chiều ngang.`);
     }
-    if (visualCells.some((position) => (level.layers ?? []).some((layer) => layer.cells?.[`${position.x},${position.y}`]?.item?.kind === "fruit"))) {
-      errors.push(`⚠ ${bridgeLabel} overlap Item Block.`);
+    if (bridgeItemBlockCells(level, index).some((position) => (level.layers ?? []).some((layer) => layer.cells?.[`${position.x},${position.y}`]?.item?.kind === "fruit"))) {
+      errors.push(`⚠ ${bridgeLabel} overlap Item Block trong vùng 1 ô xung quanh.`);
     }
   });
   let gateOrder = 0;
@@ -7758,7 +7773,7 @@ const input = new InputController({
       } else if (result?.reason === "bridge-outside-grid") {
         showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
       } else if (result?.reason === "bridge-item-overlap") {
-        showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
+        showNotification(elements.toast, "Bridge không cho phép Item trong vùng 1 ô xung quanh.");
       } else if (result?.reason === "grass-on-path") {
         showNotification(elements.toast, "Grass không thể trùng Path. Hãy xóa Path trước.");
       } else if (result?.reason === "terrain-on-path") {
@@ -8012,7 +8027,7 @@ function placeInspectorElement(assetId) {
   else if (result?.reason === "element-position-occupied") showNotification(elements.toast, "Ô này đã có element khác.");
   else if (result?.reason === "bridge-needs-crossroad") showNotification(elements.toast, "Bridge chỉ được đặt tại ngã 4.");
   else if (result?.reason === "bridge-outside-grid") showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
-  else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
+  else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng 1 ô xung quanh.");
   else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
 }
 

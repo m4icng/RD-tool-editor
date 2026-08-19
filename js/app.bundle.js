@@ -5540,7 +5540,68 @@ function reviveSession(session, { onTrayLayerComplete = () => {}, onAfterFill = 
 }
 
 
+// ---- js/gameplay/playable-settings.js ----
+const PLAYABLE_SETTING_LIMITS = Object.freeze({
+  trainMoveSpeed: Object.freeze({ min: 5, max: 30, step: 1 }),
+  trayFillSpeed: Object.freeze({ min: 1, max: 20, step: 1 })
+});
+
+const DEFAULT_PLAYABLE_SETTINGS = Object.freeze({
+  trainMoveSpeed: 15,
+  trayFillSpeed: 9
+});
+
+const PLAYABLE_SETTINGS_STORAGE_KEY = "railwayDash.playableSettings";
+
+function clampSetting(key, value) {
+  const limits = PLAYABLE_SETTING_LIMITS[key];
+  const fallback = DEFAULT_PLAYABLE_SETTINGS[key];
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(limits.max, Math.max(limits.min, Math.round(number)));
+}
+
+function normalizePlayableSettings(settings = {}) {
+  return {
+    trainMoveSpeed: clampSetting("trainMoveSpeed", settings.trainMoveSpeed ?? settings.speed),
+    trayFillSpeed: clampSetting("trayFillSpeed", settings.trayFillSpeed)
+  };
+}
+
+function changePlayableSetting(settings, key, delta) {
+  if (!PLAYABLE_SETTING_LIMITS[key]) return normalizePlayableSettings(settings);
+  return normalizePlayableSettings({
+    ...settings,
+    [key]: clampSetting(key, Number(settings?.[key] ?? DEFAULT_PLAYABLE_SETTINGS[key]) + delta)
+  });
+}
+
+function loadPlayableSettings(storage = globalThis.localStorage) {
+  try {
+    const raw = storage?.getItem(PLAYABLE_SETTINGS_STORAGE_KEY);
+    return normalizePlayableSettings(raw ? JSON.parse(raw) : DEFAULT_PLAYABLE_SETTINGS);
+  } catch {
+    return normalizePlayableSettings(DEFAULT_PLAYABLE_SETTINGS);
+  }
+}
+
+function savePlayableSettings(settings, storage = globalThis.localStorage) {
+  const normalized = normalizePlayableSettings(settings);
+  try {
+    storage?.setItem(PLAYABLE_SETTINGS_STORAGE_KEY, JSON.stringify(normalized));
+  } catch {
+    // Runtime settings still apply even if browser storage is unavailable.
+  }
+  return normalized;
+}
+
+function playableSettingIntervalMs(value) {
+  return 1000 / Math.max(1, Number(value) || 1);
+}
+
+
 // ---- js/gameplay/playable-controller.js ----
+
 
 
 
@@ -5574,9 +5635,6 @@ const PLAY_STATUS = Object.freeze({
 
 const OPPOSITE = Object.freeze({ up: "down", down: "up", left: "right", right: "left" });
 const DIRECTION_LABELS = Object.freeze({ up: "↑ Lên", down: "↓ Xuống", left: "← Trái", right: "→ Phải" });
-const DEFAULT_PLAY_SPEED = 12;
-const DELIVERY_ITEMS_PER_SECOND = 4;
-const DELIVERY_INTERVAL_MS = 1000 / DELIVERY_ITEMS_PER_SECOND;
 const STATUS_COPY = Object.freeze({
   ready: ["Sẵn sàng", "Chọn một hướng hợp lệ để bắt đầu."],
   moving: ["Đang chạy", "Rắn đang tự di chuyển trên đoạn đường hiện tại."],
@@ -5887,9 +5945,10 @@ function createTrayRuntime(entry) {
   };
 }
 
-function createPlayableSession(level, { mode = "continuous", speed = DEFAULT_PLAY_SPEED } = {}) {
+function createPlayableSession(level, { mode = "continuous", ...rawSettings } = {}) {
   const report = validatePlayableLevel(level);
   if (!report.valid) throw new Error(report.errors.join(" "));
+  const playableSettings = normalizePlayableSettings(rawSettings);
   const layer = structuredClone(report.layer);
   const entries = entriesWithPosition(layer);
   const start = entries.find(({ cell }) => cell.item?.kind === "snake");
@@ -5915,7 +5974,9 @@ function createPlayableSession(level, { mode = "continuous", speed = DEFAULT_PLA
     trays: entries.filter(({ cell }) => ["tray", "truck"].includes(cell.item?.kind)).map(createTrayRuntime),
     remainingFruits: entries.filter(({ cell }) => cell.item?.kind === "fruit").length,
     mode,
-    speed,
+    trainMoveSpeed: playableSettings.trainMoveSpeed,
+    trayFillSpeed: playableSettings.trayFillSpeed,
+    speed: playableSettings.trainMoveSpeed,
     status: PLAY_STATUS.READY,
     resumeStatus: PLAY_STATUS.READY,
     lastReason: null,
@@ -6246,6 +6307,25 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
   let timer = null;
   let isActive = false;
   let swipeStart = null;
+  let playableSettings = loadPlayableSettings();
+
+  function updateSettingInputs() {
+    if (!elements.playTrainSpeedInput || !elements.playTrayFillSpeedInput) return;
+    elements.playTrainSpeedInput.value = String(playableSettings.trainMoveSpeed);
+    elements.playTrayFillSpeedInput.value = String(playableSettings.trayFillSpeed);
+  }
+
+  function applySettings(nextSettings) {
+    playableSettings = savePlayableSettings(nextSettings);
+    if (session) {
+      session.trainMoveSpeed = playableSettings.trainMoveSpeed;
+      session.trayFillSpeed = playableSettings.trayFillSpeed;
+      session.speed = playableSettings.trainMoveSpeed;
+    }
+    updateSettingInputs();
+    scheduleNext();
+    render();
+  }
 
   function clearTimer() {
     if (timer) clearTimeout(timer);
@@ -6481,11 +6561,16 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
       ? `<strong>Hướng hợp lệ:</strong> ${directions.map((direction) => DIRECTION_LABELS[direction]).join(" · ")}`
       : [PLAY_STATUS.MOVING, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(status) ? "Rắn đang di chuyển; input mới sẽ bị bỏ qua." : "Không nhận input hướng ở trạng thái hiện tại.";
     elements.playModeSelect.value = session?.mode ?? elements.playModeSelect.value;
-    elements.playSpeedSelect.value = String(session?.speed ?? elements.playSpeedSelect.value);
+    updateSettingInputs();
     elements.playPauseBtn.textContent = status === PLAY_STATUS.PAUSED ? "Resume" : "Pause";
     elements.playPauseBtn.disabled = !session || [PLAY_STATUS.WON, PLAY_STATUS.LOST].includes(status);
     elements.playModeSelect.disabled = !session;
-    elements.playSpeedSelect.disabled = !session;
+    [elements.playTrainSpeedInput, elements.playTrayFillSpeedInput].forEach((input) => {
+      if (input) input.disabled = !session;
+    });
+    elements.playableSettings?.querySelectorAll("[data-playable-setting]").forEach((button) => {
+      button.disabled = !session;
+    });
     elements.playableEndOverlay.classList.toggle("hidden", ![PLAY_STATUS.WON, PLAY_STATUS.LOST].includes(status));
     if (status === PLAY_STATUS.WON) {
       elements.playableEndIcon.textContent = "🏆";
@@ -6521,7 +6606,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         deliverNextCargo(session);
         render();
         scheduleNext();
-      }, DELIVERY_INTERVAL_MS);
+      }, playableSettingIntervalMs(session.trayFillSpeed));
       return;
     }
     if (![PLAY_STATUS.MOVING, PLAY_STATUS.SHOVEL_RESTORE_TAIL].includes(session.status)) return;
@@ -6529,7 +6614,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
       movePlayableSession(session, session.snake.direction);
       render();
       scheduleNext();
-    }, 1000 / session.speed);
+    }, playableSettingIntervalMs(session.trainMoveSpeed));
   }
 
   function chooseDirection(direction) {
@@ -6613,7 +6698,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     const report = validatePlayableLevel(previewLevel);
     validationErrors = report.errors;
     if (!report.valid) session = null;
-    else session = createPlayableSession(previewLevel, { mode: elements.playModeSelect.value, speed: Number(elements.playSpeedSelect.value) });
+    else session = createPlayableSession(previewLevel, { mode: elements.playModeSelect.value, ...playableSettings });
     render();
   }
 
@@ -6652,13 +6737,26 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
     elements.playModeSelect.blur();
     render();
   });
-  elements.playSpeedSelect.addEventListener("change", () => {
-    if (!session) return;
-    session.speed = Number(elements.playSpeedSelect.value);
-    elements.playSpeedSelect.blur();
-    scheduleNext();
-    render();
+  elements.playableSettings?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-playable-setting]");
+    if (!button || !session) return;
+    applySettings(changePlayableSetting(playableSettings, button.dataset.playableSetting, Number(button.dataset.delta) || 0));
   });
+  elements.playTrainSpeedInput?.addEventListener("change", () => {
+    applySettings({ ...playableSettings, trainMoveSpeed: elements.playTrainSpeedInput.value });
+  });
+  elements.playTrayFillSpeedInput?.addEventListener("change", () => {
+    applySettings({ ...playableSettings, trayFillSpeed: elements.playTrayFillSpeedInput.value });
+  });
+  elements.playTrainSpeedInput?.addEventListener("blur", updateSettingInputs);
+  elements.playTrayFillSpeedInput?.addEventListener("blur", updateSettingInputs);
+  elements.playTrainSpeedInput?.setAttribute("min", String(PLAYABLE_SETTING_LIMITS.trainMoveSpeed.min));
+  elements.playTrainSpeedInput?.setAttribute("max", String(PLAYABLE_SETTING_LIMITS.trainMoveSpeed.max));
+  elements.playTrainSpeedInput?.setAttribute("step", String(PLAYABLE_SETTING_LIMITS.trainMoveSpeed.step));
+  elements.playTrayFillSpeedInput?.setAttribute("min", String(PLAYABLE_SETTING_LIMITS.trayFillSpeed.min));
+  elements.playTrayFillSpeedInput?.setAttribute("max", String(PLAYABLE_SETTING_LIMITS.trayFillSpeed.max));
+  elements.playTrayFillSpeedInput?.setAttribute("step", String(PLAYABLE_SETTING_LIMITS.trayFillSpeed.step));
+  updateSettingInputs();
   elements.playPauseBtn.addEventListener("click", togglePause);
   elements.playRestartBtn.addEventListener("click", restart);
   elements.playReviveBtn?.addEventListener("click", revive);
@@ -6742,7 +6840,7 @@ const elements = Object.fromEntries([
   "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
-  "playModeSelect", "playSpeedSelect", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
+  "playModeSelect", "playableSettings", "playTrainSpeedInput", "playTrayFillSpeedInput", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playReviveBtn", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"

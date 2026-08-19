@@ -217,9 +217,11 @@
             <header class="panel-header"><div class="panel-title"><span class="panel-accent"></span><div><h2>Phiên chơi</h2><p id="playableStatusCopy">Đang chuẩn bị snapshot</p></div></div></header>
             <div class="playable-hud-scroll">
               <div class="playable-blocker hidden" id="playableBlocker"></div>
-              <div class="playable-settings">
+              <div class="playable-settings" id="playableSettings">
+                <div class="playable-settings-title">PLAYABLE SETTINGS</div>
                 <label><span>Chế độ</span><select id="playModeSelect"><option value="continuous">Chơi liên tục</option><option value="step">Từng bước</option></select></label>
-                <label><span>Tốc độ</span><select id="playSpeedSelect"><option value="6">Chậm · 6 ô/s</option><option value="9">Thường · 9 ô/s</option><option value="12" selected>Nhanh · 12 ô/s</option></select></label>
+                <label><span>Train Speed</span><div class="playable-speed-stepper"><button type="button" data-playable-setting="trainMoveSpeed" data-delta="-1" aria-label="Giảm Train Speed">−</button><input id="playTrainSpeedInput" type="number" min="5" max="30" step="1" value="15" aria-label="Train Speed"><em>ô/s</em><button type="button" data-playable-setting="trainMoveSpeed" data-delta="1" aria-label="Tăng Train Speed">+</button></div></label>
+                <label><span>Tray Fill Speed</span><div class="playable-speed-stepper"><button type="button" data-playable-setting="trayFillSpeed" data-delta="-1" aria-label="Giảm Tray Fill Speed">−</button><input id="playTrayFillSpeedInput" type="number" min="1" max="20" step="1" value="9" aria-label="Tray Fill Speed"><em>block/s</em><button type="button" data-playable-setting="trayFillSpeed" data-delta="1" aria-label="Tăng Tray Fill Speed">+</button></div></label>
               </div>
               <div class="playable-actions"><button class="btn" id="playPauseBtn" type="button">Pause</button><button class="btn" id="playRestartBtn" type="button">Restart</button></div>
               <div class="playable-direction" id="playableDirectionHint"></div>

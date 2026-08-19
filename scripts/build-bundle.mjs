@@ -34,6 +34,7 @@ const sourceFiles = [
   "js/data/directory-permission-service.js",
   "js/data/data-folder-scanner.js",
   "js/data/file-manager.js",
+  "js/editor/delete-resolver.js",
   "js/editor/object-placement.js",
   "js/editor/selection-manager.js",
   "js/editor/camera-controller.js",

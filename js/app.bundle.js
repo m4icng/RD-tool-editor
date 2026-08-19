@@ -6692,8 +6692,13 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         cell.setAttribute("aria-label", `Ô chơi Index ${index}`);
         if (isBridgeElement(cellData.element)) {
           const bridge = document.createElement("span");
-          bridge.className = `bridge-preview${normalizeBridgeAxis(cellData.element.axis) === 1 ? " vertical" : ""}`;
-          bridge.textContent = "🟰";
+          bridge.className = "bridge-preview bridge-joined";
+          bridge.title = `Bridge Center #${index}`;
+          for (let segment = 0; segment < 3; segment += 1) {
+            const icon = document.createElement("span");
+            icon.textContent = "🟰";
+            bridge.appendChild(icon);
+          }
           cell.appendChild(bridge);
         }
         if (isGateElement(cellData.element)) {

@@ -3501,9 +3501,7 @@ function renderGrid(container, editorData) {
     if (!isBridgeElement(cell?.element)) return;
     const [bridgeX, bridgeY] = key.split(",").map(Number);
     const centerIndex = positionToIndex(bridgeX, bridgeY, editorData.grid.columns);
-    bridgeVisualCells(editorData, centerIndex).forEach((visual, visualIndex) => {
-      bridgeVisuals.set(cellKey(visual.x, visual.y), { centerIndex, visualIndex });
-    });
+    bridgeVisuals.set(key, { centerIndex });
   });
   Object.entries(editorData.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!["tray", "truck"].includes(cell?.item?.kind)) return;
@@ -3552,8 +3550,8 @@ function renderGrid(container, editorData) {
 
       if (visualBridge) {
         const bridge = document.createElement("span");
-        bridge.className = `bridge-preview bridge-segment segment-${visualBridge.visualIndex}`;
-        bridge.title = visualBridge.visualIndex === 1 ? `Bridge Center #${visualBridge.centerIndex}` : `Bridge Visual #${visualBridge.centerIndex}`;
+        bridge.className = "bridge-preview bridge-wide";
+        bridge.title = `Bridge Center #${visualBridge.centerIndex}`;
         bridge.textContent = "🟰";
         cell.appendChild(bridge);
       }

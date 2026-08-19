@@ -6,17 +6,6 @@ Web tool editor dùng để tạo và chỉnh level Railway Dash theo `RailwayDa
 
 Mở trực tiếp `index.html` bằng trình duyệt, hoặc chạy static server:
 
-```powershell
-cd "D:\RailWay Dash\snacky-level-editor"
-npm run serve
-```
-
-Sau khi sửa source trong `js/`, build lại bundle:
-
-```powershell
-npm run build
-```
-
 ## Cách sử dụng nhanh
 
 - Chọn tab `Level` để vẽ map, đặt item, đặt element và chỉnh layer fruit.

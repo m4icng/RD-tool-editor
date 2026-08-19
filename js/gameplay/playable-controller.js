@@ -48,6 +48,13 @@ import {
   playableSettingIntervalMs,
   savePlayableSettings
 } from "./playable-settings.js";
+import {
+  markFruitLayerClearIfNeeded,
+  resetLayerSpawnRuntime,
+  restoreReleasedItemOffsets,
+  temporaryItemOffsetClass,
+  trackSpawnedItemOffsets
+} from "./layer-spawn-runtime.js";
 
 export const PLAY_STATUS = Object.freeze({
   READY: "ready",
@@ -422,7 +429,8 @@ export function createPlayableSession(level, { mode = "continuous", ...rawSettin
     tailDisabled: false,
     shovel: createShovelBoosterRuntime()
   };
-  advanceFruitLayerIfCleared(session);
+  resetLayerSpawnRuntime(session);
+  markFruitLayerClearIfNeeded(session);
   return session;
 }
 
@@ -432,28 +440,28 @@ function activateFruitLayer(session, nextIndex) {
   });
   const nextLayer = session.fruitLayers[nextIndex];
   if (!nextLayer) return false;
+  const spawnedKeys = [];
   Object.entries(nextLayer.cells ?? {}).forEach(([key, fruitCell]) => {
     if (fruitCell?.item?.kind !== "fruit") return;
     session.layer.cells[key] ??= { path: false, element: null, item: null };
     session.layer.cells[key].item = structuredClone(fruitCell.item);
+    spawnedKeys.push(key);
   });
   session.activeFruitLayerIndex = nextIndex;
   session.remainingFruits = Object.values(nextLayer.cells ?? {}).filter((cell) => cell?.item?.kind === "fruit").length;
+  trackSpawnedItemOffsets(session, spawnedKeys);
   return true;
 }
 
-function advanceFruitLayerIfCleared(session) {
-  while (session.remainingFruits === 0 && session.activeFruitLayerIndex + 1 < session.fruitLayers.length) {
-    if (!activateFruitLayer(session, session.activeFruitLayerIndex + 1)) break;
-    const head = session.snake.body[0];
-    const headCell = session.layer.cells[cellKey(head.x, head.y)];
-    if (headCell?.item?.kind === "fruit") {
-      const tail = session.snake.body[session.snake.body.length - 1];
-      session.snake.body.push({ ...tail, fruitType: headCell.item.fruitType, itemId: blockItemIdFromItem(headCell.item) });
-      headCell.item = null;
-      session.remainingFruits -= 1;
-    }
+function spawnPendingFruitLayerAtPoint(session, key) {
+  if (!session.waitingNextLayerSpawn || session.pendingFruitLayerIndex == null) return false;
+  if (!isDecisionStopPoint(session, key)) return false;
+  const spawned = activateFruitLayer(session, session.pendingFruitLayerIndex);
+  if (spawned) {
+    session.waitingNextLayerSpawn = false;
+    session.pendingFruitLayerIndex = null;
   }
+  return spawned;
 }
 
 function allFruitLayersComplete(session) {
@@ -564,7 +572,7 @@ export function deliverNextCargo(session) {
 
   const unlockedBarriers = decrementCountBarriers(session, fillResult.completedLayerCount);
   removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
-  advanceFruitLayerIfCleared(session);
+  markFruitLayerClearIfNeeded(session);
   if (nextDeliverableCargoIndex(session, tray) < 1) {
     session.delivery = null;
     setPostDeliveryStatus(session);
@@ -710,17 +718,19 @@ export function movePlayableSession(session, direction) {
     session.snake.direction = direction;
     session.snake.body = movedBody;
   }
+  restoreReleasedItemOffsets(session);
 
   const finalHead = session.snake.body[0];
   updateOneWayRuntime(session, positionToIndex(finalHead.x, finalHead.y, session.grid.columns));
   const key = cellKey(finalHead.x, finalHead.y);
   const cell = session.layer.cells[key];
-  if (cell.item?.kind === "fruit") {
+  const spawnedNextLayer = spawnPendingFruitLayerAtPoint(session, key);
+  if (!spawnedNextLayer && cell.item?.kind === "fruit") {
     const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
     session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, itemId: blockItemIdFromItem(cell.item), hiddenInShovel: isShovelRestoring(session) });
     cell.item = null;
     session.remainingFruits -= 1;
-    advanceFruitLayerIfCleared(session);
+    markFruitLayerClearIfNeeded(session);
   }
   revealNextShovelTailSegment(session);
   const tray = session.trays.find((candidate) => candidate.checkpointKey === key);
@@ -876,7 +886,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
             && isMysteryFruitAt(level, level.activeFruitLayerIndex ?? 0, index)
             && !level.mysteryFruitDebug;
           const icon = document.createElement("span");
-          icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}`;
+          icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}${temporaryItemOffsetClass(session, key)}`;
           if (cellData.item.kind === "fruit") applyBlockItemVisual(icon, cellData.item, { mystery: hiddenFruit });
           else icon.textContent = cellData.item.icon;
           cell.appendChild(icon);
@@ -1110,7 +1120,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
         removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
       },
       onAfterFill() {
-        advanceFruitLayerIfCleared(session);
+        markFruitLayerClearIfNeeded(session);
       }
     });
     if (!result.revived) return false;

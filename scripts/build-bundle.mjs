@@ -61,6 +61,7 @@ const sourceFiles = [
   "js/gameplay/tray-slot-visual.js",
   "js/gameplay/lose-revive.js",
   "js/gameplay/playable-settings.js",
+  "js/gameplay/layer-spawn-runtime.js",
   "js/gameplay/playable-controller.js",
   "js/app.js"
 ];

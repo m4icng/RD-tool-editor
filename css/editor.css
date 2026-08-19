@@ -65,7 +65,11 @@
 .playable-token.dir-left { --token-rotation: 180deg; }
 .playable-token.dir-right { --token-rotation: 0deg; }
 .playable-token.cargo { z-index: 3; width: var(--visual-fruit,72%); height: var(--visual-fruit,72%); background: #fff0f5; font-size: clamp(7px,38cqw,24px); }
-.playable-token.head { animation: playable-head-pulse 900ms ease-in-out infinite alternate; }
+.playable-token.head { z-index: 6; width: 130%; height: 130%; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: clamp(14px,98cqw,64px); transform-origin: center; animation: playable-head-pulse 900ms ease-in-out infinite alternate; }
+.placed-icon.fruit.item-offset-up { z-index: 4; transform: translateY(-36%); }
+.placed-icon.fruit.item-offset-right { z-index: 4; transform: translateX(36%); }
+.placed-icon.fruit.item-offset-down { z-index: 4; transform: translateY(36%); }
+.placed-icon.fruit.item-offset-left { z-index: 4; transform: translateX(-36%); }
 .tray-visual-cell { z-index: 2; }
 .tray-footprint { position: absolute; inset: 6%; z-index: 2; display: grid; place-items: center; box-sizing: border-box; border: clamp(1px,3cqw,2px) solid rgba(146,94,22,.42); background: rgba(255,231,151,.58); color: #775016; box-shadow: inset 0 0 0 clamp(1px,2cqw,1px) rgba(255,255,255,.45); font-size: clamp(8px,42cqw,24px); font-weight: 900; line-height: 1; pointer-events: none; }
 .tray-footprint.main { border-radius: 8%; background: rgba(255,246,218,.92); }

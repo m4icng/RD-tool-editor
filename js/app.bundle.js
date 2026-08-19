@@ -5910,7 +5910,86 @@ function playableSettingIntervalMs(value) {
 }
 
 
+// ---- js/gameplay/layer-spawn-runtime.js ----
+
+const HORIZONTAL_DIRECTIONS = new Set(["left", "right"]);
+const VERTICAL_DIRECTIONS = new Set(["up", "down"]);
+
+function visibleTrainSegments(session) {
+  return (session?.snake?.body ?? []).filter((segment, index) => (
+    !segment.hiddenInTunnel
+    && !segment.hiddenInShovel
+    && !(session?.tailDisabled && index > 0)
+  ));
+}
+
+function occupiedTrainIndexMap(session) {
+  return new Map(visibleTrainSegments(session).map((segment) => [
+    positionToIndex(segment.x, segment.y, session.grid.columns),
+    segment
+  ]));
+}
+
+function offsetSideForSegment(segment) {
+  if (HORIZONTAL_DIRECTIONS.has(segment?.direction)) return "up";
+  if (VERTICAL_DIRECTIONS.has(segment?.direction)) return "right";
+  return "up";
+}
+
+function resetLayerSpawnRuntime(session) {
+  session.waitingNextLayerSpawn = false;
+  session.pendingFruitLayerIndex = null;
+  session.itemVisualOffsets = {};
+  session.clearedFruitLayerIndexes = [];
+}
+
+function markFruitLayerClearIfNeeded(session) {
+  if (session.remainingFruits !== 0) return false;
+  session.clearedFruitLayerIndexes = [...new Set([...(session.clearedFruitLayerIndexes ?? []), session.activeFruitLayerIndex])];
+  if (session.activeFruitLayerIndex + 1 >= session.fruitLayers.length) {
+    session.waitingNextLayerSpawn = false;
+    session.pendingFruitLayerIndex = null;
+    return false;
+  }
+  session.waitingNextLayerSpawn = true;
+  session.pendingFruitLayerIndex = session.activeFruitLayerIndex + 1;
+  return true;
+}
+
+function trackSpawnedItemOffsets(session, spawnedKeys) {
+  const occupied = occupiedTrainIndexMap(session);
+  session.itemVisualOffsets ??= {};
+  spawnedKeys.forEach((key) => {
+    const cell = session.layer.cells[key];
+    if (cell?.item?.kind !== "fruit") return;
+    const [x, y] = key.split(",").map(Number);
+    const index = positionToIndex(x, y, session.grid.columns);
+    const segment = occupied.get(index);
+    if (!segment) return;
+    session.itemVisualOffsets[key] = { side: offsetSideForSegment(segment) };
+  });
+}
+
+function restoreReleasedItemOffsets(session) {
+  const offsets = session.itemVisualOffsets ?? {};
+  const keys = Object.keys(offsets);
+  if (keys.length === 0) return;
+  const occupied = occupiedTrainIndexMap(session);
+  keys.forEach((key) => {
+    const [x, y] = key.split(",").map(Number);
+    const index = positionToIndex(x, y, session.grid.columns);
+    if (!occupied.has(index)) delete offsets[key];
+  });
+}
+
+function temporaryItemOffsetClass(session, key) {
+  const side = session?.itemVisualOffsets?.[key]?.side;
+  return side ? ` item-offset-${side}` : "";
+}
+
+
 // ---- js/gameplay/playable-controller.js ----
+
 
 
 
@@ -6299,7 +6378,8 @@ function createPlayableSession(level, { mode = "continuous", ...rawSettings } = 
     tailDisabled: false,
     shovel: createShovelBoosterRuntime()
   };
-  advanceFruitLayerIfCleared(session);
+  resetLayerSpawnRuntime(session);
+  markFruitLayerClearIfNeeded(session);
   return session;
 }
 
@@ -6309,28 +6389,28 @@ function activateFruitLayer(session, nextIndex) {
   });
   const nextLayer = session.fruitLayers[nextIndex];
   if (!nextLayer) return false;
+  const spawnedKeys = [];
   Object.entries(nextLayer.cells ?? {}).forEach(([key, fruitCell]) => {
     if (fruitCell?.item?.kind !== "fruit") return;
     session.layer.cells[key] ??= { path: false, element: null, item: null };
     session.layer.cells[key].item = structuredClone(fruitCell.item);
+    spawnedKeys.push(key);
   });
   session.activeFruitLayerIndex = nextIndex;
   session.remainingFruits = Object.values(nextLayer.cells ?? {}).filter((cell) => cell?.item?.kind === "fruit").length;
+  trackSpawnedItemOffsets(session, spawnedKeys);
   return true;
 }
 
-function advanceFruitLayerIfCleared(session) {
-  while (session.remainingFruits === 0 && session.activeFruitLayerIndex + 1 < session.fruitLayers.length) {
-    if (!activateFruitLayer(session, session.activeFruitLayerIndex + 1)) break;
-    const head = session.snake.body[0];
-    const headCell = session.layer.cells[cellKey(head.x, head.y)];
-    if (headCell?.item?.kind === "fruit") {
-      const tail = session.snake.body[session.snake.body.length - 1];
-      session.snake.body.push({ ...tail, fruitType: headCell.item.fruitType, itemId: blockItemIdFromItem(headCell.item) });
-      headCell.item = null;
-      session.remainingFruits -= 1;
-    }
+function spawnPendingFruitLayerAtPoint(session, key) {
+  if (!session.waitingNextLayerSpawn || session.pendingFruitLayerIndex == null) return false;
+  if (!isDecisionStopPoint(session, key)) return false;
+  const spawned = activateFruitLayer(session, session.pendingFruitLayerIndex);
+  if (spawned) {
+    session.waitingNextLayerSpawn = false;
+    session.pendingFruitLayerIndex = null;
   }
+  return spawned;
 }
 
 function allFruitLayersComplete(session) {
@@ -6441,7 +6521,7 @@ function deliverNextCargo(session) {
 
   const unlockedBarriers = decrementCountBarriers(session, fillResult.completedLayerCount);
   removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
-  advanceFruitLayerIfCleared(session);
+  markFruitLayerClearIfNeeded(session);
   if (nextDeliverableCargoIndex(session, tray) < 1) {
     session.delivery = null;
     setPostDeliveryStatus(session);
@@ -6587,17 +6667,19 @@ function movePlayableSession(session, direction) {
     session.snake.direction = direction;
     session.snake.body = movedBody;
   }
+  restoreReleasedItemOffsets(session);
 
   const finalHead = session.snake.body[0];
   updateOneWayRuntime(session, positionToIndex(finalHead.x, finalHead.y, session.grid.columns));
   const key = cellKey(finalHead.x, finalHead.y);
   const cell = session.layer.cells[key];
-  if (cell.item?.kind === "fruit") {
+  const spawnedNextLayer = spawnPendingFruitLayerAtPoint(session, key);
+  if (!spawnedNextLayer && cell.item?.kind === "fruit") {
     const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
     session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, itemId: blockItemIdFromItem(cell.item), hiddenInShovel: isShovelRestoring(session) });
     cell.item = null;
     session.remainingFruits -= 1;
-    advanceFruitLayerIfCleared(session);
+    markFruitLayerClearIfNeeded(session);
   }
   revealNextShovelTailSegment(session);
   const tray = session.trays.find((candidate) => candidate.checkpointKey === key);
@@ -6753,7 +6835,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
             && isMysteryFruitAt(level, level.activeFruitLayerIndex ?? 0, index)
             && !level.mysteryFruitDebug;
           const icon = document.createElement("span");
-          icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}`;
+          icon.className = `placed-icon ${cellData.item.kind}${hiddenFruit ? " mystery-fruit-preview" : ""}${temporaryItemOffsetClass(session, key)}`;
           if (cellData.item.kind === "fruit") applyBlockItemVisual(icon, cellData.item, { mystery: hiddenFruit });
           else icon.textContent = cellData.item.icon;
           cell.appendChild(icon);
@@ -6987,7 +7069,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
         removeUnlockedBarrierEndpointFruits(session, unlockedBarriers);
       },
       onAfterFill() {
-        advanceFruitLayerIfCleared(session);
+        markFruitLayerClearIfNeeded(session);
       }
     });
     if (!result.revived) return false;

@@ -18,9 +18,9 @@ import {
   createFullGrassCells,
   createMergedLayer,
   ensureTerrainState,
-  getTrayVisualPosition,
   isMysteryFruitAt,
   isInsideGrid,
+  isTrayVisualInsideGrid,
   isPathJunction,
   parseCellKey,
   positionToIndex,
@@ -433,17 +433,7 @@ export function applyTool(state, x, y, toolOverride = null) {
         if (["tray", "truck"].includes(object.kind)) {
           if (!shared.path) return { changed: false, reason: "tray-checkpoint-needs-road", objectId: object.id };
           const visualPosition = { x, y: y - 1 };
-          if (!isInsideGrid(state.grid, visualPosition.x, visualPosition.y)) return { changed: false, reason: "tray-visual-outside-grid", objectId: object.id };
-          const visualKey = cellKey(visualPosition.x, visualPosition.y);
-          const visualShared = state.sharedCells[visualKey];
-          const visualFruit = state.layers.some((candidate) => candidate.cells?.[visualKey]?.item);
-          const overlapsTrayVisual = Object.entries(state.sharedCells).some(([otherKey, otherCell]) => {
-            if (!["tray", "truck"].includes(otherCell?.item?.kind)) return false;
-            const [otherX, otherY] = otherKey.split(",").map(Number);
-            const otherVisual = getTrayVisualPosition(otherCell.item, { x: otherX, y: otherY });
-            return otherVisual.x === visualPosition.x && otherVisual.y === visualPosition.y;
-          });
-          if (visualShared?.path || visualShared?.item || visualShared?.element || visualFruit || overlapsTrayVisual) return { changed: false, reason: "tray-visual-occupied", objectId: object.id };
+          if (!isTrayVisualInsideGrid(state.grid, { ...object, trayPosition: visualPosition }, { x, y })) return { changed: false, reason: "tray-visual-outside-grid", objectId: object.id };
           shared.item = cloneObject(object);
           const trayId = nextTrayId(state);
           shared.item.id = `tray-${trayId}`;

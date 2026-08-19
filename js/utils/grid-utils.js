@@ -31,6 +31,39 @@ export function getTrayVisualPosition(item, deliverPoint) {
   return { x: deliverPoint.x, y: deliverPoint.y - 1 };
 }
 
+export function getTrayVisualCells(item, deliverPoint) {
+  const conveyor = getTrayVisualPosition(item, deliverPoint);
+  const cells = [];
+  for (let row = 0; row < 3; row += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      const slotIndex = row * 3 + (dx + 1);
+      cells.push({
+        x: conveyor.x + dx,
+        y: conveyor.y - 3 + row,
+        role: "main",
+        center: dx === 0 && row === 1,
+        slotIndex
+      });
+    }
+  }
+  cells.push({ x: conveyor.x, y: conveyor.y, role: "conveyor", center: false, slotIndex: null });
+  return cells;
+}
+
+export function getTrayVisualBounds(item, deliverPoint) {
+  const conveyor = getTrayVisualPosition(item, deliverPoint);
+  return {
+    left: conveyor.x - 1,
+    right: conveyor.x + 1,
+    top: conveyor.y - 3,
+    bottom: conveyor.y
+  };
+}
+
+export function isTrayVisualInsideGrid(grid, item, deliverPoint) {
+  return getTrayVisualCells(item, deliverPoint).every((cell) => isInsideGrid(grid, cell.x, cell.y));
+}
+
 export function getTrayVisualDirection(item, deliverPoint) {
   const visual = getTrayVisualPosition(item, deliverPoint);
   return Object.entries(TRAY_VISUAL_DIRECTIONS)

@@ -24,6 +24,36 @@ const BLOCK_ITEM_LABELS = Object.freeze({
   7: "Block cam"
 });
 
+const BLOCK_ITEM_ENGLISH_LABELS = Object.freeze({
+  1: "Red",
+  2: "Yellow",
+  3: "Blue",
+  4: "Pink",
+  5: "Purple",
+  6: "Green",
+  7: "Orange"
+});
+
+const BLOCK_ITEM_COLOR_NAMES = Object.freeze({
+  1: "Đỏ",
+  2: "Vàng",
+  3: "Xanh biển",
+  4: "Hồng",
+  5: "Tím",
+  6: "Xanh lá",
+  7: "Cam"
+});
+
+const BLOCK_ITEM_EMOJIS = Object.freeze({
+  1: "🟥",
+  2: "🟨",
+  3: "🟦",
+  4: "🩷",
+  5: "🟪",
+  6: "🟩",
+  7: "🟧"
+});
+
 export function blockItemIdFromFruitType(fruitType) {
   return Number(FRUIT_ITEM_IDS[fruitType]) || null;
 }
@@ -46,6 +76,26 @@ export function blockVisualMeta(itemOrType) {
 
 export function blockLabelForFruitType(fruitType) {
   return blockVisualMeta(fruitType).label;
+}
+
+export function blockEnglishLabelForFruitType(fruitType) {
+  const itemId = blockItemIdFromFruitType(fruitType);
+  return BLOCK_ITEM_ENGLISH_LABELS[itemId] ?? `Block #${itemId ?? "?"}`;
+}
+
+export function blockColorNameForFruitType(fruitType) {
+  const itemId = blockItemIdFromFruitType(fruitType);
+  return BLOCK_ITEM_COLOR_NAMES[itemId] ?? `Block #${itemId ?? "?"}`;
+}
+
+export function blockEmojiForFruitType(fruitType) {
+  const itemId = blockItemIdFromFruitType(fruitType);
+  return BLOCK_ITEM_EMOJIS[itemId] ?? BLOCK_ITEM_GLYPH;
+}
+
+export function blockOptionLabelForFruitType(fruitType) {
+  const itemId = blockItemIdFromFruitType(fruitType);
+  return `${blockColorNameForFruitType(fruitType)} ID ${itemId ?? "?"}`;
 }
 
 export function applyBlockItemVisual(element, itemOrType, { mystery = false } = {}) {

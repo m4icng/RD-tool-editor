@@ -1,7 +1,7 @@
 import { DIRECTIONS, FRUIT_TYPES } from "../core/constants.js";
 import { applyVisualScaleConfig } from "../core/visual-scale.js";
 import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
-import { TRAIN_HEAD_ICON, applyBlockItemVisual, blockItemIdFromItem, blockLabelForFruitType, createBlockSwatch } from "../core/block-visuals.js";
+import { TRAIN_HEAD_ICON, applyBlockItemVisual, blockItemIdFromItem, blockLabelForFruitType } from "../core/block-visuals.js";
 import { bridgeAllowsDifferentAxisOverlap, isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { gateDirectionClass, gateDirectionFromMovement, gateDirectionLabel, isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
@@ -22,7 +22,7 @@ import {
   oneWayDirectionKey,
   reverseOneWayDirection
 } from "../objects/one-way-object.js";
-import { cellKey, createMergedLayer, ensureTerrainState, getTrayVisualPosition, isInsideGrid, isMysteryFruitAt, positionToIndex } from "../utils/grid-utils.js";
+import { cellKey, createMergedLayer, ensureTerrainState, getTrayVisualCells, getTrayVisualPosition, isInsideGrid, isMysteryFruitAt, positionToIndex } from "../utils/grid-utils.js";
 import {
   SHOVEL_STATUS,
   SHOVEL_COUNT_LABEL,
@@ -39,6 +39,7 @@ import {
 } from "./shovel-booster.js";
 import { LOSE_REASON, markLose, reviveSession } from "./lose-revive.js";
 import { activeTrayLayer, fillFruitIntoTray, nextDeliverableCargoIndex } from "./tray-fill-system.js";
+import { createTrayRequirementSlot, renderTraySlotGrid, trayLayerNeedTitle, trayLayerSlotDescriptors } from "./tray-slot-visual.js";
 
 export const PLAY_STATUS = Object.freeze({
   READY: "ready",
@@ -306,17 +307,18 @@ export function validatePlayableLevel(level) {
   });
 
   trays.forEach(({ x, y, cell }) => {
-    const visual = getTrayVisualPosition(cell.item, { x, y });
-    if (!isInsideGrid(level.grid, visual.x, visual.y)) errors.push(`Visual khay tại checkpoint Index ${mapIndex(x, y)} nằm ngoài map.`);
+    const visualCells = getTrayVisualCells(cell.item, { x, y });
+    const outsideVisual = visualCells.filter((visual) => !isInsideGrid(level.grid, visual.x, visual.y));
+    if (outsideVisual.length > 0) errors.push(`Visual khay 3x4 tại checkpoint Index ${mapIndex(x, y)} nằm ngoài map.`);
     if (!cell.path) errors.push(`Checkpoint khay tại Index ${mapIndex(x, y)} phải nằm trên đường đi.`);
-    const visualCell = layer.cells[cellKey(visual.x, visual.y)];
-    if (visualCell?.path || visualCell?.item || visualCell?.element) errors.push(`Ô visual khay Index ${mapIndex(visual.x, visual.y)} phải để trống.`);
+    visualCells.forEach((visual) => {
+      if (!isInsideGrid(level.grid, visual.x, visual.y)) return;
+      const visualCell = layer.cells[cellKey(visual.x, visual.y)];
+      if (visualCell?.path || visualCell?.item || visualCell?.element) errors.push(`Ô visual khay Index ${mapIndex(visual.x, visual.y)} phải để trống.`);
+    });
   });
-  const visualKeys = trays.map(({ x, y, cell }) => {
-    const visual = getTrayVisualPosition(cell.item, { x, y });
-    return cellKey(visual.x, visual.y);
-  });
-  if (new Set(visualKeys).size !== visualKeys.length) errors.push("Có nhiều khay đang dùng chung một vị trí visual.");
+  const visualKeys = trays.flatMap(({ x, y, cell }) => getTrayVisualCells(cell.item, { x, y }).map((visual) => cellKey(visual.x, visual.y)));
+  if (new Set(visualKeys).size !== visualKeys.length) errors.push("Có nhiều khay đang overlap footprint visual 3x4.");
 
   fruits.forEach(({ x, y, cell, layerIndex }) => {
     const index = mapIndex(x, y);
@@ -361,6 +363,7 @@ function createTrayRuntime(entry) {
     item: structuredClone(entry.cell.item),
     key: entry.key,
     visualKey: cellKey(visual.x, visual.y),
+    visualCells: getTrayVisualCells(entry.cell.item, checkpoint),
     checkpointKey: cellKey(checkpoint.x, checkpoint.y),
     checkpoint,
     x: visual.x,
@@ -718,20 +721,6 @@ export function movePlayableSession(session, direction) {
   return { moved: true, status: session.status };
 }
 
-function renderNeededBlocks(container, needs, layer) {
-  container.replaceChildren();
-  if (!layer) {
-    container.textContent = "✓";
-    return;
-  }
-  needs.forEach((type) => {
-    const item = document.createElement("span");
-    item.className = "tray-need-item";
-    item.append(createBlockSwatch(type), document.createTextNode(String((layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0))));
-    container.appendChild(item);
-  });
-}
-
 function statusText(status) {
   return STATUS_COPY[status] ?? STATUS_COPY.ready;
 }
@@ -779,7 +768,12 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
     const boardTrays = session?.trays ?? entriesWithPosition(level.layer)
       .filter(({ cell }) => ["tray", "truck"].includes(cell.item?.kind))
       .map(createTrayRuntime);
-    const traysByVisualKey = new Map(boardTrays.map((tray) => [tray.visualKey, tray]));
+    const traysByVisualKey = new Map(boardTrays.flatMap((tray) => tray.visualCells.map((visual) => [cellKey(visual.x, visual.y), {
+      ...tray,
+      visualRole: visual.role,
+      visualCenter: visual.center,
+      visualSlotIndex: visual.slotIndex
+    }])));
     const traysByCheckpointKey = new Map(boardTrays.map((tray) => [tray.checkpointKey, tray]));
     const grassCells = session?.grassCells ?? previewLevel?.grassCells ?? {};
     const priorityPoints = session?.priorityPoints ?? previewLevel?.priorityPoints ?? {};
@@ -854,33 +848,23 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
           if (cellData.item.kind === "fruit") applyBlockItemVisual(icon, cellData.item, { mystery: hiddenFruit });
           else icon.textContent = cellData.item.icon;
           cell.appendChild(icon);
-          if (tray) {
-            const layer = activeTrayLayer(tray);
-            const needs = FRUIT_TYPES.filter((type) => layer && (layer.recipe[type] ?? 0) > (layer.delivered[type] ?? 0));
-            const needBadge = document.createElement("span");
-            const badgeSide = tray.x >= level.grid.columns / 2 ? " align-left" : " align-right";
-            needBadge.className = `playable-tray-needs${badgeSide}${session?.delivery?.trayId === tray.id ? " receiving" : ""}`;
-            renderNeededBlocks(needBadge, needs, layer);
-            needBadge.title = layer ? `Khay cần: ${needs.map((type) => `${blockLabelForFruitType(type)} x${(layer.recipe[type] ?? 0) - (layer.delivered[type] ?? 0)}`).join(", ")}` : "Khay đã hoàn thành";
-            cell.appendChild(needBadge);
-          }
         }
-        if (tray && !cellData.item) {
-          const icon = document.createElement("span");
-          icon.className = "placed-icon tray";
-          icon.textContent = tray.item.icon ?? "🧺";
-          cell.appendChild(icon);
+        if (tray) {
+          const footprint = document.createElement("span");
           const layer = activeTrayLayer(tray);
-          const needs = FRUIT_TYPES.filter((type) => layer && (layer.recipe[type] ?? 0) > (layer.delivered[type] ?? 0));
-          const needBadge = document.createElement("span");
-          needBadge.className = `playable-tray-needs${tray.x >= level.grid.columns / 2 ? " align-left" : " align-right"}${session?.delivery?.trayId === tray.id ? " receiving" : ""}`;
-          renderNeededBlocks(needBadge, needs, layer);
-          cell.appendChild(needBadge);
+          footprint.className = `tray-footprint ${tray.visualRole}${tray.visualCenter ? " center" : ""}${!layer ? " complete" : ""}`;
+          if (tray.visualRole === "main") {
+            const slot = trayLayerSlotDescriptors(layer)[tray.visualSlotIndex];
+            if (slot) footprint.appendChild(createTrayRequirementSlot(slot));
+            else if (tray.visualCenter) footprint.textContent = "✓";
+          }
+          cell.appendChild(footprint);
         }
         if (checkpointTray) {
           const checkpoint = document.createElement("span");
           checkpoint.className = `delivery-checkpoint${session?.delivery?.trayId === checkpointTray.id ? " active" : ""}`;
           checkpoint.title = `Checkpoint giao hàng cho khay tại Index ${positionToIndex(checkpointTray.x, checkpointTray.y, level.grid.columns)}`;
+          checkpoint.textContent = "⭕";
           cell.appendChild(checkpoint);
         }
         if (session?.deliveryEffect?.checkpointKey === key) {
@@ -937,15 +921,9 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
       head.innerHTML = `<strong>Khay #${String(index + 1).padStart(2, "0")}</strong><small>${complete ? "Hoàn thành" : `Layer ${tray.activeIndex + 1}/${tray.layers.length}`}</small>`;
       card.appendChild(head);
       const recipes = document.createElement("div");
-      recipes.className = "recipe-strip";
-      if (layer) FRUIT_TYPES.filter((type) => (layer.recipe[type] ?? 0) > 0).forEach((type) => {
-        const chip = document.createElement("span");
-        const delivered = layer.delivered[type] ?? 0;
-        const required = layer.recipe[type] ?? 0;
-        chip.className = `recipe-chip${delivered >= required ? " done" : ""}`;
-        chip.append(createBlockSwatch(type), document.createTextNode(`${delivered}/${required}`));
-        recipes.appendChild(chip);
-      });
+      recipes.className = "tray-requirement-strip";
+      renderTraySlotGrid(recipes, layer);
+      recipes.title = trayLayerNeedTitle(layer);
       card.appendChild(recipes);
       elements.playableTrayProgress.appendChild(card);
     });

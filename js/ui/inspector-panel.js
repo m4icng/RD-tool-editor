@@ -220,7 +220,7 @@ function sharedItemCard(cell, editorData, x, y) {
   if (!cell.sharedItem) return "";
   if (["tray", "truck"].includes(cell.sharedItem.kind)) {
     const context = createTrayContextAt(editorData, x, y);
-    return context ? createTrayInspectorCard(context, editorData.grid.columns).outerHTML : "";
+    return context ? createTrayInspectorCard(context, editorData.grid).outerHTML : "";
   }
   return `<article class="inspector-card">
     <header><span class="inspector-card-icon">${escapeHtml(cell.sharedItem.icon ?? "□")}</span><h3>${escapeHtml(cell.sharedItem.label ?? "Item")}</h3></header>

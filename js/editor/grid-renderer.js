@@ -5,7 +5,7 @@ import { gateDirectionClass, isGateElement } from "../objects/gate-object.js";
 import { findCountBarrierAtIndex } from "../objects/count-barrier-object.js";
 import { findTunnelDraftEntryAtIndex, findTunnelEntryAtIndex, tunnelColor, tunnelDirectionClass, tunnelDirectionIcon } from "../objects/tunnel-object.js";
 import { findOneWayDraftEntryAtIndex, findOneWayEntryAtIndex, oneWayColor, oneWayDirectionClass, oneWayDirectionIcon } from "../objects/one-way-object.js";
-import { cellKey, createMergedLayer, ensureTerrainState, getCell, getTrayVisualPosition, isMysteryFruitAt, positionToIndex } from "../utils/grid-utils.js";
+import { cellKey, createMergedLayer, ensureTerrainState, getCell, getTrayVisualCells, isMysteryFruitAt, positionToIndex } from "../utils/grid-utils.js";
 import { samePosition } from "../utils/math-utils.js";
 
 export function renderGrid(container, editorData) {
@@ -27,8 +27,9 @@ export function renderGrid(container, editorData) {
     if (!["tray", "truck"].includes(cell?.item?.kind)) return;
     const [trayX, trayY] = key.split(",").map(Number);
     trayCheckpoints.set(key, { x: trayX, y: trayY, item: cell.item });
-    const visual = getTrayVisualPosition(cell.item, { x: trayX, y: trayY });
-    trayVisuals.set(cellKey(visual.x, visual.y), { x: trayX, y: trayY, item: cell.item });
+    getTrayVisualCells(cell.item, { x: trayX, y: trayY }).forEach((visual) => {
+      trayVisuals.set(cellKey(visual.x, visual.y), { x: trayX, y: trayY, item: cell.item, role: visual.role, center: visual.center });
+    });
   });
 
   for (let y = 0; y < editorData.grid.rows; y += 1) {
@@ -134,14 +135,16 @@ export function renderGrid(container, editorData) {
       }
       if (visualTray) {
         const icon = document.createElement("span");
-        icon.className = "placed-icon tray tray-visual-proxy";
-        icon.textContent = visualTray.item.icon ?? "🧺";
+        icon.className = `tray-footprint ${visualTray.role}${visualTray.center ? " center" : ""}`;
+        icon.textContent = visualTray.center ? (visualTray.item.icon ?? "🧺") : "";
+        icon.title = visualTray.role === "conveyor" ? "Tray Conveyor / trayPosition" : "Tray Main 3x3";
         cell.appendChild(icon);
       }
       if (checkpointTray) {
         const checkpoint = document.createElement("span");
         checkpoint.className = "delivery-checkpoint editor-checkpoint";
         checkpoint.title = `Checkpoint khay ID ${checkpointTray.item.trayId} tại Index ${positionToIndex(checkpointTray.x, checkpointTray.y, editorData.grid.columns)}`;
+        checkpoint.textContent = "⭕";
         cell.appendChild(checkpoint);
       }
       container.appendChild(cell);

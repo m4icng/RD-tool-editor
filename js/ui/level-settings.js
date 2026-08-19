@@ -1,9 +1,11 @@
 import {
   cellKey,
   ensureTerrainState,
+  getTrayVisualCells,
   getTrayVisualPosition,
   indexToPosition,
   isInsideGrid,
+  isTrayVisualInsideGrid,
   normalizeMysteryFruitElement,
   parseCellKey,
   positionToIndex
@@ -41,7 +43,7 @@ function isIndexOnEdge(index, grid, edge) {
 function hasTrayVisualInArea(state, containsPosition) {
   return Object.entries(state.sharedCells ?? {}).some(([key, cell]) => {
     if (!["tray", "truck"].includes(cell?.item?.kind)) return false;
-    return containsPosition(getTrayVisualPosition(cell.item, parseCellKey(key)));
+    return getTrayVisualCells(cell.item, parseCellKey(key)).some(containsPosition);
   });
 }
 
@@ -221,6 +223,7 @@ function applyResizeOperation(state, operation) {
     if (["tray", "truck"].includes(cell.item?.kind)) {
       const trayPosition = operation.mapPosition(getTrayVisualPosition(cell.item, oldPosition));
       if (!trayPosition || !isInsideGrid(operation.nextGrid, trayPosition.x, trayPosition.y)) cell.item = null;
+      else if (!isTrayVisualInsideGrid(operation.nextGrid, { ...cell.item, trayPosition }, oldPosition)) cell.item = null;
       else cell.item.trayPosition = trayPosition;
     }
     return isEmptySharedCell(cell) ? null : cell;

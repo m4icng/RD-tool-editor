@@ -1,11 +1,12 @@
 import { FRUIT_TYPES } from "../core/constants.js";
+import { blockLabelForFruitType } from "../core/block-visuals.js";
 import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
 import { isValidTunnelDirection, normalizeTunnelDirection, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { isValidOneWayDirection, normalizeOneWayDirection, normalizeOneWayElement } from "../objects/one-way-object.js";
-import { createMergedLayer, ensureTerrainState, getTrayVisualPosition, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
+import { createMergedLayer, ensureTerrainState, getTrayVisualCells, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
 
 export function collectStats(layer) {
   const stats = {
@@ -114,8 +115,13 @@ export function validateLevel(level) {
   if (stats.allFruits === 0) warnings.push("Chưa có trái cây trong các layer.");
   if (stats.trays === 0) warnings.push("Chưa có khay chứa trên map.");
   if (stats.invalidTrayRecipes > 0) warnings.push(`Có ${stats.invalidTrayRecipes} khay/layer chưa setup đủ recipe 9/9.`);
-  const balanced = FRUIT_TYPES.every((type) => stats.allFruitsByType[type] === stats.capacityByType[type]);
-  if (!balanced || stats.allFruits === 0) warnings.push("Tổng trái cây của các layer và recipe khay chưa khớp.");
+  FRUIT_TYPES.forEach((type) => {
+    const map = stats.allFruitsByType[type];
+    const tray = stats.capacityByType[type];
+    if (map === 0 && tray === 0) return;
+    if (map > tray) warnings.push(`Khay thiếu ${map - tray} ${blockLabelForFruitType(type)}`);
+    else if (map < tray) warnings.push(`Map thiếu ${tray - map} ${blockLabelForFruitType(type)}`);
+  });
   const roadKeys = new Set(Object.entries(level?.sharedCells ?? {}).filter(([, cell]) => cell.path).map(([key]) => key));
   const roadIndexes = new Set([...roadKeys].map(indexOfKey));
   const countBarrierEndpointIndexes = new Set();
@@ -144,15 +150,22 @@ export function validateLevel(level) {
     if (cell.item?.kind === "tray") {
       const { x, y } = parseCellKey(key);
       if (!cell.path) warnings.push(`Checkpoint khay tại Index ${indexOfKey(key)} phải nằm trên Path.`);
-      const visual = getTrayVisualPosition(cell.item, { x, y });
-      const visualIndex = positionToIndex(visual.x, visual.y, level.grid.columns);
-      if (!isInsideGrid(level.grid, visual.x, visual.y)) warnings.push(`Visual khay tại checkpoint Index ${indexOfKey(key)} nằm ngoài map.`);
-      const visualKey = `${visual.x},${visual.y}`;
-      const visualShared = level.sharedCells?.[visualKey];
-      const visualFruit = (level.layers ?? []).some((layer) => layer.cells?.[visualKey]?.item);
-      if (isInsideGrid(level.grid, visual.x, visual.y) && (visualShared?.path || visualShared?.item || visualShared?.element || visualFruit)) warnings.push(`Ô visual Index ${visualIndex} của khay checkpoint Index ${indexOfKey(key)} phải để trống.`);
+      getTrayVisualCells(cell.item, { x, y }).forEach((visual) => {
+        if (!isInsideGrid(level.grid, visual.x, visual.y)) {
+          warnings.push(`Visual khay 3x4 tại checkpoint Index ${indexOfKey(key)} nằm ngoài map.`);
+          return;
+        }
+        const visualKey = `${visual.x},${visual.y}`;
+        const visualIndex = positionToIndex(visual.x, visual.y, level.grid.columns);
+        const visualShared = level.sharedCells?.[visualKey];
+        const visualFruit = (level.layers ?? []).some((layer) => layer.cells?.[visualKey]?.item);
+        if (visualKey === key) warnings.push(`Tray visual đang overlap Delivery Point Index ${indexOfKey(key)}.`);
+        else if (visualShared?.path || visualShared?.item || visualShared?.element || visualFruit) warnings.push(`Tray visual checkpoint Index ${indexOfKey(key)} overlap data tại Index ${visualIndex}.`);
+      });
       if (!Number.isInteger(cell.item.trayId) || cell.item.trayId < 0) warnings.push(`Khay tại Index ${indexOfKey(key)} chưa có trayId hợp lệ.`);
-      (cell.item.trayLayers ?? []).forEach((trayLayer) => {
+      (cell.item.trayLayers ?? []).forEach((trayLayer, layerIndex) => {
+        const hasSelectedBlock = FRUIT_TYPES.some((type) => (Number(trayLayer.recipe?.[type]) || 0) > 0);
+        if (!hasSelectedBlock) warnings.push(`Tray #${cell.item.trayId ?? indexOfKey(key)} - Layer ${trayLayer.layer ?? layerIndex} chưa chọn Block.`);
         if ((trayLayer.unknownItems ?? []).some((item) => Number(item.count) > 0)) warnings.push(`Khay ${cell.item.trayId} còn item chưa hỗ trợ.`);
       });
     }
@@ -160,10 +173,11 @@ export function validateLevel(level) {
   const trayVisualKeys = new Map();
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind !== "tray") return;
-    const visual = getTrayVisualPosition(cell.item, parseCellKey(key));
-    const visualKey = `${visual.x},${visual.y}`;
-    if (trayVisualKeys.has(visualKey)) warnings.push(`Khay ${cell.item.trayId} có visual trùng với khay ${trayVisualKeys.get(visualKey)}.`);
-    else trayVisualKeys.set(visualKey, cell.item.trayId);
+    getTrayVisualCells(cell.item, parseCellKey(key)).forEach((visual) => {
+      const visualKey = `${visual.x},${visual.y}`;
+      if (trayVisualKeys.has(visualKey)) warnings.push(`Khay ${cell.item.trayId} có footprint visual trùng với khay ${trayVisualKeys.get(visualKey)}.`);
+      else trayVisualKeys.set(visualKey, cell.item.trayId);
+    });
   });
   (level?.layers ?? []).forEach((layer, layerIndex) => Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind !== "fruit") return;

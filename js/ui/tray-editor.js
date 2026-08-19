@@ -1,12 +1,18 @@
 import { FRUIT_TYPES } from "../core/constants.js";
-import { BLOCK_ITEM_GLYPH, applyBlockItemVisual, blockLabelForFruitType } from "../core/block-visuals.js";
+import {
+  applyBlockItemVisual,
+  blockItemIdFromFruitType,
+  blockColorNameForFruitType,
+  blockOptionLabelForFruitType,
+  blockVisualMeta
+} from "../core/block-visuals.js";
 import {
   cellKey,
-  getTrayVisualDirection,
   getTrayVisualPosition,
+  indexToPosition,
   isInsideGrid,
+  isTrayVisualInsideGrid,
   positionToIndex,
-  TRAY_VISUAL_DIRECTIONS
 } from "../utils/grid-utils.js";
 import { createId } from "../utils/id-generator.js";
 
@@ -14,15 +20,12 @@ export const TRAY_CAPACITY = 9;
 
 const FRUIT_META = Object.freeze(Object.fromEntries(FRUIT_TYPES.map((type) => [
   type,
-  { label: blockLabelForFruitType(type), icon: BLOCK_ITEM_GLYPH }
+  {
+    label: blockColorNameForFruitType(type),
+    optionLabel: blockOptionLabelForFruitType(type),
+    itemId: blockItemIdFromFruitType(type)
+  }
 ])));
-
-const TRAY_DIRECTION_META = Object.freeze({
-  up: "↑ Phía trên",
-  right: "→ Bên phải",
-  down: "↓ Phía dưới",
-  left: "← Bên trái"
-});
 
 function createEmptyRecipe() {
   return Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0]));
@@ -31,6 +34,64 @@ function createEmptyRecipe() {
 function trayLayerTotal(layer) {
   const known = FRUIT_TYPES.reduce((sum, type) => sum + (Number(layer?.recipe?.[type]) || 0), 0);
   return known + (layer?.unknownItems ?? []).reduce((sum, item) => sum + (Number(item.count) || 0), 0);
+}
+
+function selectedTrayLayerBlock(recipe) {
+  return FRUIT_TYPES.find((type) => (Number(recipe[type]) || 0) > 0) ?? null;
+}
+
+function selectedTrayLayerAmount(recipe) {
+  const selected = selectedTrayLayerBlock(recipe);
+  return Math.max(0, Number(recipe[selected]) || 0);
+}
+
+function selectedTrayLayerBlockId(recipe) {
+  const selectedType = selectedTrayLayerBlock(recipe);
+  return selectedType ? blockItemIdFromFruitType(selectedType) : null;
+}
+
+function blockTypeFromSelectedBlockId(selectedBlockId) {
+  if (selectedBlockId == null) return null;
+  return FRUIT_TYPES.find((type) => blockItemIdFromFruitType(type) === selectedBlockId) ?? null;
+}
+
+function fruitTypeFromBlockId(blockId) {
+  const selectedBlockId = Math.floor(Number(blockId));
+  if (!Number.isInteger(selectedBlockId)) return null;
+  return blockTypeFromSelectedBlockId(selectedBlockId);
+}
+
+function normalizeTrayAmount(amount) {
+  if (amount === "") return null;
+  const value = Math.floor(Number(amount));
+  if (!Number.isFinite(value)) return null;
+  return Math.max(1, Math.min(TRAY_CAPACITY, value));
+}
+
+function setSingleBlockRecipe(trayLayer, fruitType, amount) {
+  const normalizedAmount = normalizeTrayAmount(amount);
+  if (normalizedAmount === null) return false;
+  trayLayer.recipe = createEmptyRecipe();
+  trayLayer.recipe[fruitType] = normalizedAmount;
+  return true;
+}
+
+function createBlockDropLabel(selectedBlockId) {
+  const label = document.createElement("span");
+  label.className = `tray-block-drop-label${selectedBlockId == null ? " empty" : ""}`;
+  const selectedType = blockTypeFromSelectedBlockId(selectedBlockId);
+  if (!selectedType) {
+    label.textContent = "Chọn Block";
+    return label;
+  }
+  const swatch = document.createElement("span");
+  applyBlockItemVisual(swatch, selectedType);
+  const name = document.createElement("strong");
+  name.textContent = FRUIT_META[selectedType].label;
+  const id = document.createElement("em");
+  id.textContent = `ID ${selectedBlockId}`;
+  label.append(swatch, name, id);
+  return label;
 }
 
 export function getSelectedTrayContext(state) {
@@ -51,24 +112,15 @@ export function addTrayLayer(state) {
   return true;
 }
 
-export function setTrayVisualDirection(state, direction) {
+export function setTrayVisualIndex(state, index) {
   const context = getSelectedTrayContext(state);
-  const vector = TRAY_VISUAL_DIRECTIONS[direction];
-  if (!context || context.item.kind !== "tray" || !vector) return { changed: false, reason: "invalid-direction" };
-  const trayPosition = { x: context.x + vector.x, y: context.y + vector.y };
+  const value = Math.floor(Number(index));
+  if (!context || context.item.kind !== "tray" || !Number.isInteger(value)) return { changed: false, reason: "invalid-index" };
+  const total = state.grid.columns * state.grid.rows;
+  if (value < 0 || value >= total) return { changed: false, reason: "outside-grid" };
+  const trayPosition = indexToPosition(value, state.grid.columns);
   if (!isInsideGrid(state.grid, trayPosition.x, trayPosition.y)) return { changed: false, reason: "outside-grid" };
-  const visualKey = cellKey(trayPosition.x, trayPosition.y);
-  const visualShared = state.sharedCells?.[visualKey];
-  const visualFruit = (state.layers ?? []).some((layer) => layer.cells?.[visualKey]?.item);
-  const overlapsOtherTray = Object.entries(state.sharedCells ?? {}).some(([key, cell]) => {
-    if (key === cellKey(context.x, context.y) || !["tray", "truck"].includes(cell.item?.kind)) return false;
-    const [x, y] = key.split(",").map(Number);
-    const visual = getTrayVisualPosition(cell.item, { x, y });
-    return visual.x === trayPosition.x && visual.y === trayPosition.y;
-  });
-  if (visualShared?.path || visualShared?.item || visualShared?.element || visualFruit || overlapsOtherTray) {
-    return { changed: false, reason: "occupied" };
-  }
+  if (!isTrayVisualInsideGrid(state.grid, { ...context.item, trayPosition }, context)) return { changed: false, reason: "footprint-outside-grid" };
   const current = getTrayVisualPosition(context.item, context);
   if (current.x === trayPosition.x && current.y === trayPosition.y) return { changed: false, reason: null };
   context.item.trayPosition = trayPosition;
@@ -88,17 +140,22 @@ export function changeTrayLayerRecipe(state, layerIndex, fruitType, delta) {
   return true;
 }
 
-export function selectTrayLayerFruit(state, layerIndex, fruitType) {
+export function setTrayLayerBlock(state, layerIndex, blockId) {
   const context = getSelectedTrayContext(state);
   const trayLayer = context?.item?.kind === "tray" ? context.item.trayLayers?.[layerIndex] : null;
+  const fruitType = fruitTypeFromBlockId(blockId);
   if (!trayLayer || !FRUIT_TYPES.includes(fruitType)) return false;
+  return setSingleBlockRecipe(trayLayer, fruitType, TRAY_CAPACITY);
+}
+
+export function setTrayLayerAmount(state, layerIndex, amount) {
+  const context = getSelectedTrayContext(state);
+  const trayLayer = context?.item?.kind === "tray" ? context.item.trayLayers?.[layerIndex] : null;
+  if (!trayLayer) return false;
   trayLayer.recipe = { ...createEmptyRecipe(), ...(trayLayer.recipe ?? {}) };
-  if ((Number(trayLayer.recipe[fruitType]) || 0) > 0) return false;
-  const total = trayLayerTotal(trayLayer);
-  const remaining = TRAY_CAPACITY - total;
-  if (remaining <= 0) return false;
-  trayLayer.recipe[fruitType] = remaining;
-  return true;
+  const selectedType = selectedTrayLayerBlock(trayLayer.recipe);
+  if (!selectedType) return false;
+  return setSingleBlockRecipe(trayLayer, selectedType, amount);
 }
 
 export function removeTrayLayerUnknownItem(state, layerIndex, itemId) {
@@ -181,44 +238,27 @@ function createTrayList(trays, selectedCell, width) {
   return list;
 }
 
-function createRecipeControl(type, amount, total, layerIndex) {
-  const meta = FRUIT_META[type];
-  const row = document.createElement("div");
-  row.className = "tray-recipe-row";
-  row.innerHTML = '<span class="tray-fruit-icon"></span><span class="tray-fruit-name"></span><span class="tray-counter"><button type="button">−</button><output></output><button type="button">+</button></span>';
-  applyBlockItemVisual(row.children[0], type);
-  row.children[1].textContent = meta.label;
-  const [decrease, output, increase] = row.children[2].children;
-  decrease.dataset.recipeStep = "-1";
-  increase.dataset.recipeStep = "1";
-  decrease.dataset.trayLayerIndex = String(layerIndex);
-  increase.dataset.trayLayerIndex = String(layerIndex);
-  decrease.dataset.fruitType = type;
-  increase.dataset.fruitType = type;
-  decrease.disabled = amount <= 0;
-  increase.disabled = total >= TRAY_CAPACITY;
-  decrease.setAttribute("aria-label", `Giảm ${meta.label} ở layer ${layerIndex + 1}`);
-  increase.setAttribute("aria-label", `Tăng ${meta.label} ở layer ${layerIndex + 1}`);
-  output.textContent = String(amount);
-  output.setAttribute("aria-label", `${meta.label}: ${amount}`);
-  return row;
-}
-
 function createLayerCard(trayLayer, index, count) {
   const recipe = { ...createEmptyRecipe(), ...(trayLayer.recipe ?? {}) };
-  const total = trayLayerTotal({ ...trayLayer, recipe });
+  const selectedBlockId = selectedTrayLayerBlockId(recipe);
+  const selectedType = blockTypeFromSelectedBlockId(selectedBlockId);
+  const selectedAmount = selectedTrayLayerAmount(recipe);
   const card = document.createElement("article");
-  card.className = `tray-layer-card${total === TRAY_CAPACITY ? " valid" : " invalid"}`;
+  card.className = `tray-layer-card ${selectedType ? "valid has-block" : "invalid"}`;
   card.draggable = true;
   card.dataset.trayLayerIndex = String(index);
+  if (selectedType) card.style.setProperty("--tray-layer-block-color", blockVisualMeta(selectedType).color);
 
   const header = document.createElement("header");
   header.className = "tray-layer-header";
-  header.innerHTML = '<span class="drag-handle" aria-hidden="true">⠿</span><span class="tray-layer-title"><strong></strong><small></small></span><span class="tray-layer-total"></span><span class="tray-layer-actions"><button type="button">↑</button><button type="button">↓</button><button type="button" class="danger">×</button></span>';
+  header.innerHTML = '<span class="drag-handle" aria-hidden="true">⠿</span><span class="tray-layer-title"><strong></strong><small></small></span><span class="tray-layer-block-icon"></span><span class="tray-layer-total"></span><span class="tray-layer-actions"><button type="button">↑</button><button type="button">↓</button><button type="button" class="danger">×</button></span>';
   header.children[1].children[0].textContent = `Layer ${trayLayer.layer ?? index}`;
-  header.children[1].children[1].textContent = total === TRAY_CAPACITY ? "Recipe hợp lệ" : `Còn thiếu ${TRAY_CAPACITY - total}`;
-  header.children[2].textContent = `${total}/${TRAY_CAPACITY}`;
-  const [up, down, remove] = header.children[3].children;
+  header.children[1].children[1].textContent = selectedType ? `Block: ${FRUIT_META[selectedType].optionLabel}` : "Block: Chọn Block";
+  header.children[2].textContent = "";
+  if (selectedType) applyBlockItemVisual(header.children[2], selectedType);
+  else header.children[2].textContent = "□";
+  header.children[3].textContent = selectedType ? String(selectedAmount) : "--";
+  const [up, down, remove] = header.children[4].children;
   up.dataset.trayLayerMove = "-1";
   down.dataset.trayLayerMove = "1";
   remove.dataset.trayLayerDelete = "true";
@@ -231,33 +271,44 @@ function createLayerCard(trayLayer, index, count) {
   card.appendChild(header);
 
   const recipeGrid = document.createElement("div");
-  recipeGrid.className = "tray-recipe-grid";
-  const selectedTypes = FRUIT_TYPES.filter((type) => (Number(recipe[type]) || 0) > 0);
-  const availableTypes = FRUIT_TYPES.filter((type) => !selectedTypes.includes(type));
+  recipeGrid.className = "tray-block-layer-grid";
   const picker = document.createElement("label");
-  picker.className = "tray-fruit-picker";
-  picker.innerHTML = '<span>Loại quả trong layer</span><select data-tray-fruit-picker><option value="">＋ Chọn loại quả</option></select><small></small>';
-  const select = picker.children[1];
+  picker.className = "tray-block-picker";
+  picker.innerHTML = '<span>Block</span><span class="tray-block-select-wrap"></span>';
+  const selectWrap = picker.children[1];
+  const select = document.createElement("select");
+  select.dataset.trayBlockPicker = "true";
+  select.setAttribute("aria-label", `Block layer ${index + 1}`);
   select.dataset.trayLayerIndex = String(index);
-  availableTypes.forEach((type) => {
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Chọn Block";
+  placeholder.selected = !selectedType;
+  placeholder.disabled = true;
+  select.appendChild(placeholder);
+  FRUIT_TYPES.forEach((type) => {
     const option = document.createElement("option");
-    option.value = type;
-    option.textContent = `${FRUIT_META[type].icon} ${FRUIT_META[type].label}`;
+    option.value = String(FRUIT_META[type].itemId);
+    option.textContent = FRUIT_META[type].optionLabel;
+    option.selected = FRUIT_META[type].itemId === selectedBlockId;
     select.appendChild(option);
   });
-  select.disabled = total >= TRAY_CAPACITY || availableTypes.length === 0;
-  picker.children[2].textContent = total >= TRAY_CAPACITY
-    ? "Đã đủ 9/9 · giảm một loại để thêm loại khác"
-    : `Loại mới sẽ tự nhận ${TRAY_CAPACITY - total} chỗ còn lại`;
+  select.value = selectedBlockId == null ? "" : String(selectedBlockId);
+  select.dataset.selectedBlockId = selectedBlockId == null ? "" : String(selectedBlockId);
+  selectWrap.append(createBlockDropLabel(selectedBlockId), select);
   recipeGrid.appendChild(picker);
-  if (selectedTypes.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "tray-recipe-empty";
-    empty.textContent = "Chưa chọn loại quả cho layer này.";
-    recipeGrid.appendChild(empty);
-  } else {
-    selectedTypes.forEach((type) => recipeGrid.appendChild(createRecipeControl(type, Number(recipe[type]) || 0, total, index)));
-  }
+
+  const amount = document.createElement("label");
+  amount.className = "tray-block-amount";
+  amount.innerHTML = '<span>Amount</span><input data-tray-layer-amount type="number" min="1" max="9" step="1">';
+  const amountInput = amount.children[1];
+  amountInput.dataset.trayLayerIndex = String(index);
+  amountInput.setAttribute("value", selectedType ? String(selectedAmount) : "");
+  amountInput.setAttribute("placeholder", "--");
+  amountInput.setAttribute("aria-label", `Amount layer ${index + 1}`);
+  amountInput.disabled = !selectedType;
+  recipeGrid.appendChild(amount);
+
   (trayLayer.unknownItems ?? []).filter((item) => Number(item.count) > 0).forEach((item) => {
     const unknown = document.createElement("div");
     unknown.className = "tray-unknown-row";
@@ -271,7 +322,8 @@ function createLayerCard(trayLayer, index, count) {
   return card;
 }
 
-function createTrayEditor(context, trayIndex, width) {
+function createTrayEditor(context, trayIndex, grid) {
+  const width = grid.columns;
   const editor = document.createElement("section");
   editor.className = "tray-config";
 
@@ -293,18 +345,13 @@ function createTrayEditor(context, trayIndex, width) {
 
   const positionControl = document.createElement("label");
   positionControl.className = "tray-position-picker";
-  positionControl.innerHTML = '<span><strong>trayPosition</strong><small></small></span><select data-tray-position-direction aria-label="Hướng đặt visual khay"></select>';
+  positionControl.innerHTML = '<span><strong>trayPosition</strong><small></small></span><input data-tray-position-index type="number" min="0" step="1" aria-label="Index trayPosition bottom center">';
   const trayPosition = getTrayVisualPosition(context.item, context);
-  positionControl.children[0].children[1].textContent = `Index ${positionToIndex(trayPosition.x, trayPosition.y, width)} · +1 so với Deliver Point`;
-  const directionSelect = positionControl.children[1];
-  const currentDirection = getTrayVisualDirection(context.item, context);
-  Object.entries(TRAY_DIRECTION_META).forEach(([direction, label]) => {
-    const option = document.createElement("option");
-    option.value = direction;
-    option.textContent = label;
-    if (direction === currentDirection) option.setAttribute("selected", "");
-    directionSelect.appendChild(option);
-  });
+  const trayPositionIndex = positionToIndex(trayPosition.x, trayPosition.y, width);
+  positionControl.children[0].children[1].textContent = `Conveyor bottom-center · Deliver Point giữ Index ${positionToIndex(context.x, context.y, width)}`;
+  const indexInput = positionControl.children[1];
+  indexInput.setAttribute("max", String((grid.columns * grid.rows) - 1));
+  indexInput.setAttribute("value", String(trayPositionIndex));
   editor.appendChild(positionControl);
 
   const layers = context.item.trayLayers ?? [];
@@ -328,12 +375,12 @@ export function createTrayContextAt(state, x, y) {
   return { cell, item: cell.item, x, y };
 }
 
-export function createTrayInspectorCard(context, width) {
+export function createTrayInspectorCard(context, grid) {
   const card = document.createElement("article");
   card.className = "inspector-card tray-inspector-card";
   card.innerHTML = '<header><span class="inspector-card-icon"></span><h3>Khay chứa</h3></header>';
   card.querySelector(".inspector-card-icon").textContent = context.item.icon ?? "🧺";
-  card.appendChild(createTrayEditor(context, 0, width));
+  card.appendChild(createTrayEditor(context, 0, grid));
 
   const deleteButton = document.createElement("button");
   deleteButton.className = "inspector-link danger";
@@ -362,5 +409,5 @@ export function renderTrayEditor(container, state) {
     return;
   }
   const trayIndex = trays.findIndex((tray) => tray.x === context.x && tray.y === context.y);
-  container.appendChild(createTrayEditor(context, Math.max(0, trayIndex), state.grid.columns));
+  container.appendChild(createTrayEditor(context, Math.max(0, trayIndex), state.grid));
 }

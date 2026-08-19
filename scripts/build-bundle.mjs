@@ -55,6 +55,7 @@ const sourceFiles = [
   "js/gameplay/simulator.js",
   "js/gameplay/shovel-booster.js",
   "js/gameplay/tray-fill-system.js",
+  "js/gameplay/tray-slot-visual.js",
   "js/gameplay/lose-revive.js",
   "js/gameplay/playable-controller.js",
   "js/app.js"

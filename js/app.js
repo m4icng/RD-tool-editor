@@ -1,5 +1,5 @@
 import { EditorState, createInitialState, createLayer, reindexLayers } from "./core/editor-state.js";
-import { FRUIT_TYPES, LEGACY_STORAGE_KEYS, STORAGE_KEY, TOOL_LABELS } from "./core/constants.js";
+import { LEGACY_STORAGE_KEYS, STORAGE_KEY, TOOL_LABELS } from "./core/constants.js";
 import { isPlayerHeadLayer } from "./core/player-head-layer-rule.js";
 import { OBJECTS, findObject, objectsByCategory } from "./objects/object-registry.js";
 import { isBridgeElement, normalizeBridgeAxis } from "./objects/bridge-object.js";
@@ -46,7 +46,7 @@ import { deserializeEditorState, deserializeLevel, normalizeFileName, serializeE
 import { migrateLevel } from "./data/migration.js";
 import { LevelFileManager } from "./data/file-manager.js";
 import { downloadJson, readJsonFile, stringifyJson } from "./utils/file-utils.js";
-import { getMergedCell, getTrayVisualPosition, indexToPosition, isMysteryFruitAt, positionToIndex, setMysteryFruitAt } from "./utils/grid-utils.js";
+import { getMergedCell, getTrayVisualCells, indexToPosition, isMysteryFruitAt, positionToIndex, setMysteryFruitAt } from "./utils/grid-utils.js";
 import { createPlayableController, validatePlayableLevel } from "./gameplay/playable-controller.js";
 import { renderDataSummary } from "./ui/data-summary.js";
 import { initPanelResizers } from "./ui/panel-resizer.js";
@@ -59,8 +59,9 @@ import {
   moveTrayLayer,
   removeTrayLayer,
   removeTrayLayerUnknownItem,
-  selectTrayLayerFruit,
-  setTrayVisualDirection,
+  setTrayLayerAmount,
+  setTrayLayerBlock,
+  setTrayVisualIndex,
   renderTrayEditor
 } from "./ui/tray-editor.js";
 
@@ -68,7 +69,7 @@ const byId = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
   "zoomOutBtn", "zoomInBtn", "zoomResetBtn", "zoomValue",
-  "layerSelect", "toggleActiveLayerVisibilityBtn", "mysteryFruitDebugBtn", "deleteActiveLayerBtn", "contextPanelTitle", "contextPanelSubtitle", "contextPanelCloseBtn", "trayPanel", "pathStat", "grassStat", "priorityStat", "itemStat", "fruitStat", "fruitTypeStat", "trayStat", "capacityStat", "dataSummary", "validationList", "inspectorBody", "inspectorDetails",
+  "layerSelect", "toggleActiveLayerVisibilityBtn", "mysteryFruitDebugBtn", "deleteActiveLayerBtn", "contextPanelTitle", "contextPanelSubtitle", "contextPanelCloseBtn", "trayPanel", "dataSummary", "validationList", "inspectorBody", "inspectorDetails",
   "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
   "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
@@ -219,23 +220,14 @@ function rememberSelectedDataFileName(fileName) {
 
 function renderValidation(layer) {
   const report = validateLevel(editor.data);
-  const balanceOk = FRUIT_TYPES.every((type) =>
-    report.stats.allFruitsByType[type] === report.stats.capacityByType[type]
-  ) && report.stats.allFruits > 0;
-  const trayRecipesOk = report.stats.trays > 0 && report.stats.invalidTrayRecipes === 0;
-  const checks = [
-    { ok: report.stats.snake === 1, text: report.stats.snake === 1 ? "Có đúng 1 điểm bắt đầu" : `Cần đúng 1 điểm bắt đầu (hiện có ${report.stats.snake})` },
-    { ok: report.stats.allFruits > 0, text: report.stats.allFruits > 0 ? `${report.stats.allFruits} fruit trong ${report.stats.fruitLayers} layer` : "Chưa có trái cây trong các layer" },
-    { ok: true, text: `${report.stats.mysteryFruits} Mystery Fruit` },
-    { ok: true, text: `${report.stats.countBarriers} Count Barrier · ${report.stats.countBarrierCells} ô khóa` },
-    { ok: true, text: `${report.stats.tunnels} Tunnel` },
-    { ok: true, text: `${report.stats.oneWays} One Way` },
-    { ok: trayRecipesOk, text: trayRecipesOk ? `${report.stats.trayLayers} layer khay đã đủ recipe 9/9` : `Còn ${report.stats.invalidTrayRecipes || "khay chưa có"} recipe khay chưa hoàn tất` },
-    { ok: balanceOk, text: balanceOk ? "Tổng fruit các layer khớp recipe khay" : "Tổng fruit các layer và recipe khay chưa khớp" }
-  ];
-  const details = [...report.errors, ...report.warnings].filter((message) => !checks.some((check) => check.text === message));
-  elements.validationList.innerHTML = checks.map((check) => `<div class="validation-row ${check.ok ? "ok" : "warn"}"><span>${check.ok ? "✓" : "!"}</span><span>${check.text}</span></div>`).join("")
-    + details.map((message) => `<div class="validation-row warn"><span>!</span><span>${message}</span></div>`).join("");
+  const issues = [...report.errors, ...report.warnings];
+  const summary = report.errors.length > 0
+    ? `⚠ Level không hợp lệ — ${report.errors.length} lỗi`
+    : report.warnings.length > 0
+      ? `⚠ Level chưa hợp lệ — ${report.warnings.length} vấn đề`
+      : "✓ Level hợp lệ";
+  elements.validationList.innerHTML = `<div class="validation-row ${report.errors.length === 0 && report.warnings.length === 0 ? "ok" : "warn"}"><span>${issues.length === 0 ? "✓" : "⚠"}</span><span>${summary}</span></div>`
+    + issues.map((message) => `<div class="validation-row warn"><span>•</span><span>${message}</span></div>`).join("");
   return report.stats;
 }
 
@@ -306,17 +298,7 @@ function renderAll() {
     const activeId = Number.isInteger(editor.data.activeOneWayId) ? ` · Active ${editor.data.activeOneWayId}` : "";
     elements.activeToolBadge.textContent = editor.data.oneWayDraft ? oneWayDraftBadge(editor.data.oneWayDraft) : `One Way${activeId || " · Select Point A"}`;
   }
-  const stats = renderValidation(layer);
-  elements.pathStat.textContent = stats.paths;
-  elements.grassStat.textContent = Object.keys(editor.data.grassCells ?? {}).length;
-  elements.priorityStat.textContent = Object.keys(editor.data.priorityPoints ?? {}).length;
-  const sharedItemCount = Object.values(editor.data.sharedCells ?? {}).filter((cell) => Boolean(cell.item)).length;
-  elements.itemStat.textContent = sharedItemCount + dataSummary.totalFruits;
-  elements.fruitStat.textContent = dataSummary.totalFruits;
-  elements.fruitTypeStat.textContent = `${dataSummary.fruitKinds}/${FRUIT_TYPES.length}`;
-  elements.trayStat.textContent = dataSummary.trays.length;
-  elements.capacityStat.textContent = `${dataSummary.trayConfigured}/${dataSummary.trayTarget}`;
-  elements.capacityStat.title = "Số item đã setup / tổng số item cần cho mọi khay";
+  renderValidation(layer);
   elements.mapWidthInput.value = String(editor.data.grid.columns);
   elements.mapHeightInput.value = String(editor.data.grid.rows);
   elements.gridMeta.textContent = `${editor.data.grid.columns} × ${editor.data.grid.rows} · ${layer.name} · chỉ hoa quả thay đổi`;
@@ -592,8 +574,9 @@ const input = new InputController({
     const visualTray = Object.entries(editor.data.sharedCells ?? {}).map(([key, cell]) => {
       if (!["tray", "truck"].includes(cell.item?.kind)) return null;
       const [deliverX, deliverY] = key.split(",").map(Number);
-      const visual = getTrayVisualPosition(cell.item, { x: deliverX, y: deliverY });
-      return visual.x === x && visual.y === y ? { x: deliverX, y: deliverY } : null;
+      const hasVisualCell = getTrayVisualCells(cell.item, { x: deliverX, y: deliverY })
+        .some((visual) => visual.x === x && visual.y === y);
+      return hasVisualCell ? { x: deliverX, y: deliverY } : null;
     }).find(Boolean);
     const routeVisualToTray = visualTray && (eraseOverride || editor.data.tool !== "terrain");
     if (routeVisualToTray && !eraseOverride && editor.data.tool !== "erase") {
@@ -649,7 +632,7 @@ const input = new InputController({
       } else if (result?.reason === "player-head-layer-locked") {
         showNotification(elements.toast, "Train Head chỉ được đặt hoặc xóa tại Layer 1.");
       } else if (result?.reason === "tray-visual-outside-grid") {
-        showNotification(elements.toast, "Không thể đặt khay: vị trí visual mặc định phía trên nằm ngoài map.");
+        showNotification(elements.toast, "Không thể đặt khay: footprint visual 3x4 nằm ngoài map.");
       } else if (result?.reason === "tray-checkpoint-needs-road") {
         showNotification(elements.toast, "Hãy vẽ đường trước, sau đó đặt khay trực tiếp lên checkpoint đó.");
       } else if (result?.reason === "gate-needs-path") {
@@ -683,7 +666,7 @@ const input = new InputController({
       } else if (result?.reason === "barrier-overlap") {
         showNotification(elements.toast, "Ô Path này đã thuộc một Count Barrier khác.");
       } else if (result?.reason === "tray-visual-occupied") {
-        showNotification(elements.toast, "Ô visual mặc định phía trên checkpoint phải trống.");
+        showNotification(elements.toast, "Footprint visual khay đang overlap dữ liệu khác.");
       } else if (["shared-position-occupied", "fruit-position-occupied"].includes(result?.reason)) {
         showNotification(elements.toast, "Ô này đã có object dùng chung hoặc fruit ở một layer khác.");
       } else if (result?.reason === "element-position-occupied") {
@@ -1212,17 +1195,29 @@ elements.trayPanel.addEventListener("change", (event) => {
     showNotification(elements.toast, "Đã cập nhật count của Barrier.");
     return;
   }
-  const directionPicker = event.target.closest("[data-tray-position-direction]");
-  if (directionPicker) {
-    const result = mutate((state) => setTrayVisualDirection(state, directionPicker.value));
-    if (result?.reason === "outside-grid") showNotification(elements.toast, "Hướng đã chọn làm visual khay nằm ngoài map.");
-    else if (result?.reason === "occupied") showNotification(elements.toast, "Ô visual đã chọn đang có đường, item, element, fruit hoặc visual khay khác.");
+  const trayPositionInput = event.target.closest("[data-tray-position-index]");
+  if (trayPositionInput) {
+    const result = mutate((state) => setTrayVisualIndex(state, trayPositionInput.value));
+    if (result?.reason === "outside-grid") showNotification(elements.toast, "Index trayPosition nằm ngoài map.");
+    else if (result?.reason === "footprint-outside-grid") showNotification(elements.toast, "Footprint Tray 3x4 vượt ngoài map.");
     return;
   }
-  const picker = event.target.closest("[data-tray-fruit-picker]");
-  if (!picker || !picker.value) return;
-  const changed = mutate((state) => selectTrayLayerFruit(state, Number(picker.dataset.trayLayerIndex), picker.value));
-  if (!changed) showNotification(elements.toast, "Layer đã đủ sức chứa 9/9 hoặc loại quả đã được chọn.");
+  const blockPicker = event.target.closest("[data-tray-block-picker]");
+  if (blockPicker) {
+    if (!blockPicker.value) return;
+    mutate((state) => setTrayLayerBlock(state, Number(blockPicker.dataset.trayLayerIndex), blockPicker.value));
+    return;
+  }
+  const amountInput = event.target.closest("[data-tray-layer-amount]");
+  if (amountInput) {
+    mutate((state) => setTrayLayerAmount(state, Number(amountInput.dataset.trayLayerIndex), amountInput.value));
+  }
+});
+
+elements.trayPanel.addEventListener("input", (event) => {
+  const amountInput = event.target.closest("[data-tray-layer-amount]");
+  if (!amountInput) return;
+  mutate((state) => setTrayLayerAmount(state, Number(amountInput.dataset.trayLayerIndex), amountInput.value));
 });
 
 let draggedTrayLayerIndex = null;

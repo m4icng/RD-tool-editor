@@ -39,13 +39,19 @@ function trayRecipeSummary(item) {
     return { counts, configured: target, target, layerCount: 1 };
   }
   const layers = item.trayLayers ?? [];
+  const issues = [];
   layers.forEach((layer) => addFruitCounts(counts, layer.recipe));
+  layers.forEach((layer, index) => {
+    const hasSelectedBlock = FRUIT_TYPES.some((type) => (Number(layer.recipe?.[type]) || 0) > 0);
+    if (!hasSelectedBlock) issues.push(`Tray #${item.trayId ?? "?"} - Layer ${layer.layer ?? index} chưa chọn Block`);
+  });
   const unknownCount = layers.reduce((sum, layer) => sum + (layer.unknownItems ?? []).reduce((layerSum, entry) => layerSum + (Number(entry.count) || 0), 0), 0);
   return {
     counts,
     configured: countFruitItems(counts) + unknownCount,
     target: Math.max(1, layers.length) * 9,
-    layerCount: layers.length
+    layerCount: layers.length,
+    issues
   };
 }
 
@@ -79,123 +85,146 @@ export function collectEditorDataSummary(state) {
     fruitKinds: countFruitKinds(mapCounts),
     totalFruits: countFruitItems(mapCounts),
     trayConfigured: trays.reduce((sum, tray) => sum + tray.configured, 0),
-    trayTarget: trays.reduce((sum, tray) => sum + tray.target, 0)
+    trayTarget: trays.reduce((sum, tray) => sum + tray.target, 0),
+    trayIssues: trays.flatMap((tray) => tray.issues ?? [])
   };
 }
 
-function createFruitChips(counts, { includeZero = false } = {}) {
-  const chips = document.createElement("div");
-  chips.className = "data-fruit-chips";
-  const types = FRUIT_TYPES.filter((type) => includeZero || counts[type] > 0);
-  if (types.length === 0) {
-    const empty = document.createElement("span");
-    empty.className = "data-fruit-chip empty";
-    empty.textContent = "Chưa có fruit";
-    chips.appendChild(empty);
-    return chips;
-  }
-  types.forEach((type) => {
-    const chip = document.createElement("span");
-    chip.className = `data-fruit-chip${counts[type] === 0 ? " empty" : ""}`;
-    chip.append(createBlockSwatch(type), document.createTextNode(String(counts[type])));
-    chip.title = `${DATA_FRUIT_META[type].label}: ${counts[type]}`;
-    chips.appendChild(chip);
-  });
-  return chips;
-}
+// ---------------------------------------------------------------------------
+// Render — Item Balance section
+// ---------------------------------------------------------------------------
 
-function createSummaryCard(title, badge) {
-  const card = document.createElement("section");
-  card.className = "data-summary-card";
+function renderItemBalance(summary) {
+  const visibleTypes = FRUIT_TYPES.filter((type) => summary.mapCounts[type] > 0 || summary.requiredCounts[type] > 0);
+  const section = document.createElement("section");
+  section.className = "data-summary-card";
+
+  // Header
   const header = document.createElement("header");
   const heading = document.createElement("h3");
-  const count = document.createElement("span");
-  heading.textContent = title;
-  count.textContent = badge;
-  header.append(heading, count);
+  heading.textContent = "Item Balance";
+  const badge = document.createElement("span");
+  badge.textContent = `${visibleTypes.length} loại`;
+  header.append(heading, badge);
+  section.appendChild(header);
+
+  // Body
   const list = document.createElement("div");
   list.className = "data-summary-list";
-  card.append(header, list);
-  return { card, list };
-}
 
-function renderFruitBalance(summary) {
-  const { card, list } = createSummaryCard("Fruit trên map / khay cần", `${summary.fruitKinds}/${FRUIT_TYPES.length} loại`);
-  FRUIT_TYPES.forEach((type) => {
-    const current = summary.mapCounts[type];
-    const required = summary.requiredCounts[type];
+  if (visibleTypes.length === 0) {
     const row = document.createElement("div");
-    row.className = `fruit-balance-row${current === required ? " balanced" : ""}`;
-    const icon = document.createElement("i");
-    const copy = document.createElement("span");
-    const label = document.createElement("strong");
-    const note = document.createElement("small");
-    const value = document.createElement("span");
-    applyBlockItemVisual(icon, type);
-    label.textContent = DATA_FRUIT_META[type].label;
-    note.textContent = current === required ? "Đã cân bằng" : current < required ? `Thiếu ${required - current}` : `Dư ${current - required}`;
-    value.className = "fruit-balance-value";
-    value.textContent = `${current}/${required}`;
-    value.title = `${current} fruit trên map / ${required} fruit khay cần`;
-    copy.append(label, note);
-    row.append(icon, copy, value);
+    row.className = "item-balance-empty";
+    row.textContent = "Chưa có item trên map hoặc requirement trong khay.";
     list.appendChild(row);
-  });
-  return card;
-}
-
-function renderTrayDetails(summary) {
-  const { card, list } = createSummaryCard("Chi tiết khay", `${summary.trays.length} khay`);
-  if (summary.trays.length === 0) {
-    const row = document.createElement("div");
-    row.className = "data-detail-row";
-    row.textContent = "Chưa có khay trên map.";
-    list.appendChild(row);
+    section.appendChild(list);
+    return { element: section, issues: [] };
   }
-  summary.trays.forEach((tray, index) => {
+
+  const issues = [];
+
+  visibleTypes.forEach((type) => {
+    const mapCount = summary.mapCounts[type];
+    const trayCount = summary.requiredCounts[type];
+    const diff = mapCount - trayCount;
+    const balanced = diff === 0;
+
     const row = document.createElement("div");
-    row.className = "data-detail-row";
-    const copy = document.createElement("span");
-    const title = document.createElement("strong");
-    const note = document.createElement("small");
-    const total = document.createElement("span");
-    copy.className = "data-detail-copy";
-    title.textContent = `Khay ID ${tray.item.trayId ?? index}`;
-    note.textContent = `Index ${tray.index} · ${tray.layerCount} layer`;
-    total.className = "data-detail-total";
-    total.textContent = `${tray.configured}/${tray.target} item`;
-    total.title = "Số item đã setup / số item cần setup";
-    copy.append(title, note);
-    row.append(copy, total, createFruitChips(tray.counts));
+    row.className = `item-balance-row${balanced ? " balanced" : ""}`;
+
+    // Color swatch
+    const swatch = createBlockSwatch(type);
+    swatch.className = "item-balance-swatch";
+    applyBlockItemVisual(swatch, type);
+
+    // Label
+    const label = document.createElement("span");
+    label.className = "item-balance-label";
+    label.textContent = DATA_FRUIT_META[type].label;
+
+    // Map count
+    const mapEl = document.createElement("span");
+    mapEl.className = "item-balance-count";
+    mapEl.innerHTML = `<small>MAP</small> ${mapCount}`;
+
+    // Tray count
+    const trayEl = document.createElement("span");
+    trayEl.className = "item-balance-count";
+    trayEl.innerHTML = `<small>TRAY</small> ${trayCount}`;
+
+    // Status
+    const status = document.createElement("span");
+    status.className = "item-balance-status";
+
+    if (balanced) {
+      status.textContent = "✓";
+      status.classList.add("ok");
+    } else {
+      const warningText = diff > 0 ? `Khay thiếu ${diff}` : `Map thiếu ${Math.abs(diff)}`;
+      status.textContent = `⚠ ${warningText}`;
+      status.classList.add("warn");
+      issues.push(`${DATA_FRUIT_META[type].label}: ${warningText}`);
+    }
+
+    row.append(swatch, label, mapEl, trayEl, status);
     list.appendChild(row);
   });
-  return card;
+
+  section.appendChild(list);
+  return { element: section, issues };
 }
 
-function renderLayerDetails(summary) {
-  const { card, list } = createSummaryCard("Fruit theo layer", `${summary.layers.length} layer`);
-  summary.layers.forEach((layer, index) => {
-    const row = document.createElement("div");
-    row.className = "data-detail-row";
-    const copy = document.createElement("span");
-    const title = document.createElement("strong");
-    const note = document.createElement("small");
-    const total = document.createElement("span");
-    copy.className = "data-detail-copy";
-    title.textContent = layer.name || `Layer ${String(index + 1).padStart(2, "0")}`;
-    note.textContent = `${layer.kinds} loại fruit`;
-    total.className = "data-detail-total";
-    total.textContent = `${layer.total} quả`;
-    copy.append(title, note);
-    row.append(copy, total, createFruitChips(layer.counts));
-    list.appendChild(row);
-  });
-  return card;
+// ---------------------------------------------------------------------------
+// Render — Level Check section
+// ---------------------------------------------------------------------------
+
+function renderLevelCheck(issues) {
+  const section = document.createElement("section");
+  section.className = "data-summary-card level-check-card";
+
+  const header = document.createElement("header");
+  const heading = document.createElement("h3");
+  heading.textContent = "Level Check";
+  header.appendChild(heading);
+  section.appendChild(header);
+
+  const body = document.createElement("div");
+  body.className = "level-check-body";
+
+  if (issues.length === 0) {
+    const ok = document.createElement("div");
+    ok.className = "level-check-status ok";
+    ok.textContent = "✓ Level hợp lệ";
+    body.appendChild(ok);
+  } else {
+    const warn = document.createElement("div");
+    warn.className = "level-check-status warn";
+    warn.textContent = `⚠ ${issues.length} vấn đề`;
+    body.appendChild(warn);
+
+    const list = document.createElement("ul");
+    list.className = "level-check-issues";
+    issues.forEach((issue) => {
+      const li = document.createElement("li");
+      li.textContent = issue;
+      list.appendChild(li);
+    });
+    body.appendChild(list);
+  }
+
+  section.appendChild(body);
+  return section;
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export function renderDataSummary(container, state) {
   const summary = collectEditorDataSummary(state);
   container.innerHTML = "";
-  container.append(renderFruitBalance(summary), renderTrayDetails(summary), renderLayerDetails(summary));
+  const { element: balanceEl, issues } = renderItemBalance(summary);
+  container.appendChild(balanceEl);
+  container.appendChild(renderLevelCheck([...summary.trayIssues, ...issues]));
   return summary;
 }

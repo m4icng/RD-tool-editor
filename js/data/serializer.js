@@ -211,10 +211,6 @@ function validateStructure(raw) {
     trayIds.add(tray.trayId);
     assertIndex(tray.deliverPoint?.index, total, `trays[${i}].deliverPoint`);
     assertIndex(tray.trayPosition?.index, total, `trays[${i}].trayPosition`);
-    const deliverPoint = indexToPosition(tray.deliverPoint.index, width);
-    const trayPosition = indexToPosition(tray.trayPosition.index, width);
-    const distance = Math.abs(deliverPoint.x - trayPosition.x) + Math.abs(deliverPoint.y - trayPosition.y);
-    if (distance !== 1) throw new Error(`trays[${i}].trayPosition phải nằm liền kề deliverPoint theo hướng trên/dưới/trái/phải.`);
     assertArray(tray.layers, `trays[${i}].layers`);
     tray.layers.forEach((layer, layerIndex) => {
       if (!Number.isInteger(layer?.layer) || layer.layer < 0) throw new Error(`trays[${i}].layers[${layerIndex}].layer không hợp lệ.`);

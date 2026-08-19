@@ -861,6 +861,109 @@ function gateDirectionFromMovement(direction) {
 }
 
 
+// ---- js/objects/element-placement-rules.js ----
+
+
+const PLACEMENT_MESSAGES = Object.freeze({
+  "bridge-needs-crossroad": "Bridge chỉ được đặt tại ngã 4",
+  "bridge-outside-grid": "Bridge cần đủ 3 ô ngang",
+  "bridge-item-overlap": "Bridge không cho phép Item trong vùng visual",
+  "gate-needs-priority-point": "Gate phải đứng trước PriorityPoint",
+  "tunnel-needs-dead-end": "Tunnel chỉ được đặt tại Dead End"
+});
+
+const ELEMENT_DIRECTIONS = Object.freeze([
+  { key: "up", x: 0, y: -1, direction: GATE_DIRECTIONS.UP },
+  { key: "right", x: 1, y: 0, direction: GATE_DIRECTIONS.RIGHT },
+  { key: "down", x: 0, y: 1, direction: GATE_DIRECTIONS.DOWN },
+  { key: "left", x: -1, y: 0, direction: GATE_DIRECTIONS.LEFT }
+]);
+
+function sharedPathAt(state, x, y) {
+  if (!isInsideGrid(state.grid, x, y)) return false;
+  return Boolean(state.sharedCells?.[cellKey(x, y)]?.path);
+}
+
+function pathConnectionsAt(state, index) {
+  const position = indexToPosition(index, state.grid.columns);
+  return ELEMENT_DIRECTIONS
+    .filter((direction) => sharedPathAt(state, position.x + direction.x, position.y + direction.y))
+    .map((direction) => direction.direction);
+}
+
+function bridgeVisualCells(state, index) {
+  const center = indexToPosition(index, state.grid.columns);
+  return [
+    { x: center.x - 1, y: center.y },
+    center,
+    { x: center.x + 1, y: center.y }
+  ].map((position) => ({
+    ...position,
+    index: isInsideGrid(state.grid, position.x, position.y)
+      ? positionToIndex(position.x, position.y, state.grid.columns)
+      : null
+  }));
+}
+
+function hasItemBlockAt(state, x, y) {
+  const key = cellKey(x, y);
+  return (state.layers ?? []).some((layer) => layer.cells?.[key]?.item?.kind === "fruit");
+}
+
+function validateBridgePlacement(state, index) {
+  const cells = bridgeVisualCells(state, index);
+  if (cells.some((position) => !isInsideGrid(state.grid, position.x, position.y))) {
+    return { valid: false, reason: "bridge-outside-grid" };
+  }
+  const connections = new Set(pathConnectionsAt(state, index));
+  const required = [GATE_DIRECTIONS.UP, GATE_DIRECTIONS.DOWN, GATE_DIRECTIONS.LEFT, GATE_DIRECTIONS.RIGHT];
+  if (!required.every((direction) => connections.has(direction))) {
+    return { valid: false, reason: "bridge-needs-crossroad" };
+  }
+  if (cells.some((position) => hasItemBlockAt(state, position.x, position.y))) {
+    return { valid: false, reason: "bridge-item-overlap" };
+  }
+  return { valid: true, axis: BRIDGE_AXES.HORIZONTAL };
+}
+
+function findGatePriorityDirection(state, index) {
+  const position = indexToPosition(index, state.grid.columns);
+  return ELEMENT_DIRECTIONS.find((direction) => (
+    state.priorityPoints?.[cellKey(position.x + direction.x, position.y + direction.y)]
+  ))?.direction ?? null;
+}
+
+function validateGatePlacement(state, index) {
+  const position = indexToPosition(index, state.grid.columns);
+  if (!sharedPathAt(state, position.x, position.y)) return { valid: false, reason: "gate-needs-priority-point" };
+  const direction = findGatePriorityDirection(state, index);
+  if (direction === null) return { valid: false, reason: "gate-needs-priority-point" };
+  return { valid: true, direction };
+}
+
+function findTunnelPathDirection(state, index) {
+  const connections = pathConnectionsAt(state, index);
+  return connections.length === 1 ? connections[0] : null;
+}
+
+function validateTunnelPointPlacement(state, index) {
+  const position = indexToPosition(index, state.grid.columns);
+  if (!sharedPathAt(state, position.x, position.y)) return { valid: false, reason: "tunnel-needs-dead-end" };
+  const direction = findTunnelPathDirection(state, index);
+  if (direction === null) return { valid: false, reason: "tunnel-needs-dead-end" };
+  return { valid: true, direction };
+}
+
+function bridgeOccupiesIndex(state, index) {
+  return Object.entries(state.sharedCells ?? {}).some(([key, cell]) => {
+    if (cell?.element?.kind !== "bridge") return false;
+    const centerPosition = parseCellKey(key);
+    const center = positionToIndex(centerPosition.x, centerPosition.y, state.grid.columns);
+    return bridgeVisualCells(state, center).some((position) => position.index === index);
+  });
+}
+
+
 // ---- js/objects/count-barrier-object.js ----
 
 function createCountBarrierTool() {
@@ -1881,7 +1984,6 @@ function validateStructure(raw) {
     if (!isValidGateDirection(gate?.direction)) throw new Error(`gateElement[${i}].direction phải là 0, 1, 2 hoặc 3.`);
     if (gateIndexes.has(gate.index)) throw new Error(`gateElement index ${gate.index} bị trùng.`);
     if (bridgeIndexes.has(gate.index)) throw new Error(`Gate và Bridge không được trùng index ${gate.index}.`);
-    if (!pathIndexes.has(gate.index)) throw new Error(`gateElement[${i}].index phải thuộc Path.index.`);
     gateIndexes.add(gate.index);
   });
   const barrierIds = new Set();
@@ -1919,7 +2021,6 @@ function validateStructure(raw) {
     const localIndexes = new Set();
     tunnel.entryPoints.forEach((point, j) => {
       assertIndex(point?.index, total, `tunnelElement[${i}].entryPoints[${j}].index`);
-      if (!pathIndexes.has(point.index)) throw new Error(`tunnelElement[${i}].entryPoints[${j}].index phải thuộc Path.index.`);
       if (!isValidTunnelDirection(point?.direction)) throw new Error(`tunnelElement[${i}].entryPoints[${j}].direction phải là 0, 1, 2 hoặc 3.`);
       if (localIndexes.has(point.index)) throw new Error(`tunnelElement[${i}].entryPoints không được chứa index trùng.`);
       if (tunnelIndexes.has(point.index)) throw new Error(`Tunnel không được chồng index ${point.index}.`);
@@ -2176,7 +2277,6 @@ function serializeLevel(editorData) {
   normalizeTunnelElement(editorData.tunnelElement)
     .forEach((entry) => {
       const points = entry.entryPoints
-        .filter((point) => pathIndexes.has(point.index))
         .map((point) => ({ index: point.index, direction: normalizeTunnelDirection(point.direction) }));
       if (points.length === 2 && points[0].index !== points[1].index) {
         tunnelElement.push({ tunnelId: entry.tunnelId, entryPoints: points });
@@ -2229,6 +2329,7 @@ function normalizeFileName(value) {
 
 
 // ---- js/data/validator.js ----
+
 
 
 
@@ -2359,14 +2460,31 @@ function validateLevel(level) {
     countBarrierEndpointIndexes.add(barrier.startIndex);
     countBarrierEndpointIndexes.add(barrier.endIndex);
   });
+  let bridgeOrder = 0;
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!isBridgeElement(cell.element)) return;
+    const bridgeLabel = `Bridge #${bridgeOrder}`;
+    bridgeOrder += 1;
     const index = indexOfKey(key);
     if (![0, 1].includes(cell.element.axis)) errors.push(`Bridge tại Index ${index} có axis không hợp lệ.`);
     else cell.element.axis = normalizeBridgeAxis(cell.element.axis);
+    const connections = new Set(pathConnectionsAt(level, index));
+    if (![0, 1, 2, 3].every((direction) => connections.has(direction))) {
+      errors.push(`⚠ ${bridgeLabel} không nằm tại ngã 4.`);
+    }
+    const visualCells = bridgeVisualCells(level, index);
+    if (visualCells.some((position) => !isInsideGrid(level.grid, position.x, position.y))) {
+      errors.push(`⚠ ${bridgeLabel} cần đủ 3 ô theo chiều ngang.`);
+    }
+    if (visualCells.some((position) => (level.layers ?? []).some((layer) => layer.cells?.[`${position.x},${position.y}`]?.item?.kind === "fruit"))) {
+      errors.push(`⚠ ${bridgeLabel} overlap Item Block.`);
+    }
   });
+  let gateOrder = 0;
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!isGateElement(cell.element)) return;
+    const gateLabel = `Gate #${gateOrder}`;
+    gateOrder += 1;
     const index = indexOfKey(key);
     if (!cell.path) errors.push(`Gate tại Index ${index} phải nằm trên Path.`);
     if (!isValidGateDirection(cell.element.direction)) {
@@ -2374,6 +2492,10 @@ function validateLevel(level) {
       return;
     }
     cell.element.direction = normalizeGateDirection(cell.element.direction);
+    const priorityDirection = findGatePriorityDirection(level, index);
+    if (priorityDirection === null || priorityDirection !== cell.element.direction) {
+      errors.push(`⚠ ${gateLabel} không đứng trước PriorityPoint.`);
+    }
   });
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind === "snake" && !cell.path) warnings.push(`Spawn tại Index ${indexOfKey(key)} phải nằm trên Path.`);
@@ -2469,6 +2591,11 @@ function validateLevel(level) {
   });
   const tunnelIds = new Set();
   const tunnelIndexes = new Set();
+  (level?.tunnelElement ?? []).forEach((tunnel, tunnelIndex) => {
+    if (!Array.isArray(tunnel?.entryPoints) || tunnel.entryPoints.length !== 2) {
+      errors.push(`⚠ Tunnel #${Number.isInteger(tunnel?.tunnelId) ? tunnel.tunnelId : tunnelIndex} chưa đủ 2 Point.`);
+    }
+  });
   normalizeTunnelElement(level?.tunnelElement).forEach((tunnel) => {
     const label = `Tunnel ${tunnel.tunnelId}`;
     if (tunnelIds.has(tunnel.tunnelId)) errors.push(`${label} bị trùng tunnelId.`);
@@ -2485,6 +2612,9 @@ function validateLevel(level) {
       if (!roadIndexes.has(point.index)) errors.push(`${label} Entry ${name} Index ${point.index} phải thuộc Path.`);
       if (!isValidTunnelDirection(point.direction)) errors.push(`${label} Entry ${name} direction không hợp lệ.`);
       else point.direction = normalizeTunnelDirection(point.direction);
+      const tunnelDirection = findTunnelPathDirection(level, point.index);
+      if (tunnelDirection === null) errors.push(`⚠ Tunnel #${tunnel.tunnelId} Point ${name} không nằm tại Dead End.`);
+      else if (tunnelDirection !== point.direction) errors.push(`⚠ Tunnel #${tunnel.tunnelId} Point ${name} direction không hướng về Path.`);
       if (localIndexes.has(point.index)) errors.push(`${label} không được dùng cùng index cho hai entryPoint.`);
       if (tunnelIndexes.has(point.index)) errors.push(`Tunnel không được chồng index ${point.index}.`);
       localIndexes.add(point.index);
@@ -2828,6 +2958,7 @@ function getSmartDeleteTarget(state, position) {
 
 
 
+
 function junctionKeys(state) {
   const layer = createMergedLayer(state);
   return new Set(Object.keys(layer.cells ?? {}).filter((key) => {
@@ -3006,7 +3137,6 @@ function eraseAtPosition(state, position, mode = "smart") {
     state.grassCells[key] = true;
     delete state.priorityPoints[key];
     removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
-    removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.tunnelDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.tunnelDraft = null;
     removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.oneWayDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.oneWayDraft = null;
@@ -3071,6 +3201,10 @@ function applyTool(state, x, y, toolOverride = null) {
         shared.path = true;
       } else if (object.kind === "fruit") {
         const index = positionToIndex(x, y, state.grid.columns);
+        if (bridgeOccupiesIndex(state, index)) {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "bridge-item-overlap", objectId: object.id };
+        }
         const barrier = findCountBarrierAtIndex(state, index);
         if (barrier && (barrier.startIndex === index || barrier.endIndex === index)) {
           state.selectedCell = { x, y };
@@ -3125,20 +3259,20 @@ function applyTool(state, x, y, toolOverride = null) {
         return { changed: true, action: "count-barrier-updated", barrierId: barrier.barrierId };
       } else if (isTunnelTool(object)) {
         const index = positionToIndex(x, y, state.grid.columns);
-        if (!shared.path) {
+        const tunnelRule = validateTunnelPointPlacement(state, index);
+        if (!tunnelRule.valid) {
           state.selectedCell = { x, y };
-          return { changed: false, reason: "tunnel-needs-path", objectId: object.id };
-        }
-        if (state.tunnelDraft?.step === "direction-a") {
-          state.selectedCell = { x, y };
-          return { changed: false, reason: "tunnel-needs-direction-a", objectId: object.id };
-        }
-        if (state.tunnelDraft?.step === "direction-b") {
-          state.selectedCell = { x, y };
-          return { changed: false, reason: "tunnel-needs-direction-b", objectId: object.id };
+          return { changed: false, reason: tunnelRule.reason, objectId: object.id };
         }
         if (state.tunnelDraft?.step === "point-b") {
           const placement = placeTunnelDraftPointB(state, index);
+          if (placement.changed) {
+            const created = setTunnelDraftDirection(state, tunnelRule.direction);
+            state.selectedCell = { x, y };
+            return created.changed
+              ? { changed: true, action: "tunnel-point-b-selected", tunnelId: created.tunnelId }
+              : created;
+          }
           state.selectedCell = { x, y };
           return placement;
         }
@@ -3149,6 +3283,13 @@ function applyTool(state, x, y, toolOverride = null) {
           return { changed: true, action: "tunnel-selected", tunnelId: existing.tunnelId };
         }
         const placement = startTunnelDraftAt(state, index);
+        if (placement.changed) {
+          const directionPlacement = setTunnelDraftDirection(state, tunnelRule.direction);
+          state.selectedCell = { x, y };
+          return directionPlacement.changed
+            ? { changed: true, action: "tunnel-point-a-selected", tunnelId: placement.tunnelId }
+            : directionPlacement;
+        }
         state.selectedCell = { x, y };
         return placement;
       } else if (isOneWayTool(object)) {
@@ -3180,15 +3321,20 @@ function applyTool(state, x, y, toolOverride = null) {
         state.selectedCell = { x, y };
         return placement;
       } else if (objectCategory(object) === "element") {
-        if (isGateElement(object) && !shared.path) {
-          return { changed: false, reason: "gate-needs-path", objectId: object.id };
+        if (isBridgeElement(object)) {
+          const bridgeRule = validateBridgePlacement(state, positionToIndex(x, y, state.grid.columns));
+          if (!bridgeRule.valid) return { changed: false, reason: bridgeRule.reason, objectId: object.id };
+        }
+        const gateRule = isGateElement(object) ? validateGatePlacement(state, positionToIndex(x, y, state.grid.columns)) : null;
+        if (gateRule && !gateRule.valid) {
+          return { changed: false, reason: gateRule.reason, objectId: object.id };
         }
         if (shared.element && shared.element.id !== object.id) {
           return { changed: false, reason: "element-position-occupied", objectId: shared.element.id };
         }
         const element = cloneObject(object);
-        if (isBridgeElement(element)) element.axis = normalizeBridgeAxis(state.selectedBridgeAxis ?? element.axis);
-        if (isGateElement(element)) element.direction = normalizeGateDirection(state.selectedGateDirection ?? element.direction);
+        if (isBridgeElement(element)) element.axis = normalizeBridgeAxis(BRIDGE_AXES.HORIZONTAL);
+        if (isGateElement(element)) element.direction = normalizeGateDirection(gateRule.direction);
         shared.element = element;
         if (isBridgeElement(element)) delete state.priorityPoints[key];
       } else {
@@ -3267,9 +3413,7 @@ function togglePathAt(state, position) {
   }
   if (!cell.path) {
     cell.item = null;
-    cell.element = null;
     removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
-    removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.tunnelDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.tunnelDraft = null;
     removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.oneWayDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.oneWayDraft = null;
@@ -3335,6 +3479,8 @@ class CameraController {
 
 
 
+
+
 function renderGrid(container, editorData) {
   ensureTerrainState(editorData);
   applyVisualScaleConfig(container);
@@ -3350,6 +3496,15 @@ function renderGrid(container, editorData) {
   container.style.gridTemplateColumns = `repeat(${editorData.grid.columns}, minmax(0, 1fr))`;
   const trayVisuals = new Map();
   const trayCheckpoints = new Map();
+  const bridgeVisuals = new Map();
+  Object.entries(editorData.sharedCells ?? {}).forEach(([key, cell]) => {
+    if (!isBridgeElement(cell?.element)) return;
+    const [bridgeX, bridgeY] = key.split(",").map(Number);
+    const centerIndex = positionToIndex(bridgeX, bridgeY, editorData.grid.columns);
+    bridgeVisualCells(editorData, centerIndex).forEach((visual, visualIndex) => {
+      bridgeVisuals.set(cellKey(visual.x, visual.y), { centerIndex, visualIndex });
+    });
+  });
   Object.entries(editorData.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!["tray", "truck"].includes(cell?.item?.kind)) return;
     const [trayX, trayY] = key.split(",").map(Number);
@@ -3376,20 +3531,29 @@ function renderGrid(container, editorData) {
       const grass = Boolean(editorData.grassCells[cellKey(x, y)]);
       const checkpointTray = trayCheckpoints.get(cellKey(x, y));
       const visualTray = trayVisuals.get(cellKey(x, y));
+      const visualBridge = bridgeVisuals.get(cellKey(x, y));
+      const selectedObject = editorData.tool === "item" ? findObject(editorData.selectedAssetId) : null;
+      let placementState = null;
+      if (selectedObject?.kind === "bridge") placementState = validateBridgePlacement(editorData, index);
+      else if (selectedObject?.kind === "gate") placementState = validateGatePlacement(editorData, index);
+      else if (isTunnelTool(selectedObject)) placementState = validateTunnelPointPlacement(editorData, index);
       const cell = document.createElement("button");
       cell.type = "button";
-      cell.className = `grid-cell${grass ? " grass" : " terrain-empty"}${data.path ? " path" : ""}${priorityPoint ? " priority-point" : ""}${countBarrier ? " count-barrier-cell" : ""}${activeBarrier ? " active-count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry || tunnelDraftEntry ? " tunnel-cell" : ""}${tunnelDraftEntry ? " tunnel-draft-cell" : ""}${activeTunnel ? " active-tunnel-cell" : ""}${oneWayEntry || oneWayDraftEntry ? " one-way-cell" : ""}${oneWayDraftEntry ? " one-way-draft-cell" : ""}${activeOneWay ? " active-one-way-cell" : ""}${samePosition(editorData.selectedCell, { x, y }) ? " selected" : ""}`;
+      cell.className = `grid-cell${grass ? " grass" : " terrain-empty"}${data.path ? " path" : ""}${priorityPoint ? " priority-point" : ""}${countBarrier ? " count-barrier-cell" : ""}${activeBarrier ? " active-count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry || tunnelDraftEntry ? " tunnel-cell" : ""}${tunnelDraftEntry ? " tunnel-draft-cell" : ""}${activeTunnel ? " active-tunnel-cell" : ""}${oneWayEntry || oneWayDraftEntry ? " one-way-cell" : ""}${oneWayDraftEntry ? " one-way-draft-cell" : ""}${activeOneWay ? " active-one-way-cell" : ""}${placementState ? (placementState.valid ? " placement-valid" : " placement-invalid") : ""}${samePosition(editorData.selectedCell, { x, y }) ? " selected" : ""}`;
       cell.dataset.x = x;
       cell.dataset.y = y;
       if (tunnelEntry || tunnelDraftEntry) cell.style.setProperty("--tunnel-color", tunnelColor((tunnelEntry?.tunnel ?? tunnelDraftEntry?.draft).tunnelId));
       if (oneWayEntry || oneWayDraftEntry) cell.style.setProperty("--one-way-color", oneWayColor((oneWayEntry?.oneWay ?? oneWayDraftEntry?.draft).oneWayId));
       cell.setAttribute("role", "gridcell");
       cell.setAttribute("aria-label", `Ô Index ${index}${priorityPoint ? ", PriorityPoint" : ""}${grass ? ", Grass" : data.path ? ", Path" : ", Terrain trống"}`);
+      if (placementState) {
+        cell.title = placementState.valid ? "✓ Có thể đặt" : (PLACEMENT_MESSAGES[placementState.reason] ?? "Không thể đặt");
+      }
 
-      if (isBridgeElement(data.element)) {
+      if (visualBridge) {
         const bridge = document.createElement("span");
-        bridge.className = `bridge-preview${normalizeBridgeAxis(data.element.axis) === 1 ? " vertical" : ""}`;
-        bridge.title = normalizeBridgeAxis(data.element.axis) === 1 ? "Bridge Vertical" : "Bridge Horizontal";
+        bridge.className = `bridge-preview bridge-segment segment-${visualBridge.visualIndex}`;
+        bridge.title = visualBridge.visualIndex === 1 ? `Bridge Center #${visualBridge.centerIndex}` : `Bridge Visual #${visualBridge.centerIndex}`;
         bridge.textContent = "🟰";
         cell.appendChild(bridge);
       }
@@ -3664,24 +3828,9 @@ function renderObjectPalette(container, objects, selectedId, { emptyLabel = "Ch�
     }
     if (object.kind === "bridge") {
       button.classList.add("bridge-asset");
-      button.firstElementChild.classList.toggle("vertical-bridge-icon", Number(bridgeAxis) === 1);
-      button.dataset.tooltip = `Bridge · ${Number(bridgeAxis) === 1 ? "Vertical" : "Horizontal"}`;
+      button.dataset.tooltip = "Bridge · Horizontal 3x1";
       button.title = button.dataset.tooltip;
-      button.setAttribute("aria-label", `Bridge. ${Number(bridgeAxis) === 1 ? "Vertical" : "Horizontal"}`);
-      const picker = document.createElement("span");
-      picker.className = "bridge-axis-picker";
-      [
-        ["0", "🟰"],
-        ["1", "🟰"]
-      ].forEach(([direction, label]) => {
-        const option = document.createElement("span");
-        option.className = `bridge-axis-option${String(bridgeAxis) === direction ? " active" : ""}`;
-        option.dataset.bridgeAxis = direction;
-        option.textContent = label;
-        option.title = direction === "0" ? "Horizontal" : "Vertical";
-        picker.appendChild(option);
-      });
-      button.appendChild(picker);
+      button.setAttribute("aria-label", "Bridge. Horizontal 3x1");
     }
     if (object.kind === "gate") {
       button.classList.add("gate-asset");
@@ -4624,13 +4773,7 @@ function bridgeCard(bridge) {
   const axis = normalizeBridgeAxis(bridge.axis);
   return `<article class="inspector-card">
     <header><span class="inspector-card-icon">=</span><h3>Bridge</h3></header>
-    <div class="inspector-field">
-      <span>Hướng cầu</span>
-      <div class="segmented-control">
-        ${segmentedButton(BRIDGE_AXES.HORIZONTAL, axis, "Horizontal", "data-inspector-bridge-axis")}
-        ${segmentedButton(BRIDGE_AXES.VERTICAL, axis, "Vertical", "data-inspector-bridge-axis")}
-      </div>
-    </div>
+    <div class="inspector-kv wide"><span>Visual</span><strong>${escapeHtml(bridgeAxisLabel(axis === BRIDGE_AXES.VERTICAL ? BRIDGE_AXES.HORIZONTAL : axis))} · 3x1</strong></div>
     <button class="inspector-link danger" type="button" data-inspector-delete="bridge">Xóa Bridge</button>
   </article>`;
 }
@@ -7565,6 +7708,8 @@ const input = new InputController({
         showNotification(elements.toast, "Hãy vẽ đường trước, sau đó đặt khay trực tiếp lên checkpoint đó.");
       } else if (result?.reason === "gate-needs-path") {
         showNotification(elements.toast, "Gate chỉ được đặt trên Path.");
+      } else if (result?.reason === "gate-needs-priority-point") {
+        showNotification(elements.toast, "Gate phải đứng trước PriorityPoint.");
       } else if (result?.reason === "mystery-needs-fruit") {
         showNotification(elements.toast, "Mystery Fruit chỉ đánh dấu Fruit trong layer đang chọn.");
       } else if (result?.reason === "fruit-on-barrier-endpoint") {
@@ -7573,6 +7718,8 @@ const input = new InputController({
         showNotification(elements.toast, "Count Barrier chỉ có thể vẽ trên Path.");
       } else if (result?.reason === "tunnel-needs-path") {
         showNotification(elements.toast, "Tunnel chỉ có thể đặt trên Path.");
+      } else if (result?.reason === "tunnel-needs-dead-end") {
+        showNotification(elements.toast, "Tunnel chỉ được đặt tại Dead End.");
       } else if (result?.reason === "tunnel-same-point") {
         showNotification(elements.toast, "Point B không được trùng Point A.");
       } else if (result?.reason === "tunnel-overlap") {
@@ -7599,6 +7746,12 @@ const input = new InputController({
         showNotification(elements.toast, "Ô này đã có object dùng chung hoặc fruit ở một layer khác.");
       } else if (result?.reason === "element-position-occupied") {
         showNotification(elements.toast, "Ô này đã có element khác.");
+      } else if (result?.reason === "bridge-needs-crossroad") {
+        showNotification(elements.toast, "Bridge chỉ được đặt tại ngã 4.");
+      } else if (result?.reason === "bridge-outside-grid") {
+        showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
+      } else if (result?.reason === "bridge-item-overlap") {
+        showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
       } else if (result?.reason === "grass-on-path") {
         showNotification(elements.toast, "Grass không thể trùng Path. Hãy xóa Path trước.");
       } else if (result?.reason === "terrain-on-path") {
@@ -7606,19 +7759,15 @@ const input = new InputController({
       } else if (result?.reason === "priority-needs-path") {
         showNotification(elements.toast, "PriorityPoint chỉ được đặt trên Path.");
       } else if (result?.action === "tunnel-point-a-selected") {
-        showNotification(elements.toast, "Point A selected — Choose direction");
-        showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "draft", id: result.tunnelId, entryIndex: 0, step: "direction-a" });
+        showNotification(elements.toast, "Point A complete — Select Tunnel Point B");
       } else if (result?.action === "tunnel-point-b-selected") {
-        showNotification(elements.toast, "Point B selected — Choose direction");
-        showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "draft", id: result.tunnelId, entryIndex: 1, step: "direction-b" });
+        showNotification(elements.toast, `Tunnel #${result.tunnelId} created`);
       } else if (result?.action === "one-way-point-a-selected") {
         showNotification(elements.toast, "Point A selected — Choose direction");
         showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "draft", id: result.oneWayId, entryIndex: 0, step: "direction-a" });
       } else if (result?.action === "one-way-point-b-selected") {
         showNotification(elements.toast, "Point B selected — Choose direction");
         showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "draft", id: result.oneWayId, entryIndex: 1, step: "direction-b" });
-      } else if (result?.changed && selectedObject?.kind === "gate") {
-        showDirectionPicker("gate", { x: targetX, y: targetY }, { mode: "edit" });
       } else showEraseFeedback(result);
     }
   },
@@ -7841,7 +7990,9 @@ function placeInspectorElement(assetId) {
     return placement;
   });
   if (result?.reason === "gate-needs-path") showNotification(elements.toast, "Gate chỉ có thể đặt trên Path.");
+  else if (result?.reason === "gate-needs-priority-point") showNotification(elements.toast, "Gate phải đứng trước PriorityPoint.");
   else if (result?.reason === "tunnel-needs-path") showNotification(elements.toast, "Tunnel chỉ có thể đặt trên Path.");
+  else if (result?.reason === "tunnel-needs-dead-end") showNotification(elements.toast, "Tunnel chỉ được đặt tại Dead End.");
   else if (result?.reason === "tunnel-same-point") showNotification(elements.toast, "Point B không được trùng Point A.");
   else if (result?.reason === "tunnel-overlap") showNotification(elements.toast, "Ô này đã thuộc Tunnel khác.");
   else if (result?.reason === "tunnel-needs-direction-a") showNotification(elements.toast, "Chọn direction cho Point A trước.");
@@ -7852,6 +8003,9 @@ function placeInspectorElement(assetId) {
   else if (result?.reason === "one-way-needs-direction-a") showNotification(elements.toast, "Chọn direction cho Point A trước.");
   else if (result?.reason === "one-way-needs-direction-b") showNotification(elements.toast, "Chọn direction cho Point B trước.");
   else if (result?.reason === "element-position-occupied") showNotification(elements.toast, "Ô này đã có element khác.");
+  else if (result?.reason === "bridge-needs-crossroad") showNotification(elements.toast, "Bridge chỉ được đặt tại ngã 4.");
+  else if (result?.reason === "bridge-outside-grid") showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
+  else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
   else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
 }
 

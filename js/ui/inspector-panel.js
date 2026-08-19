@@ -30,13 +30,7 @@ function bridgeCard(bridge) {
   const axis = normalizeBridgeAxis(bridge.axis);
   return `<article class="inspector-card">
     <header><span class="inspector-card-icon">=</span><h3>Bridge</h3></header>
-    <div class="inspector-field">
-      <span>Hướng cầu</span>
-      <div class="segmented-control">
-        ${segmentedButton(BRIDGE_AXES.HORIZONTAL, axis, "Horizontal", "data-inspector-bridge-axis")}
-        ${segmentedButton(BRIDGE_AXES.VERTICAL, axis, "Vertical", "data-inspector-bridge-axis")}
-      </div>
-    </div>
+    <div class="inspector-kv wide"><span>Visual</span><strong>${escapeHtml(bridgeAxisLabel(axis === BRIDGE_AXES.VERTICAL ? BRIDGE_AXES.HORIZONTAL : axis))} · 3x1</strong></div>
     <button class="inspector-link danger" type="button" data-inspector-delete="bridge">Xóa Bridge</button>
   </article>`;
 }

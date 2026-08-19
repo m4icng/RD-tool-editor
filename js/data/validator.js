@@ -3,6 +3,12 @@ import { blockLabelForFruitType } from "../core/block-visuals.js";
 import { isPlayerHeadItem } from "../core/player-head-layer-rule.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { isGateElement, isValidGateDirection, normalizeGateDirection } from "../objects/gate-object.js";
+import {
+  bridgeVisualCells,
+  findGatePriorityDirection,
+  findTunnelPathDirection,
+  pathConnectionsAt
+} from "../objects/element-placement-rules.js";
 import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js";
 import { isValidTunnelDirection, normalizeTunnelDirection, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { isValidOneWayDirection, normalizeOneWayDirection, normalizeOneWayElement } from "../objects/one-way-object.js";
@@ -129,14 +135,31 @@ export function validateLevel(level) {
     countBarrierEndpointIndexes.add(barrier.startIndex);
     countBarrierEndpointIndexes.add(barrier.endIndex);
   });
+  let bridgeOrder = 0;
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!isBridgeElement(cell.element)) return;
+    const bridgeLabel = `Bridge #${bridgeOrder}`;
+    bridgeOrder += 1;
     const index = indexOfKey(key);
     if (![0, 1].includes(cell.element.axis)) errors.push(`Bridge tại Index ${index} có axis không hợp lệ.`);
     else cell.element.axis = normalizeBridgeAxis(cell.element.axis);
+    const connections = new Set(pathConnectionsAt(level, index));
+    if (![0, 1, 2, 3].every((direction) => connections.has(direction))) {
+      errors.push(`⚠ ${bridgeLabel} không nằm tại ngã 4.`);
+    }
+    const visualCells = bridgeVisualCells(level, index);
+    if (visualCells.some((position) => !isInsideGrid(level.grid, position.x, position.y))) {
+      errors.push(`⚠ ${bridgeLabel} cần đủ 3 ô theo chiều ngang.`);
+    }
+    if (visualCells.some((position) => (level.layers ?? []).some((layer) => layer.cells?.[`${position.x},${position.y}`]?.item?.kind === "fruit"))) {
+      errors.push(`⚠ ${bridgeLabel} overlap Item Block.`);
+    }
   });
+  let gateOrder = 0;
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!isGateElement(cell.element)) return;
+    const gateLabel = `Gate #${gateOrder}`;
+    gateOrder += 1;
     const index = indexOfKey(key);
     if (!cell.path) errors.push(`Gate tại Index ${index} phải nằm trên Path.`);
     if (!isValidGateDirection(cell.element.direction)) {
@@ -144,6 +167,10 @@ export function validateLevel(level) {
       return;
     }
     cell.element.direction = normalizeGateDirection(cell.element.direction);
+    const priorityDirection = findGatePriorityDirection(level, index);
+    if (priorityDirection === null || priorityDirection !== cell.element.direction) {
+      errors.push(`⚠ ${gateLabel} không đứng trước PriorityPoint.`);
+    }
   });
   Object.entries(level?.sharedCells ?? {}).forEach(([key, cell]) => {
     if (cell.item?.kind === "snake" && !cell.path) warnings.push(`Spawn tại Index ${indexOfKey(key)} phải nằm trên Path.`);
@@ -239,6 +266,11 @@ export function validateLevel(level) {
   });
   const tunnelIds = new Set();
   const tunnelIndexes = new Set();
+  (level?.tunnelElement ?? []).forEach((tunnel, tunnelIndex) => {
+    if (!Array.isArray(tunnel?.entryPoints) || tunnel.entryPoints.length !== 2) {
+      errors.push(`⚠ Tunnel #${Number.isInteger(tunnel?.tunnelId) ? tunnel.tunnelId : tunnelIndex} chưa đủ 2 Point.`);
+    }
+  });
   normalizeTunnelElement(level?.tunnelElement).forEach((tunnel) => {
     const label = `Tunnel ${tunnel.tunnelId}`;
     if (tunnelIds.has(tunnel.tunnelId)) errors.push(`${label} bị trùng tunnelId.`);
@@ -255,6 +287,9 @@ export function validateLevel(level) {
       if (!roadIndexes.has(point.index)) errors.push(`${label} Entry ${name} Index ${point.index} phải thuộc Path.`);
       if (!isValidTunnelDirection(point.direction)) errors.push(`${label} Entry ${name} direction không hợp lệ.`);
       else point.direction = normalizeTunnelDirection(point.direction);
+      const tunnelDirection = findTunnelPathDirection(level, point.index);
+      if (tunnelDirection === null) errors.push(`⚠ Tunnel #${tunnel.tunnelId} Point ${name} không nằm tại Dead End.`);
+      else if (tunnelDirection !== point.direction) errors.push(`⚠ Tunnel #${tunnel.tunnelId} Point ${name} direction không hướng về Path.`);
       if (localIndexes.has(point.index)) errors.push(`${label} không được dùng cùng index cho hai entryPoint.`);
       if (tunnelIndexes.has(point.index)) errors.push(`Tunnel không được chồng index ${point.index}.`);
       localIndexes.add(point.index);

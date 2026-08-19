@@ -649,6 +649,8 @@ const input = new InputController({
         showNotification(elements.toast, "Hãy vẽ đường trước, sau đó đặt khay trực tiếp lên checkpoint đó.");
       } else if (result?.reason === "gate-needs-path") {
         showNotification(elements.toast, "Gate chỉ được đặt trên Path.");
+      } else if (result?.reason === "gate-needs-priority-point") {
+        showNotification(elements.toast, "Gate phải đứng trước PriorityPoint.");
       } else if (result?.reason === "mystery-needs-fruit") {
         showNotification(elements.toast, "Mystery Fruit chỉ đánh dấu Fruit trong layer đang chọn.");
       } else if (result?.reason === "fruit-on-barrier-endpoint") {
@@ -657,6 +659,8 @@ const input = new InputController({
         showNotification(elements.toast, "Count Barrier chỉ có thể vẽ trên Path.");
       } else if (result?.reason === "tunnel-needs-path") {
         showNotification(elements.toast, "Tunnel chỉ có thể đặt trên Path.");
+      } else if (result?.reason === "tunnel-needs-dead-end") {
+        showNotification(elements.toast, "Tunnel chỉ được đặt tại Dead End.");
       } else if (result?.reason === "tunnel-same-point") {
         showNotification(elements.toast, "Point B không được trùng Point A.");
       } else if (result?.reason === "tunnel-overlap") {
@@ -683,6 +687,12 @@ const input = new InputController({
         showNotification(elements.toast, "Ô này đã có object dùng chung hoặc fruit ở một layer khác.");
       } else if (result?.reason === "element-position-occupied") {
         showNotification(elements.toast, "Ô này đã có element khác.");
+      } else if (result?.reason === "bridge-needs-crossroad") {
+        showNotification(elements.toast, "Bridge chỉ được đặt tại ngã 4.");
+      } else if (result?.reason === "bridge-outside-grid") {
+        showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
+      } else if (result?.reason === "bridge-item-overlap") {
+        showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
       } else if (result?.reason === "grass-on-path") {
         showNotification(elements.toast, "Grass không thể trùng Path. Hãy xóa Path trước.");
       } else if (result?.reason === "terrain-on-path") {
@@ -690,19 +700,15 @@ const input = new InputController({
       } else if (result?.reason === "priority-needs-path") {
         showNotification(elements.toast, "PriorityPoint chỉ được đặt trên Path.");
       } else if (result?.action === "tunnel-point-a-selected") {
-        showNotification(elements.toast, "Point A selected — Choose direction");
-        showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "draft", id: result.tunnelId, entryIndex: 0, step: "direction-a" });
+        showNotification(elements.toast, "Point A complete — Select Tunnel Point B");
       } else if (result?.action === "tunnel-point-b-selected") {
-        showNotification(elements.toast, "Point B selected — Choose direction");
-        showDirectionPicker("tunnel", { x: targetX, y: targetY }, { mode: "draft", id: result.tunnelId, entryIndex: 1, step: "direction-b" });
+        showNotification(elements.toast, `Tunnel #${result.tunnelId} created`);
       } else if (result?.action === "one-way-point-a-selected") {
         showNotification(elements.toast, "Point A selected — Choose direction");
         showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "draft", id: result.oneWayId, entryIndex: 0, step: "direction-a" });
       } else if (result?.action === "one-way-point-b-selected") {
         showNotification(elements.toast, "Point B selected — Choose direction");
         showDirectionPicker("one-way", { x: targetX, y: targetY }, { mode: "draft", id: result.oneWayId, entryIndex: 1, step: "direction-b" });
-      } else if (result?.changed && selectedObject?.kind === "gate") {
-        showDirectionPicker("gate", { x: targetX, y: targetY }, { mode: "edit" });
       } else showEraseFeedback(result);
     }
   },
@@ -925,7 +931,9 @@ function placeInspectorElement(assetId) {
     return placement;
   });
   if (result?.reason === "gate-needs-path") showNotification(elements.toast, "Gate chỉ có thể đặt trên Path.");
+  else if (result?.reason === "gate-needs-priority-point") showNotification(elements.toast, "Gate phải đứng trước PriorityPoint.");
   else if (result?.reason === "tunnel-needs-path") showNotification(elements.toast, "Tunnel chỉ có thể đặt trên Path.");
+  else if (result?.reason === "tunnel-needs-dead-end") showNotification(elements.toast, "Tunnel chỉ được đặt tại Dead End.");
   else if (result?.reason === "tunnel-same-point") showNotification(elements.toast, "Point B không được trùng Point A.");
   else if (result?.reason === "tunnel-overlap") showNotification(elements.toast, "Ô này đã thuộc Tunnel khác.");
   else if (result?.reason === "tunnel-needs-direction-a") showNotification(elements.toast, "Chọn direction cho Point A trước.");
@@ -936,6 +944,9 @@ function placeInspectorElement(assetId) {
   else if (result?.reason === "one-way-needs-direction-a") showNotification(elements.toast, "Chọn direction cho Point A trước.");
   else if (result?.reason === "one-way-needs-direction-b") showNotification(elements.toast, "Chọn direction cho Point B trước.");
   else if (result?.reason === "element-position-occupied") showNotification(elements.toast, "Ô này đã có element khác.");
+  else if (result?.reason === "bridge-needs-crossroad") showNotification(elements.toast, "Bridge chỉ được đặt tại ngã 4.");
+  else if (result?.reason === "bridge-outside-grid") showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
+  else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng visual.");
   else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
 }
 

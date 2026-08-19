@@ -110,7 +110,6 @@ function validateStructure(raw) {
     if (!isValidGateDirection(gate?.direction)) throw new Error(`gateElement[${i}].direction phải là 0, 1, 2 hoặc 3.`);
     if (gateIndexes.has(gate.index)) throw new Error(`gateElement index ${gate.index} bị trùng.`);
     if (bridgeIndexes.has(gate.index)) throw new Error(`Gate và Bridge không được trùng index ${gate.index}.`);
-    if (!pathIndexes.has(gate.index)) throw new Error(`gateElement[${i}].index phải thuộc Path.index.`);
     gateIndexes.add(gate.index);
   });
   const barrierIds = new Set();
@@ -148,7 +147,6 @@ function validateStructure(raw) {
     const localIndexes = new Set();
     tunnel.entryPoints.forEach((point, j) => {
       assertIndex(point?.index, total, `tunnelElement[${i}].entryPoints[${j}].index`);
-      if (!pathIndexes.has(point.index)) throw new Error(`tunnelElement[${i}].entryPoints[${j}].index phải thuộc Path.index.`);
       if (!isValidTunnelDirection(point?.direction)) throw new Error(`tunnelElement[${i}].entryPoints[${j}].direction phải là 0, 1, 2 hoặc 3.`);
       if (localIndexes.has(point.index)) throw new Error(`tunnelElement[${i}].entryPoints không được chứa index trùng.`);
       if (tunnelIndexes.has(point.index)) throw new Error(`Tunnel không được chồng index ${point.index}.`);
@@ -405,7 +403,6 @@ export function serializeLevel(editorData) {
   normalizeTunnelElement(editorData.tunnelElement)
     .forEach((entry) => {
       const points = entry.entryPoints
-        .filter((point) => pathIndexes.has(point.index))
         .map((point) => ({ index: point.index, direction: normalizeTunnelDirection(point.direction) }));
       if (points.length === 2 && points[0].index !== points[1].index) {
         tunnelElement.push({ tunnelId: entry.tunnelId, entryPoints: points });

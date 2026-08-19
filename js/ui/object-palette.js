@@ -30,24 +30,9 @@ export function renderObjectPalette(container, objects, selectedId, { emptyLabel
     }
     if (object.kind === "bridge") {
       button.classList.add("bridge-asset");
-      button.firstElementChild.classList.toggle("vertical-bridge-icon", Number(bridgeAxis) === 1);
-      button.dataset.tooltip = `Bridge · ${Number(bridgeAxis) === 1 ? "Vertical" : "Horizontal"}`;
+      button.dataset.tooltip = "Bridge · Horizontal 3x1";
       button.title = button.dataset.tooltip;
-      button.setAttribute("aria-label", `Bridge. ${Number(bridgeAxis) === 1 ? "Vertical" : "Horizontal"}`);
-      const picker = document.createElement("span");
-      picker.className = "bridge-axis-picker";
-      [
-        ["0", "🟰"],
-        ["1", "🟰"]
-      ].forEach(([direction, label]) => {
-        const option = document.createElement("span");
-        option.className = `bridge-axis-option${String(bridgeAxis) === direction ? " active" : ""}`;
-        option.dataset.bridgeAxis = direction;
-        option.textContent = label;
-        option.title = direction === "0" ? "Horizontal" : "Vertical";
-        picker.appendChild(option);
-      });
-      button.appendChild(picker);
+      button.setAttribute("aria-label", "Bridge. Horizontal 3x1");
     }
     if (object.kind === "gate") {
       button.classList.add("gate-asset");

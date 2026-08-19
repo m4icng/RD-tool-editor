@@ -22,6 +22,7 @@ const sourceFiles = [
   "js/objects/obstacle-object.js",
   "js/objects/bridge-object.js",
   "js/objects/gate-object.js",
+  "js/objects/element-placement-rules.js",
   "js/objects/count-barrier-object.js",
   "js/objects/tunnel-object.js",
   "js/objects/one-way-object.js",

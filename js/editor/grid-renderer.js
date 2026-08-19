@@ -1,10 +1,12 @@
 import { applyBlockItemVisual } from "../core/block-visuals.js";
 import { applyVisualScaleConfig } from "../core/visual-scale.js";
-import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
+import { isBridgeElement } from "../objects/bridge-object.js";
 import { gateDirectionClass, isGateElement } from "../objects/gate-object.js";
 import { findCountBarrierAtIndex } from "../objects/count-barrier-object.js";
-import { findTunnelDraftEntryAtIndex, findTunnelEntryAtIndex, tunnelColor, tunnelDirectionClass, tunnelDirectionIcon } from "../objects/tunnel-object.js";
+import { findTunnelDraftEntryAtIndex, findTunnelEntryAtIndex, isTunnelTool, tunnelColor, tunnelDirectionClass, tunnelDirectionIcon } from "../objects/tunnel-object.js";
 import { findOneWayDraftEntryAtIndex, findOneWayEntryAtIndex, oneWayColor, oneWayDirectionClass, oneWayDirectionIcon } from "../objects/one-way-object.js";
+import { findObject } from "../objects/object-registry.js";
+import { PLACEMENT_MESSAGES, bridgeVisualCells, validateBridgePlacement, validateGatePlacement, validateTunnelPointPlacement } from "../objects/element-placement-rules.js";
 import { cellKey, createMergedLayer, ensureTerrainState, getCell, getTrayVisualCells, isMysteryFruitAt, positionToIndex } from "../utils/grid-utils.js";
 import { samePosition } from "../utils/math-utils.js";
 
@@ -23,6 +25,15 @@ export function renderGrid(container, editorData) {
   container.style.gridTemplateColumns = `repeat(${editorData.grid.columns}, minmax(0, 1fr))`;
   const trayVisuals = new Map();
   const trayCheckpoints = new Map();
+  const bridgeVisuals = new Map();
+  Object.entries(editorData.sharedCells ?? {}).forEach(([key, cell]) => {
+    if (!isBridgeElement(cell?.element)) return;
+    const [bridgeX, bridgeY] = key.split(",").map(Number);
+    const centerIndex = positionToIndex(bridgeX, bridgeY, editorData.grid.columns);
+    bridgeVisualCells(editorData, centerIndex).forEach((visual, visualIndex) => {
+      bridgeVisuals.set(cellKey(visual.x, visual.y), { centerIndex, visualIndex });
+    });
+  });
   Object.entries(editorData.sharedCells ?? {}).forEach(([key, cell]) => {
     if (!["tray", "truck"].includes(cell?.item?.kind)) return;
     const [trayX, trayY] = key.split(",").map(Number);
@@ -49,20 +60,29 @@ export function renderGrid(container, editorData) {
       const grass = Boolean(editorData.grassCells[cellKey(x, y)]);
       const checkpointTray = trayCheckpoints.get(cellKey(x, y));
       const visualTray = trayVisuals.get(cellKey(x, y));
+      const visualBridge = bridgeVisuals.get(cellKey(x, y));
+      const selectedObject = editorData.tool === "item" ? findObject(editorData.selectedAssetId) : null;
+      let placementState = null;
+      if (selectedObject?.kind === "bridge") placementState = validateBridgePlacement(editorData, index);
+      else if (selectedObject?.kind === "gate") placementState = validateGatePlacement(editorData, index);
+      else if (isTunnelTool(selectedObject)) placementState = validateTunnelPointPlacement(editorData, index);
       const cell = document.createElement("button");
       cell.type = "button";
-      cell.className = `grid-cell${grass ? " grass" : " terrain-empty"}${data.path ? " path" : ""}${priorityPoint ? " priority-point" : ""}${countBarrier ? " count-barrier-cell" : ""}${activeBarrier ? " active-count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry || tunnelDraftEntry ? " tunnel-cell" : ""}${tunnelDraftEntry ? " tunnel-draft-cell" : ""}${activeTunnel ? " active-tunnel-cell" : ""}${oneWayEntry || oneWayDraftEntry ? " one-way-cell" : ""}${oneWayDraftEntry ? " one-way-draft-cell" : ""}${activeOneWay ? " active-one-way-cell" : ""}${samePosition(editorData.selectedCell, { x, y }) ? " selected" : ""}`;
+      cell.className = `grid-cell${grass ? " grass" : " terrain-empty"}${data.path ? " path" : ""}${priorityPoint ? " priority-point" : ""}${countBarrier ? " count-barrier-cell" : ""}${activeBarrier ? " active-count-barrier-cell" : ""}${barrierEndpoint ? " count-barrier-endpoint" : ""}${tunnelEntry || tunnelDraftEntry ? " tunnel-cell" : ""}${tunnelDraftEntry ? " tunnel-draft-cell" : ""}${activeTunnel ? " active-tunnel-cell" : ""}${oneWayEntry || oneWayDraftEntry ? " one-way-cell" : ""}${oneWayDraftEntry ? " one-way-draft-cell" : ""}${activeOneWay ? " active-one-way-cell" : ""}${placementState ? (placementState.valid ? " placement-valid" : " placement-invalid") : ""}${samePosition(editorData.selectedCell, { x, y }) ? " selected" : ""}`;
       cell.dataset.x = x;
       cell.dataset.y = y;
       if (tunnelEntry || tunnelDraftEntry) cell.style.setProperty("--tunnel-color", tunnelColor((tunnelEntry?.tunnel ?? tunnelDraftEntry?.draft).tunnelId));
       if (oneWayEntry || oneWayDraftEntry) cell.style.setProperty("--one-way-color", oneWayColor((oneWayEntry?.oneWay ?? oneWayDraftEntry?.draft).oneWayId));
       cell.setAttribute("role", "gridcell");
       cell.setAttribute("aria-label", `Ô Index ${index}${priorityPoint ? ", PriorityPoint" : ""}${grass ? ", Grass" : data.path ? ", Path" : ", Terrain trống"}`);
+      if (placementState) {
+        cell.title = placementState.valid ? "✓ Có thể đặt" : (PLACEMENT_MESSAGES[placementState.reason] ?? "Không thể đặt");
+      }
 
-      if (isBridgeElement(data.element)) {
+      if (visualBridge) {
         const bridge = document.createElement("span");
-        bridge.className = `bridge-preview${normalizeBridgeAxis(data.element.axis) === 1 ? " vertical" : ""}`;
-        bridge.title = normalizeBridgeAxis(data.element.axis) === 1 ? "Bridge Vertical" : "Bridge Horizontal";
+        bridge.className = `bridge-preview bridge-segment segment-${visualBridge.visualIndex}`;
+        bridge.title = visualBridge.visualIndex === 1 ? `Bridge Center #${visualBridge.centerIndex}` : `Bridge Visual #${visualBridge.centerIndex}`;
         bridge.textContent = "🟰";
         cell.appendChild(bridge);
       }

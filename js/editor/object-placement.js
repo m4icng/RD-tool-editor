@@ -1,8 +1,14 @@
 import { findObject, cloneObject } from "../objects/object-registry.js";
-import { TERRAIN_ASSET_IDS } from "../core/constants.js";
+import { BRIDGE_AXES, TERRAIN_ASSET_IDS } from "../core/constants.js";
 import { isPlayerHeadItem, isPlayerHeadLayer } from "../core/player-head-layer-rule.js";
 import { isBridgeElement, normalizeBridgeAxis } from "../objects/bridge-object.js";
 import { isGateElement, normalizeGateDirection } from "../objects/gate-object.js";
+import {
+  bridgeOccupiesIndex,
+  validateBridgePlacement,
+  validateGatePlacement,
+  validateTunnelPointPlacement
+} from "../objects/element-placement-rules.js";
 import { getSmartDeleteTarget } from "./delete-resolver.js";
 import {
   createNewActiveCountBarrier,
@@ -12,7 +18,7 @@ import {
   normalizeCountBarrierElement,
   removeCountBarrierAtIndex
 } from "../objects/count-barrier-object.js";
-import { findTunnelAtIndex, isTunnelTool, placeTunnelDraftPointB, removeTunnelAtIndex, startTunnelDraftAt } from "../objects/tunnel-object.js";
+import { findTunnelAtIndex, isTunnelTool, placeTunnelDraftPointB, removeTunnelAtIndex, setTunnelDraftDirection, startTunnelDraftAt } from "../objects/tunnel-object.js";
 import { findOneWayAtIndex, isOneWayTool, placeOneWayDraftPointB, removeOneWayAtIndex, startOneWayDraftAt } from "../objects/one-way-object.js";
 import {
   cellKey,
@@ -205,7 +211,6 @@ export function eraseAtPosition(state, position, mode = "smart") {
     state.grassCells[key] = true;
     delete state.priorityPoints[key];
     removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
-    removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.tunnelDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.tunnelDraft = null;
     removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.oneWayDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.oneWayDraft = null;
@@ -270,6 +275,10 @@ export function applyTool(state, x, y, toolOverride = null) {
         shared.path = true;
       } else if (object.kind === "fruit") {
         const index = positionToIndex(x, y, state.grid.columns);
+        if (bridgeOccupiesIndex(state, index)) {
+          state.selectedCell = { x, y };
+          return { changed: false, reason: "bridge-item-overlap", objectId: object.id };
+        }
         const barrier = findCountBarrierAtIndex(state, index);
         if (barrier && (barrier.startIndex === index || barrier.endIndex === index)) {
           state.selectedCell = { x, y };
@@ -324,20 +333,20 @@ export function applyTool(state, x, y, toolOverride = null) {
         return { changed: true, action: "count-barrier-updated", barrierId: barrier.barrierId };
       } else if (isTunnelTool(object)) {
         const index = positionToIndex(x, y, state.grid.columns);
-        if (!shared.path) {
+        const tunnelRule = validateTunnelPointPlacement(state, index);
+        if (!tunnelRule.valid) {
           state.selectedCell = { x, y };
-          return { changed: false, reason: "tunnel-needs-path", objectId: object.id };
-        }
-        if (state.tunnelDraft?.step === "direction-a") {
-          state.selectedCell = { x, y };
-          return { changed: false, reason: "tunnel-needs-direction-a", objectId: object.id };
-        }
-        if (state.tunnelDraft?.step === "direction-b") {
-          state.selectedCell = { x, y };
-          return { changed: false, reason: "tunnel-needs-direction-b", objectId: object.id };
+          return { changed: false, reason: tunnelRule.reason, objectId: object.id };
         }
         if (state.tunnelDraft?.step === "point-b") {
           const placement = placeTunnelDraftPointB(state, index);
+          if (placement.changed) {
+            const created = setTunnelDraftDirection(state, tunnelRule.direction);
+            state.selectedCell = { x, y };
+            return created.changed
+              ? { changed: true, action: "tunnel-point-b-selected", tunnelId: created.tunnelId }
+              : created;
+          }
           state.selectedCell = { x, y };
           return placement;
         }
@@ -348,6 +357,13 @@ export function applyTool(state, x, y, toolOverride = null) {
           return { changed: true, action: "tunnel-selected", tunnelId: existing.tunnelId };
         }
         const placement = startTunnelDraftAt(state, index);
+        if (placement.changed) {
+          const directionPlacement = setTunnelDraftDirection(state, tunnelRule.direction);
+          state.selectedCell = { x, y };
+          return directionPlacement.changed
+            ? { changed: true, action: "tunnel-point-a-selected", tunnelId: placement.tunnelId }
+            : directionPlacement;
+        }
         state.selectedCell = { x, y };
         return placement;
       } else if (isOneWayTool(object)) {
@@ -379,15 +395,20 @@ export function applyTool(state, x, y, toolOverride = null) {
         state.selectedCell = { x, y };
         return placement;
       } else if (objectCategory(object) === "element") {
-        if (isGateElement(object) && !shared.path) {
-          return { changed: false, reason: "gate-needs-path", objectId: object.id };
+        if (isBridgeElement(object)) {
+          const bridgeRule = validateBridgePlacement(state, positionToIndex(x, y, state.grid.columns));
+          if (!bridgeRule.valid) return { changed: false, reason: bridgeRule.reason, objectId: object.id };
+        }
+        const gateRule = isGateElement(object) ? validateGatePlacement(state, positionToIndex(x, y, state.grid.columns)) : null;
+        if (gateRule && !gateRule.valid) {
+          return { changed: false, reason: gateRule.reason, objectId: object.id };
         }
         if (shared.element && shared.element.id !== object.id) {
           return { changed: false, reason: "element-position-occupied", objectId: shared.element.id };
         }
         const element = cloneObject(object);
-        if (isBridgeElement(element)) element.axis = normalizeBridgeAxis(state.selectedBridgeAxis ?? element.axis);
-        if (isGateElement(element)) element.direction = normalizeGateDirection(state.selectedGateDirection ?? element.direction);
+        if (isBridgeElement(element)) element.axis = normalizeBridgeAxis(BRIDGE_AXES.HORIZONTAL);
+        if (isGateElement(element)) element.direction = normalizeGateDirection(gateRule.direction);
         shared.element = element;
         if (isBridgeElement(element)) delete state.priorityPoints[key];
       } else {
@@ -466,9 +487,7 @@ export function togglePathAt(state, position) {
   }
   if (!cell.path) {
     cell.item = null;
-    cell.element = null;
     removeCountBarrierAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
-    removeTunnelAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.tunnelDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.tunnelDraft = null;
     removeOneWayAtIndex(state, positionToIndex(position.x, position.y, state.grid.columns));
     if (state.oneWayDraft?.entryPoints?.some((point) => point.index === positionToIndex(position.x, position.y, state.grid.columns))) state.oneWayDraft = null;

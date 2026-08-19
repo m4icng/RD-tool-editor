@@ -627,9 +627,10 @@ const input = new InputController({
       selectCell(editor.data, targetX, targetY);
       editor.notify();
     } else if (eraseOverride || editor.data.tool === "erase") {
-      if (eraseOverride || (editor.data.eraseMode ?? "smart") === "smart") eraseSmartAt({ x: targetX, y: targetY });
-      else if (editor.data.eraseMode === "select") eraseSelectAt({ x: targetX, y: targetY });
-      else showEraseFeedback(mutate((state) => eraseAtPosition(state, { x: targetX, y: targetY }, state.eraseMode ?? "smart")));
+      const activeEraseMode = editor.data.tool === "erase" ? (editor.data.eraseMode ?? "smart") : "smart";
+      if (activeEraseMode === "smart") eraseSmartAt({ x: targetX, y: targetY });
+      else if (activeEraseMode === "select") eraseSelectAt({ x: targetX, y: targetY });
+      else showEraseFeedback(mutate((state) => eraseAtPosition(state, { x: targetX, y: targetY }, activeEraseMode)));
     } else if (editor.data.tool === "select" && !eraseOverride) {
       selectCell(editor.data, targetX, targetY);
       editor.notify();

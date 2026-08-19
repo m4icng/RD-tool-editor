@@ -13,17 +13,8 @@ export const TOOL_LABELS = Object.freeze({
 });
 
 export const ERASE_MODE_LABELS = Object.freeze({
-  smart: "Auto",
-  path: "Path",
-  grass: "Grass",
-  item: "Item",
-  "mystery-fruit": "Mystery Fruit",
-  bridge: "Bridge",
-  gate: "Gate",
-  tunnel: "Tunnel",
-  "one-way": "One Way",
-  "count-barrier": "Count Barrier",
-  tray: "Tray"
+  smart: "Smart",
+  select: "Select"
 });
 
 export const TERRAIN_ASSET_IDS = Object.freeze({

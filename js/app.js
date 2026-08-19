@@ -31,7 +31,8 @@ import {
   setOneWayEntryDirection,
   setOneWayEntryIndex
 } from "./objects/one-way-object.js";
-import { applyTool, clearEntireMap, eraseAtPosition, getEraseTargets, togglePathAt } from "./editor/object-placement.js";
+import { getDeleteTargets } from "./editor/delete-resolver.js";
+import { applyTool, clearEntireMap, eraseAtPosition, togglePathAt } from "./editor/object-placement.js";
 import { selectCell, changeSelectedTruckCapacity } from "./editor/selection-manager.js";
 import { renderGrid } from "./editor/grid-renderer.js";
 import { InputController } from "./editor/input-controller.js";
@@ -466,7 +467,7 @@ function showEraseChoiceMenu(position, targets) {
   const rect = cell?.getBoundingClientRect();
   const menu = document.createElement("div");
   menu.className = "erase-choice-menu";
-  menu.innerHTML = `<strong>Xóa gì tại ô ${positionToIndex(position.x, position.y, editor.data.grid.columns)}?</strong>`;
+  menu.innerHTML = `<strong>XÓA TẠI INDEX ${positionToIndex(position.x, position.y, editor.data.grid.columns)}</strong>`;
   targets.forEach((target) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -545,20 +546,26 @@ function showDirectionPicker(type, position, { mode = "draft", id = null, entryI
 }
 
 function eraseSmartAt(position) {
-  const targets = getEraseTargets(editor.data, position);
+  hideEraseChoiceMenu();
+  const result = mutate((state) => eraseAtPosition(state, position, "smart"));
+  if (!result?.changed) {
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    return;
+  }
+  showEraseFeedback(result);
+}
+
+function eraseSelectAt(position) {
+  const targets = getDeleteTargets(editor.data, position);
   if (targets.length === 0) {
     selectCell(editor.data, position.x, position.y);
     editor.notify();
     return;
   }
-  if (targets.length > 1) {
-    selectCell(editor.data, position.x, position.y);
-    editor.notify();
-    showEraseChoiceMenu(position, targets);
-    return;
-  }
-  hideEraseChoiceMenu();
-  showEraseFeedback(mutate((state) => eraseAtPosition(state, position, targets[0].mode)));
+  selectCell(editor.data, position.x, position.y);
+  editor.notify();
+  showEraseChoiceMenu(position, targets);
 }
 
 const input = new InputController({
@@ -578,7 +585,8 @@ const input = new InputController({
         .some((visual) => visual.x === x && visual.y === y);
       return hasVisualCell ? { x: deliverX, y: deliverY } : null;
     }).find(Boolean);
-    const routeVisualToTray = visualTray && (eraseOverride || editor.data.tool !== "terrain");
+    const isDeleteFlow = eraseOverride || editor.data.tool === "erase";
+    const routeVisualToTray = visualTray && !isDeleteFlow && editor.data.tool !== "terrain";
     if (routeVisualToTray && !eraseOverride && editor.data.tool !== "erase") {
       editor.data.tool = "select";
       selectCell(editor.data, visualTray.x, visualTray.y);
@@ -618,8 +626,10 @@ const input = new InputController({
       editor.data.tool = "select";
       selectCell(editor.data, targetX, targetY);
       editor.notify();
-    } else if ((eraseOverride || editor.data.tool === "erase") && (eraseOverride || (editor.data.eraseMode ?? "smart") === "smart")) {
-      eraseSmartAt({ x: targetX, y: targetY });
+    } else if (eraseOverride || editor.data.tool === "erase") {
+      if (eraseOverride || (editor.data.eraseMode ?? "smart") === "smart") eraseSmartAt({ x: targetX, y: targetY });
+      else if (editor.data.eraseMode === "select") eraseSelectAt({ x: targetX, y: targetY });
+      else showEraseFeedback(mutate((state) => eraseAtPosition(state, { x: targetX, y: targetY }, state.eraseMode ?? "smart")));
     } else if (editor.data.tool === "select" && !eraseOverride) {
       selectCell(editor.data, targetX, targetY);
       editor.notify();

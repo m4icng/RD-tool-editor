@@ -47,21 +47,12 @@
             <button class="tool-btn" type="button" data-tool="item"><span class="tool-icon">✦</span><span class="tool-label">Đặt item</span><span class="shortcut">2</span></button>
             <button class="tool-btn" type="button" data-tool="select"><span class="tool-icon">↖</span><span class="tool-label">Chọn ô</span><span class="shortcut">3</span></button>
             <div class="tool-menu erase-tool-menu">
-              <button class="tool-btn" id="eraseToolBtn" type="button" data-tool="erase" aria-haspopup="menu" aria-controls="eraseOptions" aria-expanded="false"><span class="tool-icon">⌫</span><span class="tool-label">Xóa: Auto</span><span class="shortcut">4</span></button>
+              <button class="tool-btn" id="eraseToolBtn" type="button" data-tool="erase" aria-haspopup="menu" aria-controls="eraseOptions" aria-expanded="false"><span class="tool-icon">⌫</span><span class="tool-label">Xóa: Smart</span><span class="shortcut">4</span></button>
               <div class="erase-options" id="eraseOptions" role="menu" aria-label="Tùy chọn xóa">
                 <button class="erase-option danger" type="button" role="menuitem" data-erase-action="all"><span>🧹</span><span>Xóa toàn bộ map</span></button>
                 <div class="erase-divider" role="separator"></div>
-                <button class="erase-option active" type="button" role="menuitemradio" aria-checked="true" data-erase-mode="smart"><span>⌫</span><span>Auto</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="path"><span>◦</span><span>Path</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="grass"><span>▦</span><span>Grass</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="item"><span>✦</span><span>Item</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="mystery-fruit"><span>?</span><span>Mystery Fruit</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="bridge"><span>=</span><span>Bridge</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="gate"><span>›</span><span>Gate</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="tunnel"><span>→</span><span>Tunnel</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="one-way"><span>▲</span><span>One Way</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="count-barrier"><span>#</span><span>Count Barrier</span><i>✓</i></button>
-                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="tray"><span>▣</span><span>Tray</span><i>✓</i></button>
+                <button class="erase-option active" type="button" role="menuitemradio" aria-checked="true" data-erase-mode="smart"><span>🧹</span><span>Smart Delete</span><i>✓</i></button>
+                <button class="erase-option" type="button" role="menuitemradio" aria-checked="false" data-erase-mode="select"><span>⌖</span><span>Select Delete</span><i>✓</i></button>
               </div>
             </div>
           </div>

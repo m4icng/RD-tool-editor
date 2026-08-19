@@ -22,17 +22,8 @@ const TOOL_LABELS = Object.freeze({
 });
 
 const ERASE_MODE_LABELS = Object.freeze({
-  smart: "Auto",
-  path: "Path",
-  grass: "Grass",
-  item: "Item",
-  "mystery-fruit": "Mystery Fruit",
-  bridge: "Bridge",
-  gate: "Gate",
-  tunnel: "Tunnel",
-  "one-way": "One Way",
-  "count-barrier": "Count Barrier",
-  tray: "Tray"
+  smart: "Smart",
+  select: "Select"
 });
 
 const TERRAIN_ASSET_IDS = Object.freeze({
@@ -2652,7 +2643,94 @@ class LevelFileManager {
 }
 
 
+// ---- js/editor/delete-resolver.js ----
+
+
+
+
+
+
+
+function activeLayerContext(state, position) {
+  const layer = state.layers?.find((candidate) => candidate.id === state.activeLayerId);
+  if (!layer || !position) return null;
+  const key = cellKey(position.x, position.y);
+  const rawShared = state.sharedCells?.[key] ?? { path: false, item: null, element: null };
+  return {
+    layer,
+    key,
+    layerNumber: Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer),
+    shared: { ...rawShared, item: visibleSharedItemForLayer(rawShared.item, state, layer.id) },
+    layerCell: layer.cells?.[key] ?? { item: null },
+    index: positionToIndex(position.x, position.y, state.grid.columns)
+  };
+}
+
+function targetLabel(target) {
+  return {
+    priority: "PriorityPoint",
+    path: "Path",
+    grass: "Grass",
+    item: "Item",
+    "mystery-fruit": "Mystery Fruit",
+    bridge: "Bridge",
+    gate: "Gate",
+    tunnel: "Tunnel",
+    "one-way": "One Way",
+    "count-barrier": "Count Barrier",
+    tray: "Tray"
+  }[target] ?? target;
+}
+
+function trayAtTrayPosition(state, index) {
+  return Object.entries(state.sharedCells ?? {}).find(([key, cell]) => {
+    if (!["tray", "truck"].includes(cell.item?.kind)) return false;
+    const [deliverX, deliverY] = key.split(",").map(Number);
+    if (!Number.isInteger(deliverX) || !Number.isInteger(deliverY)) return false;
+    const trayPosition = getTrayVisualPosition(cell.item, { x: deliverX, y: deliverY });
+    return positionToIndex(trayPosition.x, trayPosition.y, state.grid.columns) === index;
+  });
+}
+
+function getElementTargets(state, context) {
+  const targets = [];
+  if (isBridgeElement(context.shared.element)) targets.push({ mode: "bridge", label: targetLabel("bridge") });
+  if (isGateElement(context.shared.element)) targets.push({ mode: "gate", label: targetLabel("gate") });
+  const tunnel = findTunnelAtIndex(state, context.index);
+  if (tunnel) targets.push({ mode: "tunnel", label: `Tunnel #${tunnel.tunnelId}` });
+  const oneWay = findOneWayAtIndex(state, context.index);
+  if (oneWay) targets.push({ mode: "one-way", label: `One Way #${oneWay.oneWayId}` });
+  const barrier = findCountBarrierAtIndex(state, context.index);
+  if (barrier) targets.push({ mode: "count-barrier", label: `Count Barrier #${barrier.barrierId}` });
+  if (context.layerCell.item?.kind === "fruit" && isMysteryFruitAt(state, context.layerNumber, context.index)) {
+    targets.push({ mode: "mystery-fruit", label: targetLabel("mystery-fruit") });
+  }
+  return targets;
+}
+
+function getDeleteTargets(state, position) {
+  ensureTerrainState(state);
+  const context = activeLayerContext(state, position);
+  if (!context) return [];
+  const targets = [];
+  targets.push(...getElementTargets(state, context));
+  if (context.layerCell.item?.kind === "fruit" || (context.shared.item && !["tray", "truck"].includes(context.shared.item.kind))) {
+    targets.push({ mode: "item", label: context.layerCell.item?.label ?? context.shared.item?.label ?? targetLabel("item") });
+  }
+  if (state.priorityPoints?.[context.key]) targets.push({ mode: "priority", label: targetLabel("priority") });
+  if (trayAtTrayPosition(state, context.index)) targets.push({ mode: "tray", label: targetLabel("tray") });
+  if (context.shared.path) targets.push({ mode: "path", label: targetLabel("path") });
+  if (state.grassCells?.[context.key]) targets.push({ mode: "grass", label: targetLabel("grass") });
+  return targets;
+}
+
+function getSmartDeleteTarget(state, position) {
+  return getDeleteTargets(state, position)[0] ?? null;
+}
+
+
 // ---- js/editor/object-placement.js ----
+
 
 
 
@@ -2695,64 +2773,25 @@ function nextTrayId(state) {
   return id;
 }
 
+function removeTrayAtTrayPosition(state, position) {
+  const targetIndex = positionToIndex(position.x, position.y, state.grid.columns);
+  const entry = Object.entries(state.sharedCells ?? {}).find(([key, cell]) => {
+    if (!["tray", "truck"].includes(cell.item?.kind)) return false;
+    const [deliverX, deliverY] = key.split(",").map(Number);
+    const trayPosition = cell.item.trayPosition ?? { x: deliverX, y: deliverY - 1 };
+    return positionToIndex(trayPosition.x, trayPosition.y, state.grid.columns) === targetIndex;
+  });
+  if (!entry) return false;
+  const [key, shared] = entry;
+  shared.item = null;
+  if (!shared.path && !shared.element) delete state.sharedCells[key];
+  return true;
+}
+
 function objectCategory(object) {
   if (!object) return null;
   if (object?.category) return object.category;
   return ["snake", "fruit", "tray", "truck"].includes(object?.kind) ? "item" : "element";
-}
-
-function activeLayerContext(state, position) {
-  const layer = state.layers.find((candidate) => candidate.id === state.activeLayerId);
-  if (!layer || !position) return null;
-  const key = cellKey(position.x, position.y);
-  const rawShared = state.sharedCells?.[key] ?? { path: false, item: null, element: null };
-  return {
-    layer,
-    key,
-    layerNumber: Number.isInteger(layer.layer) ? layer.layer : state.layers.indexOf(layer),
-    shared: { ...rawShared, item: visibleSharedItemForLayer(rawShared.item, state, layer.id) },
-    layerCell: layer.cells?.[key] ?? { item: null },
-    index: positionToIndex(position.x, position.y, state.grid.columns)
-  };
-}
-
-function targetLabel(target) {
-  return {
-    priority: "PriorityPoint",
-    path: "Path",
-    grass: "Grass",
-    item: "Item",
-    "mystery-fruit": "Mystery Fruit",
-    bridge: "Bridge",
-    gate: "Gate",
-    tunnel: "Tunnel",
-    "one-way": "One Way",
-    "count-barrier": "Count Barrier",
-    tray: "Tray"
-  }[target] ?? target;
-}
-
-function getEraseTargets(state, position) {
-  ensureTerrainState(state);
-  const context = activeLayerContext(state, position);
-  if (!context) return [];
-  const targets = [];
-  if (state.priorityPoints?.[context.key]) targets.push({ mode: "priority", label: targetLabel("priority") });
-  if (isBridgeElement(context.shared.element)) targets.push({ mode: "bridge", label: targetLabel("bridge") });
-  if (isGateElement(context.shared.element)) targets.push({ mode: "gate", label: targetLabel("gate") });
-  if (findTunnelAtIndex(state, context.index)) targets.push({ mode: "tunnel", label: targetLabel("tunnel") });
-  if (findOneWayAtIndex(state, context.index)) targets.push({ mode: "one-way", label: targetLabel("one-way") });
-  if (findCountBarrierAtIndex(state, context.index)) targets.push({ mode: "count-barrier", label: targetLabel("count-barrier") });
-  if (context.layerCell.item?.kind === "fruit" && isMysteryFruitAt(state, context.layerNumber, context.index)) {
-    targets.push({ mode: "mystery-fruit", label: targetLabel("mystery-fruit") });
-  }
-  if (context.layerCell.item?.kind === "fruit" || (context.shared.item && !["tray", "truck"].includes(context.shared.item.kind))) {
-    targets.push({ mode: "item", label: context.layerCell.item?.label ?? context.shared.item?.label ?? targetLabel("item") });
-  }
-  if (["tray", "truck"].includes(context.shared.item?.kind)) targets.push({ mode: "tray", label: targetLabel("tray") });
-  if (context.shared.path) targets.push({ mode: "path", label: targetLabel("path") });
-  if (state.grassCells?.[context.key]) targets.push({ mode: "grass", label: targetLabel("grass") });
-  return targets;
 }
 
 function eraseCellLayers(shared, layerCell, mode, { protectPath = false, allowPlayerHeadDelete = true } = {}) {
@@ -2818,11 +2857,18 @@ function eraseAtPosition(state, position, mode = "smart") {
   if (!layer || !position) return { changed: false };
   ensureTerrainState(state);
   state.sharedCells ??= {};
+  if (mode === "smart") {
+    const target = getSmartDeleteTarget(state, position);
+    if (!target) {
+      state.selectedCell = { x: position.x, y: position.y };
+      return { changed: false };
+    }
+    return eraseAtPosition(state, position, target.mode);
+  }
   const key = cellKey(position.x, position.y);
   const beforeJunctions = junctionKeys(state);
   const shared = structuredClone(state.sharedCells[key] ?? { path: false, item: null, element: null });
   const layerCell = structuredClone(layer.cells[key] ?? { item: null });
-  const hasElement = Boolean(shared.element) || objectCategory(shared.item) === "element";
   if (mode === "grass") {
     if (!state.grassCells[key]) return { changed: false };
     delete state.grassCells[key];
@@ -2856,14 +2902,12 @@ function eraseAtPosition(state, position, mode = "smart") {
     state.selectedCell = { x: position.x, y: position.y };
     return { changed, removed: changed ? "one-way" : null };
   }
-  if (mode === "smart" && state.priorityPoints[key] && !hasElement) {
-    delete state.priorityPoints[key];
+  if (mode === "tray" && removeTrayAtTrayPosition(state, position)) {
     state.selectedCell = { x: position.x, y: position.y };
-    return { changed: true, removed: "priority-point" };
+    return { changed: true, removed: "tray" };
   }
-  const fruitOnOtherLayer = state.layers.some((candidate) => candidate.id !== layer.id && candidate.cells?.[key]?.item?.kind === "fruit");
   const result = eraseCellLayers(shared, layerCell, mode, {
-    protectPath: mode === "smart" && fruitOnOtherLayer,
+    protectPath: false,
     allowPlayerHeadDelete: isPlayerHeadLayer(state, layer.id)
   });
   if (result.removed === "layer-item") {
@@ -6832,6 +6876,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
 
 
 
+
 const byId = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
@@ -7233,7 +7278,7 @@ function showEraseChoiceMenu(position, targets) {
   const rect = cell?.getBoundingClientRect();
   const menu = document.createElement("div");
   menu.className = "erase-choice-menu";
-  menu.innerHTML = `<strong>Xóa gì tại ô ${positionToIndex(position.x, position.y, editor.data.grid.columns)}?</strong>`;
+  menu.innerHTML = `<strong>XÓA TẠI INDEX ${positionToIndex(position.x, position.y, editor.data.grid.columns)}</strong>`;
   targets.forEach((target) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -7312,20 +7357,26 @@ function showDirectionPicker(type, position, { mode = "draft", id = null, entryI
 }
 
 function eraseSmartAt(position) {
-  const targets = getEraseTargets(editor.data, position);
+  hideEraseChoiceMenu();
+  const result = mutate((state) => eraseAtPosition(state, position, "smart"));
+  if (!result?.changed) {
+    selectCell(editor.data, position.x, position.y);
+    editor.notify();
+    return;
+  }
+  showEraseFeedback(result);
+}
+
+function eraseSelectAt(position) {
+  const targets = getDeleteTargets(editor.data, position);
   if (targets.length === 0) {
     selectCell(editor.data, position.x, position.y);
     editor.notify();
     return;
   }
-  if (targets.length > 1) {
-    selectCell(editor.data, position.x, position.y);
-    editor.notify();
-    showEraseChoiceMenu(position, targets);
-    return;
-  }
-  hideEraseChoiceMenu();
-  showEraseFeedback(mutate((state) => eraseAtPosition(state, position, targets[0].mode)));
+  selectCell(editor.data, position.x, position.y);
+  editor.notify();
+  showEraseChoiceMenu(position, targets);
 }
 
 const input = new InputController({
@@ -7345,7 +7396,8 @@ const input = new InputController({
         .some((visual) => visual.x === x && visual.y === y);
       return hasVisualCell ? { x: deliverX, y: deliverY } : null;
     }).find(Boolean);
-    const routeVisualToTray = visualTray && (eraseOverride || editor.data.tool !== "terrain");
+    const isDeleteFlow = eraseOverride || editor.data.tool === "erase";
+    const routeVisualToTray = visualTray && !isDeleteFlow && editor.data.tool !== "terrain";
     if (routeVisualToTray && !eraseOverride && editor.data.tool !== "erase") {
       editor.data.tool = "select";
       selectCell(editor.data, visualTray.x, visualTray.y);
@@ -7385,8 +7437,11 @@ const input = new InputController({
       editor.data.tool = "select";
       selectCell(editor.data, targetX, targetY);
       editor.notify();
-    } else if ((eraseOverride || editor.data.tool === "erase") && (eraseOverride || (editor.data.eraseMode ?? "smart") === "smart")) {
-      eraseSmartAt({ x: targetX, y: targetY });
+    } else if (eraseOverride || editor.data.tool === "erase") {
+      const activeEraseMode = editor.data.tool === "erase" ? (editor.data.eraseMode ?? "smart") : "smart";
+      if (activeEraseMode === "smart") eraseSmartAt({ x: targetX, y: targetY });
+      else if (activeEraseMode === "select") eraseSelectAt({ x: targetX, y: targetY });
+      else showEraseFeedback(mutate((state) => eraseAtPosition(state, { x: targetX, y: targetY }, activeEraseMode)));
     } else if (editor.data.tool === "select" && !eraseOverride) {
       selectCell(editor.data, targetX, targetY);
       editor.notify();

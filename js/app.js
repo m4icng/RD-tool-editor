@@ -52,7 +52,7 @@ import { createPlayableController, validatePlayableLevel } from "./gameplay/play
 import { renderDataSummary } from "./ui/data-summary.js";
 import { initPanelResizers } from "./ui/panel-resizer.js";
 import { createGridIndexTooltip } from "./ui/grid-index-tooltip.js";
-import { applyGeneratePreset, createRandomGenerateSeed, normalizeGenerateSettings } from "./generate/generate-settings.js";
+import { applyGeneratePreset, normalizeGenerateSettings } from "./generate/generate-settings.js";
 import { analyzeGenerateSource } from "./generate/generate-source.js";
 import { applyGeneratedPreview, generatePreview, resetGeneratedItems } from "./generate/generator-engine.js";
 import { renderGenerateControls, renderGenerateResults } from "./ui/generate-panel.js";
@@ -747,6 +747,7 @@ document.querySelector(".tabs").addEventListener("click", (event) => {
 });
 
 function setGenerateSetting(key, value, type = "text") {
+  if (key === "seed") return;
   const current = normalizeGenerateSettings(editor.data.generateSettings);
   const nextValue = type === "percent" ? Number(value) / 100 : value;
   editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue });
@@ -763,10 +764,6 @@ function validateGenerateSourceOnly() {
 }
 
 function createGeneratePreviewResult({ silent = false } = {}) {
-  editor.data.generateSettings = normalizeGenerateSettings({
-    ...editor.data.generateSettings,
-    seed: createRandomGenerateSeed()
-  });
   const result = generatePreview(editor.data, editor.data.generateSettings);
   generateLastResult = result;
   generatePreviewState = result.ok ? result.preview : null;

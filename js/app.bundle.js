@@ -2968,88 +2968,88 @@ class LevelFileManager {
 
 
 // ---- js/generate/generate-settings.js ----
-const GENERATOR_VERSION = "1.1.0";
+const GENERATOR_VERSION = "1.2.0";
 
 const GENERATE_PRESETS = Object.freeze({
   De: {
-    clusterRatio: 0.9,
+    clusterRatio: 0.92,
     maxClusterSizePerBranch: 4,
-    branchDistributionBalance: 0.9,
-    routeChoicePressure: 0.18,
-    narrowPathUsage: 0.18,
-    loopRiskPressure: 0.15,
-    layerDistributionBalance: 0.92,
-    spawnSafetyDistance: 6,
+    branchDistributionBalance: 0.94,
+    routeChoicePressure: 0.12,
+    narrowPathUsage: 0.12,
+    loopRiskPressure: 0.1,
+    layerDistributionBalance: 0.94,
+    spawnSafetyDistance: 7,
     maxImmediateChainCount: 1,
-    nextLayerTrapPressure: 0.1,
-    avgTailLengthTarget: 5,
-    tailLengthCap: 9,
-    tailLengthGrowthCurve: "linear",
+    nextLayerTrapPressure: 0.08,
+    avgTailLengthTarget: 3,
+    tailLengthCap: 5,
+    tailLengthGrowthCurve: "flat",
     tailLengthVariance: 1,
-    releaseDelayTarget: 5,
-    unreleasedInventoryTarget: 0.22,
-    maxUnreleasedItems: 7,
-    releaseDistanceWeight: 0.35
+    releaseDelayTarget: 4,
+    unreleasedInventoryTarget: 0.18,
+    maxUnreleasedItems: 5,
+    releaseDistanceWeight: 0.28
   },
   Thuong: {
-    clusterRatio: 0.8,
-    maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.75,
-    routeChoicePressure: 0.45,
-    narrowPathUsage: 0.32,
-    loopRiskPressure: 0.3,
-    layerDistributionBalance: 0.8,
-    spawnSafetyDistance: 4,
+    clusterRatio: 0.9,
+    maxClusterSizePerBranch: 5,
+    branchDistributionBalance: 0.86,
+    routeChoicePressure: 0.32,
+    narrowPathUsage: 0.24,
+    loopRiskPressure: 0.22,
+    layerDistributionBalance: 0.88,
+    spawnSafetyDistance: 5,
     maxImmediateChainCount: 2,
-    nextLayerTrapPressure: 0.32,
-    avgTailLengthTarget: 8,
-    tailLengthCap: 14,
+    nextLayerTrapPressure: 0.24,
+    avgTailLengthTarget: 4,
+    tailLengthCap: 6,
     tailLengthGrowthCurve: "linear",
     tailLengthVariance: 2,
-    releaseDelayTarget: 9,
-    unreleasedInventoryTarget: 0.42,
-    maxUnreleasedItems: 12,
-    releaseDistanceWeight: 0.55
+    releaseDelayTarget: 6,
+    unreleasedInventoryTarget: 0.28,
+    maxUnreleasedItems: 6,
+    releaseDistanceWeight: 0.42
   },
   Kho: {
-    clusterRatio: 0.68,
+    clusterRatio: 0.86,
     maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.58,
-    routeChoicePressure: 0.68,
-    narrowPathUsage: 0.58,
-    loopRiskPressure: 0.56,
-    layerDistributionBalance: 0.68,
-    spawnSafetyDistance: 3,
+    branchDistributionBalance: 0.76,
+    routeChoicePressure: 0.58,
+    narrowPathUsage: 0.44,
+    loopRiskPressure: 0.42,
+    layerDistributionBalance: 0.84,
+    spawnSafetyDistance: 4,
     maxImmediateChainCount: 3,
-    nextLayerTrapPressure: 0.58,
-    avgTailLengthTarget: 11,
-    tailLengthCap: 18,
-    tailLengthGrowthCurve: "ramp",
+    nextLayerTrapPressure: 0.4,
+    avgTailLengthTarget: 5,
+    tailLengthCap: 7,
+    tailLengthGrowthCurve: "sawtooth",
     tailLengthVariance: 3,
-    releaseDelayTarget: 14,
-    unreleasedInventoryTarget: 0.58,
-    maxUnreleasedItems: 17,
-    releaseDistanceWeight: 0.72
+    releaseDelayTarget: 8,
+    unreleasedInventoryTarget: 0.36,
+    maxUnreleasedItems: 7,
+    releaseDistanceWeight: 0.58
   },
   ChuyenGia: {
-    clusterRatio: 0.55,
+    clusterRatio: 0.82,
     maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.45,
-    routeChoicePressure: 0.86,
-    narrowPathUsage: 0.78,
-    loopRiskPressure: 0.78,
-    layerDistributionBalance: 0.56,
-    spawnSafetyDistance: 2,
+    branchDistributionBalance: 0.66,
+    routeChoicePressure: 0.76,
+    narrowPathUsage: 0.58,
+    loopRiskPressure: 0.56,
+    layerDistributionBalance: 0.78,
+    spawnSafetyDistance: 3,
     maxImmediateChainCount: 4,
-    nextLayerTrapPressure: 0.8,
-    avgTailLengthTarget: 14,
-    tailLengthCap: 22,
+    nextLayerTrapPressure: 0.54,
+    avgTailLengthTarget: 6,
+    tailLengthCap: 8,
     tailLengthGrowthCurve: "peak-late",
     tailLengthVariance: 4,
-    releaseDelayTarget: 18,
-    unreleasedInventoryTarget: 0.72,
-    maxUnreleasedItems: 22,
-    releaseDistanceWeight: 0.9
+    releaseDelayTarget: 10,
+    unreleasedInventoryTarget: 0.44,
+    maxUnreleasedItems: 8,
+    releaseDistanceWeight: 0.72
   }
 });
 
@@ -3069,6 +3069,7 @@ const MULTI_BRANCH_MODE_LABELS = Object.freeze({
 const TAIL_CURVE_LABELS = Object.freeze({
   linear: "Tuyến tính",
   flat: "Phẳng",
+  sawtooth: "Răng cưa",
   ramp: "Tăng dần",
   "peak-late": "Khó cuối màn"
 });
@@ -3095,7 +3096,7 @@ const GENERATE_SETTING_FIELDS = Object.freeze([
 
 function createDefaultGenerateSettings() {
   return {
-    seed: 12345,
+    seed: createRandomGenerateSeed(),
     maxRetries: 50,
     difficultyPreset: "Thuong",
     multiBranchMode: "balanced",
@@ -3121,7 +3122,10 @@ function normalizeGenerateSettings(value = {}) {
   if (settings.difficultyPreset === "Hard") settings.difficultyPreset = "Kho";
   if (settings.difficultyPreset === "Expert") settings.difficultyPreset = "ChuyenGia";
   settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Thuong";
-  settings.seed = Math.max(0, Math.floor(Number(settings.seed) || defaults.seed));
+  const numericSeed = Number(settings.seed);
+  settings.seed = Number.isFinite(numericSeed) && numericSeed > 0
+    ? Math.floor(numericSeed)
+    : createRandomGenerateSeed();
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
   settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
   settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
@@ -3699,7 +3703,7 @@ function validateDifficultyMetrics(meta, settings) {
 }
 
 function generatePreview(state, rawSettings = {}) {
-  const settingsResult = validateGenerateSettings(rawSettings);
+  const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
   const settings = normalizeGenerateSettings(settingsResult.settings);
   const source = analyzeGenerateSource(state);
   const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
@@ -5745,9 +5749,8 @@ function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Phân bổ</h2><span>Có seed</span></div>
+      <div class="section-heading"><h2>Phân bổ</h2><span>Tự động</span></div>
       <div class="generate-field-grid">
-        <label class="generate-field"><span>Mã ngẫu nhiên</span><input type="number" data-generate-setting="seed" min="0" step="1" value="${settings.seed}"></label>
         <label class="generate-field"><span>Số lần thử lại</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
         <label class="generate-field wide"><span>Chế độ nhiều nhánh</span>
           <select data-generate-setting="multiBranchMode">
@@ -8960,6 +8963,7 @@ document.querySelector(".tabs").addEventListener("click", (event) => {
 });
 
 function setGenerateSetting(key, value, type = "text") {
+  if (key === "seed") return;
   const current = normalizeGenerateSettings(editor.data.generateSettings);
   const nextValue = type === "percent" ? Number(value) / 100 : value;
   editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue });
@@ -8976,10 +8980,6 @@ function validateGenerateSourceOnly() {
 }
 
 function createGeneratePreviewResult({ silent = false } = {}) {
-  editor.data.generateSettings = normalizeGenerateSettings({
-    ...editor.data.generateSettings,
-    seed: createRandomGenerateSeed()
-  });
   const result = generatePreview(editor.data, editor.data.generateSettings);
   generateLastResult = result;
   generatePreviewState = result.ok ? result.preview : null;

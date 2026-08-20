@@ -3,7 +3,7 @@ import { createLayer, reindexLayers } from "../core/editor-state.js";
 import { createFruit } from "../objects/fruit-object.js";
 import { pathConnectionsAt } from "../objects/element-placement-rules.js";
 import { cellKey, indexToPosition } from "../utils/grid-utils.js";
-import { GENERATOR_VERSION, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
+import { GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
 import { analyzeGenerateSource, branchCellsForIndexes, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
 
 function createRandom(seed) {
@@ -306,7 +306,7 @@ function validateDifficultyMetrics(meta, settings) {
 }
 
 export function generatePreview(state, rawSettings = {}) {
-  const settingsResult = validateGenerateSettings(rawSettings);
+  const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
   const settings = normalizeGenerateSettings(settingsResult.settings);
   const source = analyzeGenerateSource(state);
   const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];

@@ -83,9 +83,8 @@ export function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Phân bổ</h2><span>Có seed</span></div>
+      <div class="section-heading"><h2>Phân bổ</h2><span>Tự động</span></div>
       <div class="generate-field-grid">
-        <label class="generate-field"><span>Mã ngẫu nhiên</span><input type="number" data-generate-setting="seed" min="0" step="1" value="${settings.seed}"></label>
         <label class="generate-field"><span>Số lần thử lại</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
         <label class="generate-field wide"><span>Chế độ nhiều nhánh</span>
           <select data-generate-setting="multiBranchMode">

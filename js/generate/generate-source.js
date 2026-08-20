@@ -163,7 +163,6 @@ export function analyzeGenerateSource(state) {
   const pathIndexes = collectPathIndexes(state);
   const requirements = collectTrayRequirements(state);
   const validByLayer = collectValidCellsByLayer(state, requirements.map((entry) => entry.layerIndex));
-  const requiredByLayer = new Map();
   requirements.forEach((entry) => {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
       issues.push(createGeneratorIssue({
@@ -175,7 +174,6 @@ export function analyzeGenerateSource(state) {
       }));
       return;
     }
-    requiredByLayer.set(entry.layerIndex, (requiredByLayer.get(entry.layerIndex) ?? 0) + entry.amount);
   });
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
@@ -191,21 +189,17 @@ export function analyzeGenerateSource(state) {
       suggestion: "Thêm lớp khay và số lượng vật phẩm trong tab LevelDes."
     }));
   }
-  requiredByLayer.forEach((required, layerIndex) => {
-    const validSlots = validByLayer.get(layerIndex)?.length ?? 0;
-    if (required > validSlots) {
-      issues.push(createGeneratorIssue({
-        code: "NOT_ENOUGH_VALID_CELLS",
-        message: `Lớp ${layerIndex + 1} cần ${required} vật phẩm nhưng chỉ có ${validSlots} ô hợp lệ.`,
-        layerIndex,
-        suggestion: "Thêm ô đường ray hợp lệ hoặc giảm yêu cầu trong khay."
-      }));
-    }
-  });
   const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
   const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
   const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
   const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
+  if (totalRequired > totalValidSlots) {
+    issues.push(createGeneratorIssue({
+      code: "NOT_ENOUGH_VALID_CELLS",
+      message: `Tổng yêu cầu cần ${totalRequired} vật phẩm nhưng các layer path chỉ có ${totalValidSlots} ô hợp lệ.`,
+      suggestion: "Thêm layer/path hợp lệ hoặc giảm tổng yêu cầu trong khay."
+    }));
+  }
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     issues,
@@ -213,7 +207,8 @@ export function analyzeGenerateSource(state) {
     requirements,
     validByLayer,
     stats: {
-      layers: state.layers?.length ?? 0,
+      layers: validByLayer.size,
+      editorLayers: state.layers?.length ?? 0,
       trays: trayCount,
       priorityPoints: priorityCount,
       totalRequired,

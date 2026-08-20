@@ -187,3 +187,4 @@ Level chỉ được xem là hợp lệ khi:
 - 2026-08-20: Planner ưu tiên future tray demand trong từng map layer để layer đầu có thể chứa item phục vụ tray layer 3-4.
 - 2026-08-20: Thêm spatial spread theo vùng map để tránh dồn nhiều cụm vào một phía và bỏ trống vùng còn lại.
 - 2026-08-20: Hạn chế index item trùng giữa hai map layer liền kề, target overlap 10-25% tùy độ rộng map.
+- 2026-08-20: Chia đều tổng item theo số layer path hợp lệ, không cố định khoảng 27-30 item mỗi layer.

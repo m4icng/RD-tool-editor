@@ -3292,7 +3292,6 @@ function analyzeGenerateSource(state) {
   const pathIndexes = collectPathIndexes(state);
   const requirements = collectTrayRequirements(state);
   const validByLayer = collectValidCellsByLayer(state, requirements.map((entry) => entry.layerIndex));
-  const requiredByLayer = new Map();
   requirements.forEach((entry) => {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
       issues.push(createGeneratorIssue({
@@ -3304,7 +3303,6 @@ function analyzeGenerateSource(state) {
       }));
       return;
     }
-    requiredByLayer.set(entry.layerIndex, (requiredByLayer.get(entry.layerIndex) ?? 0) + entry.amount);
   });
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
@@ -3320,21 +3318,17 @@ function analyzeGenerateSource(state) {
       suggestion: "Thêm lớp khay và số lượng vật phẩm trong tab LevelDes."
     }));
   }
-  requiredByLayer.forEach((required, layerIndex) => {
-    const validSlots = validByLayer.get(layerIndex)?.length ?? 0;
-    if (required > validSlots) {
-      issues.push(createGeneratorIssue({
-        code: "NOT_ENOUGH_VALID_CELLS",
-        message: `Lớp ${layerIndex + 1} cần ${required} vật phẩm nhưng chỉ có ${validSlots} ô hợp lệ.`,
-        layerIndex,
-        suggestion: "Thêm ô đường ray hợp lệ hoặc giảm yêu cầu trong khay."
-      }));
-    }
-  });
   const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
   const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
   const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
   const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
+  if (totalRequired > totalValidSlots) {
+    issues.push(createGeneratorIssue({
+      code: "NOT_ENOUGH_VALID_CELLS",
+      message: `Tổng yêu cầu cần ${totalRequired} vật phẩm nhưng các layer path chỉ có ${totalValidSlots} ô hợp lệ.`,
+      suggestion: "Thêm layer/path hợp lệ hoặc giảm tổng yêu cầu trong khay."
+    }));
+  }
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     issues,
@@ -3342,7 +3336,8 @@ function analyzeGenerateSource(state) {
     requirements,
     validByLayer,
     stats: {
-      layers: state.layers?.length ?? 0,
+      layers: validByLayer.size,
+      editorLayers: state.layers?.length ?? 0,
       trays: trayCount,
       priorityPoints: priorityCount,
       totalRequired,
@@ -3784,23 +3779,33 @@ function quotaKey(layerIndex, itemId) {
 }
 
 function deriveGeneratedMapLayerCount(state, source) {
-  const explicitCount = Math.max(1, state.layers?.length ?? 1);
-  const trayLayerCount = new Set(source.requirements.map((entry) => entry.layerIndex)).size;
-  const densityCount = Math.max(1, Math.ceil((source.stats.totalRequired || 1) / 32));
-  const autoCount = Math.max(1, Math.min(8, densityCount, Math.max(1, trayLayerCount)));
-  if (explicitCount > 1 && explicitCount < trayLayerCount) return explicitCount;
-  return autoCount;
+  const pathLayerCount = Math.max(1, source.validByLayer?.size ?? state.layers?.length ?? 1);
+  const totalRequired = Math.max(1, source.stats.totalRequired || 1);
+  return Math.max(1, Math.min(totalRequired, pathLayerCount));
 }
 
-function generatedLayerBudgets(total, layerCount) {
+function generatedLayerBudgets(total, layerCount, source) {
   if (layerCount <= 1) return [total];
-  const weights = Array.from({ length: layerCount }, (_, index) => 1 + index / Math.max(1, layerCount - 1) * 0.22);
-  const weightSum = weights.reduce((sum, value) => sum + value, 0);
-  const budgets = weights.map((weight) => Math.floor(total * weight / weightSum));
+  const capacities = Array.from({ length: layerCount }, (_, index) => source.validByLayer.get(index)?.length ?? 0);
+  const totalCapacity = capacities.reduce((sum, value) => sum + value, 0);
+  if (totalCapacity > 0 && total > totalCapacity) return capacities;
+  const budgets = Array.from({ length: layerCount }, () => Math.floor(total / layerCount));
   let remainder = total - budgets.reduce((sum, value) => sum + value, 0);
-  for (let index = budgets.length - 1; remainder > 0; index = (index - 1 + budgets.length) % budgets.length) {
+  let cursor = 0;
+  while (remainder > 0 && cursor < layerCount * 3) {
+    const index = cursor % layerCount;
+    if (budgets[index] < (capacities[index] || Number.POSITIVE_INFINITY)) {
+      budgets[index] += 1;
+      remainder -= 1;
+    }
+    cursor += 1;
+  }
+  cursor = 0;
+  while (remainder > 0) {
+    const index = cursor % layerCount;
     budgets[index] += 1;
     remainder -= 1;
+    cursor += 1;
   }
   return budgets;
 }
@@ -3833,7 +3838,7 @@ function demandSpan(source) {
 
 function buildAdaptiveLayerRequirements(state, source, settings, random) {
   const layerCount = deriveGeneratedMapLayerCount(state, source);
-  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount);
+  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount, source);
   const span = demandSpan(source);
   const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
   const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);

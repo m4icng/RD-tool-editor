@@ -220,23 +220,33 @@ function quotaKey(layerIndex, itemId) {
 }
 
 function deriveGeneratedMapLayerCount(state, source) {
-  const explicitCount = Math.max(1, state.layers?.length ?? 1);
-  const trayLayerCount = new Set(source.requirements.map((entry) => entry.layerIndex)).size;
-  const densityCount = Math.max(1, Math.ceil((source.stats.totalRequired || 1) / 32));
-  const autoCount = Math.max(1, Math.min(8, densityCount, Math.max(1, trayLayerCount)));
-  if (explicitCount > 1 && explicitCount < trayLayerCount) return explicitCount;
-  return autoCount;
+  const pathLayerCount = Math.max(1, source.validByLayer?.size ?? state.layers?.length ?? 1);
+  const totalRequired = Math.max(1, source.stats.totalRequired || 1);
+  return Math.max(1, Math.min(totalRequired, pathLayerCount));
 }
 
-function generatedLayerBudgets(total, layerCount) {
+function generatedLayerBudgets(total, layerCount, source) {
   if (layerCount <= 1) return [total];
-  const weights = Array.from({ length: layerCount }, (_, index) => 1 + index / Math.max(1, layerCount - 1) * 0.22);
-  const weightSum = weights.reduce((sum, value) => sum + value, 0);
-  const budgets = weights.map((weight) => Math.floor(total * weight / weightSum));
+  const capacities = Array.from({ length: layerCount }, (_, index) => source.validByLayer.get(index)?.length ?? 0);
+  const totalCapacity = capacities.reduce((sum, value) => sum + value, 0);
+  if (totalCapacity > 0 && total > totalCapacity) return capacities;
+  const budgets = Array.from({ length: layerCount }, () => Math.floor(total / layerCount));
   let remainder = total - budgets.reduce((sum, value) => sum + value, 0);
-  for (let index = budgets.length - 1; remainder > 0; index = (index - 1 + budgets.length) % budgets.length) {
+  let cursor = 0;
+  while (remainder > 0 && cursor < layerCount * 3) {
+    const index = cursor % layerCount;
+    if (budgets[index] < (capacities[index] || Number.POSITIVE_INFINITY)) {
+      budgets[index] += 1;
+      remainder -= 1;
+    }
+    cursor += 1;
+  }
+  cursor = 0;
+  while (remainder > 0) {
+    const index = cursor % layerCount;
     budgets[index] += 1;
     remainder -= 1;
+    cursor += 1;
   }
   return budgets;
 }
@@ -269,7 +279,7 @@ function demandSpan(source) {
 
 function buildAdaptiveLayerRequirements(state, source, settings, random) {
   const layerCount = deriveGeneratedMapLayerCount(state, source);
-  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount);
+  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount, source);
   const span = demandSpan(source);
   const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
   const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);

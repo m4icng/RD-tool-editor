@@ -3514,6 +3514,14 @@ function validateGeneratedQuotas(generatedItems, source) {
   return issues;
 }
 
+function estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClusterRatio, settings }) {
+  if (delayedCount <= 0) return 0;
+  const densityPressure = Math.ceil(settings.releaseDelayTarget * Math.min(1, itemDensity) * (1 + settings.releaseDistanceWeight));
+  const colorMixPressure = Math.ceil(settings.maxClusterSizePerBranch * Math.max(0.25, 1 - actualClusterRatio));
+  const scalePressure = Math.ceil(Math.sqrt(delayedCount) * settings.unreleasedInventoryTarget);
+  return Math.min(delayedCount, Math.max(settings.maxClusterSizePerBranch, densityPressure + colorMixPressure + scalePressure));
+}
+
 function generatedMetrics(generatedItems, settings, source) {
   const byBranch = new Set(generatedItems.map((item) => item.branchId).filter(Boolean));
   const byLayer = new Map();
@@ -3535,15 +3543,14 @@ function generatedMetrics(generatedItems, settings, source) {
     : 0;
   const maxReleaseDelay = generatedItems.reduce((max, item) => Math.max(max, Number(item.releaseDelay) || 0), 0);
   const itemDensity = source.stats.itemDensity ?? 0;
-  const unreleasedInventoryRatio = generatedItems.length
-    ? generatedItems.filter((item) => item.releaseDelay >= settings.releaseDelayTarget).length / generatedItems.length
-    : 0;
+  const delayedCount = generatedItems.filter((item) => item.releaseDelay >= settings.releaseDelayTarget).length;
+  const unreleasedInventoryRatio = generatedItems.length ? delayedCount / generatedItems.length : 0;
   const avgTailLength = Math.max(1, settings.avgTailLengthTarget
     + (avgReleaseDelay / Math.max(1, settings.releaseDelayTarget) - 1) * settings.releaseDistanceWeight * 2
     + itemDensity * settings.tailLengthVariance
     + (1 - actualClusterRatio) * settings.tailLengthVariance);
   const peakTailLength = Math.ceil(avgTailLength + settings.tailLengthVariance + Math.min(settings.maxClusterSizePerBranch, generatedItems.length) * itemDensity);
-  const maxUnreleasedItems = Math.ceil(generatedItems.length * Math.max(unreleasedInventoryRatio, settings.unreleasedInventoryTarget * 0.5));
+  const maxUnreleasedItems = estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClusterRatio, settings });
   const spawnTrapCount = generatedItems.filter((item) => item.spawnRisk).length;
   const decisionPointFrequency = source.pathIndexes?.length ? (source.stats.priorityPoints ?? 0) / source.pathIndexes.length : 0;
   const loopRiskScore = generatedItems.length

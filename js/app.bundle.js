@@ -3012,24 +3012,24 @@ const GENERATE_PRESETS = Object.freeze({
     releaseDistanceWeight: 0.42
   },
   Kho: {
-    clusterRatio: 0.86,
+    clusterRatio: 0.9,
     maxClusterSizePerBranch: 6,
     branchDistributionBalance: 0.76,
-    routeChoicePressure: 0.58,
-    narrowPathUsage: 0.44,
-    loopRiskPressure: 0.42,
+    routeChoicePressure: 0.52,
+    narrowPathUsage: 0.38,
+    loopRiskPressure: 0.36,
     layerDistributionBalance: 0.84,
     spawnSafetyDistance: 4,
     maxImmediateChainCount: 3,
-    nextLayerTrapPressure: 0.4,
+    nextLayerTrapPressure: 0.34,
     avgTailLengthTarget: 5,
-    tailLengthCap: 7,
+    tailLengthCap: 10,
     tailLengthGrowthCurve: "sawtooth",
-    tailLengthVariance: 3,
-    releaseDelayTarget: 8,
-    unreleasedInventoryTarget: 0.36,
-    maxUnreleasedItems: 7,
-    releaseDistanceWeight: 0.58
+    tailLengthVariance: 2,
+    releaseDelayTarget: 7,
+    unreleasedInventoryTarget: 0.32,
+    maxUnreleasedItems: 8,
+    releaseDistanceWeight: 0.5
   },
   ChuyenGia: {
     clusterRatio: 0.82,
@@ -3702,15 +3702,7 @@ function validateDifficultyMetrics(meta, settings) {
   return issues;
 }
 
-function generatePreview(state, rawSettings = {}) {
-  const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
-  const settings = normalizeGenerateSettings(settingsResult.settings);
-  const source = analyzeGenerateSource(state);
-  const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
-  if (errors.length > 0) {
-    return { ok: false, preview: null, source, settings, issues: errors };
-  }
-
+function generatePreviewAttempt(state, source, settings) {
   const random = createRandom(settings.seed);
   const next = structuredClone(state);
   const maxLayerIndex = Math.max(0, ...source.requirements.map((entry) => entry.layerIndex));
@@ -3790,6 +3782,38 @@ function generatePreview(state, rawSettings = {}) {
   next.generatedItems = generatedItems;
   next.generationMeta = meta;
   return { ok: true, preview: next, source, settings, issues: [], generatedItems, meta };
+}
+
+function canRetryGeneration(result) {
+  const retryableCodes = new Set([
+    "ITEM_QUOTA_MISMATCH",
+    "LAYER_QUOTA_MISMATCH",
+    "ITEM_ID_QUOTA_MISMATCH",
+    "TAIL_PRESSURE_EXCEEDED",
+    "RELEASE_PRESSURE_EXCEEDED",
+    "NEXT_LAYER_SPAWN_TRAP"
+  ]);
+  return result?.issues?.some((issue) => retryableCodes.has(issue.code));
+}
+
+function generatePreview(state, rawSettings = {}) {
+  const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
+  const baseSettings = normalizeGenerateSettings(settingsResult.settings);
+  const source = analyzeGenerateSource(state);
+  const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
+  if (errors.length > 0) {
+    return { ok: false, preview: null, source, settings: baseSettings, issues: errors };
+  }
+
+  let lastResult = null;
+  for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
+    const settings = normalizeGenerateSettings({ ...baseSettings, seed: createRandomGenerateSeed() });
+    const result = generatePreviewAttempt(state, source, settings);
+    if (result.ok) return result;
+    lastResult = result;
+    if (!canRetryGeneration(result)) return result;
+  }
+  return lastResult ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
 }
 
 function applyGeneratedPreview(targetState, previewState) {

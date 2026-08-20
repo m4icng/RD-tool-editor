@@ -305,15 +305,7 @@ function validateDifficultyMetrics(meta, settings) {
   return issues;
 }
 
-export function generatePreview(state, rawSettings = {}) {
-  const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
-  const settings = normalizeGenerateSettings(settingsResult.settings);
-  const source = analyzeGenerateSource(state);
-  const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
-  if (errors.length > 0) {
-    return { ok: false, preview: null, source, settings, issues: errors };
-  }
-
+function generatePreviewAttempt(state, source, settings) {
   const random = createRandom(settings.seed);
   const next = structuredClone(state);
   const maxLayerIndex = Math.max(0, ...source.requirements.map((entry) => entry.layerIndex));
@@ -393,6 +385,38 @@ export function generatePreview(state, rawSettings = {}) {
   next.generatedItems = generatedItems;
   next.generationMeta = meta;
   return { ok: true, preview: next, source, settings, issues: [], generatedItems, meta };
+}
+
+function canRetryGeneration(result) {
+  const retryableCodes = new Set([
+    "ITEM_QUOTA_MISMATCH",
+    "LAYER_QUOTA_MISMATCH",
+    "ITEM_ID_QUOTA_MISMATCH",
+    "TAIL_PRESSURE_EXCEEDED",
+    "RELEASE_PRESSURE_EXCEEDED",
+    "NEXT_LAYER_SPAWN_TRAP"
+  ]);
+  return result?.issues?.some((issue) => retryableCodes.has(issue.code));
+}
+
+export function generatePreview(state, rawSettings = {}) {
+  const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
+  const baseSettings = normalizeGenerateSettings(settingsResult.settings);
+  const source = analyzeGenerateSource(state);
+  const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
+  if (errors.length > 0) {
+    return { ok: false, preview: null, source, settings: baseSettings, issues: errors };
+  }
+
+  let lastResult = null;
+  for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
+    const settings = normalizeGenerateSettings({ ...baseSettings, seed: createRandomGenerateSeed() });
+    const result = generatePreviewAttempt(state, source, settings);
+    if (result.ok) return result;
+    lastResult = result;
+    if (!canRetryGeneration(result)) return result;
+  }
+  return lastResult ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
 }
 
 export function applyGeneratedPreview(targetState, previewState) {

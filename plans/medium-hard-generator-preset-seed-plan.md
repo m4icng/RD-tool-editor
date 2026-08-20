@@ -685,3 +685,4 @@ Pressure
 - 2026-08-20: Lưu plan riêng vào `plans/medium-hard-generator-preset-seed-plan.md`.
 - 2026-08-20: Đồng bộ preset độ khó quanh mốc Medium Hard: cluster 80-90%, cụm tối đa 6, áp lực trung bình 4-6 và peak 7.
 - 2026-08-20: Ẩn trường mã seed trong UI Generate; `generatePreview` luôn tự sinh seed ngẫu nhiên mới khi tạo preview/apply.
+- 2026-08-20: Sửa preset `Khó` để tránh lỗi mặc định `TAIL_PRESSURE_EXCEEDED`/`RELEASE_PRESSURE_EXCEEDED`; engine tự retry seed ngẫu nhiên theo `maxRetries` trước khi báo lỗi.

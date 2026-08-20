@@ -1,4 +1,4 @@
-export const GENERATOR_VERSION = "1.3.0";
+export const GENERATOR_VERSION = "1.4.0";
 
 export const GENERATE_PRESETS = Object.freeze({
   De: { difficultyScore: 0.25 },
@@ -45,8 +45,8 @@ export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
   { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
   { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
-  { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
-  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
+  { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
+  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },

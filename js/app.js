@@ -790,14 +790,15 @@ function validateGenerateSourceOnly() {
 function createGeneratePreviewResult({ silent = false } = {}) {
   const result = generatePreview(editor.data, editor.data.generateSettings);
   generateLastResult = result;
-  generatePreviewState = result.ok ? result.preview : null;
-  generateActiveLayerId = result.ok ? result.preview.activeLayerId : null;
+  generatePreviewState = result.preview ?? null;
+  generateActiveLayerId = result.preview ? result.preview.activeLayerId : null;
   if (!result.ok) {
     editor.data.generationMeta = { ...(editor.data.generationMeta ?? {}), status: "Error" };
   }
   renderAll();
   if (!silent) {
-    showNotification(elements.toast, result.ok ? `Đã tạo bản xem trước ${result.generatedItems.length} vật phẩm.` : `Sinh lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+    const fallbackText = result.preview ? "Đã tạo best candidate cần review" : "Sinh lỗi";
+    showNotification(elements.toast, result.ok ? `Đã tạo bản xem trước ${result.generatedItems.length} vật phẩm.` : `${fallbackText}: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
   }
   return result;
 }
@@ -1099,7 +1100,7 @@ function renderGenerateWorkspace() {
   renderGenerateControls(elements.generateControls, editor.data);
   renderGenerateResults(elements.generateResultCard, editor.data, generateLastResult);
   const hasPreview = Boolean(generatePreviewState);
-  elements.generateApplyBtn.disabled = !hasPreview;
+  elements.generateApplyBtn.disabled = !hasPreview || !generateLastResult?.ok;
   elements.generateResetBtn.disabled = !generateLastAppliedBackup;
 }
 

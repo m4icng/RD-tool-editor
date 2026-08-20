@@ -5,7 +5,7 @@ import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js
 import { normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { normalizeOneWayElement } from "../objects/one-way-object.js";
 import { cellKey, getTrayVisualCells, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
-import { getLayerNumber, isItemLayerLocked, lockedItemLayerTotals } from "./item-layer-locks.js";
+import { getItemIdFromLayerItem, getLayerNumber, isItemLayerLocked, lockedItemLayerTotals } from "./item-layer-locks.js";
 
 const FRUIT_TYPE_BY_ITEM_ID = Object.freeze(Object.fromEntries(
   Object.entries(FRUIT_ITEM_IDS).map(([type, itemId]) => [String(itemId), type])
@@ -190,10 +190,11 @@ export function analyzeGenerateSource(state) {
   const lockedTotals = lockedItemLayerTotals(state);
   const lockedInput = applyLockedLayerInput(rawRequirements, lockedTotals);
   const requirements = lockedInput.requirements;
+  const itemLayerIndexes = (state.layers ?? []).map((layer, order) => getLayerNumber(layer, order));
   const autoLayerIndexes = (state.layers ?? [])
     .map((layer, order) => getLayerNumber(layer, order))
     .filter((layerIndex) => !isItemLayerLocked(state, layerIndex));
-  const allValidByLayer = collectValidCellsByLayer(state, autoLayerIndexes);
+  const allValidByLayer = collectValidCellsByLayer(state, itemLayerIndexes);
   const validByLayer = new Map(autoLayerIndexes.map((layerIndex) => [layerIndex, allValidByLayer.get(layerIndex) ?? []]));
   rawRequirements.forEach((entry) => {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
@@ -213,6 +214,24 @@ export function analyzeGenerateSource(state) {
       message: `Layer khóa đang có dư ${amount} vật phẩm mã ${itemId} so với tổng yêu cầu khay.`,
       suggestion: "Mở khóa layer để generator sửa hoặc giảm item khóa trước khi sinh."
     }));
+  });
+  (state.layers ?? []).forEach((layer, order) => {
+    const layerIndex = getLayerNumber(layer, order);
+    if (!isItemLayerLocked(state, layerIndex)) return;
+    const validIndexes = new Set(allValidByLayer.get(layerIndex) ?? []);
+    Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
+      if (!getItemIdFromLayerItem(cell?.item)) return;
+      const { x, y } = parseCellKey(key);
+      const index = positionToIndex(x, y, state.grid.columns);
+      if (validIndexes.has(index)) return;
+      issues.push(createGeneratorIssue({
+        code: "LOCKED_ITEM_INVALID_POSITION",
+        message: `Layer khóa ${layerIndex + 1} có vật phẩm ở ô ${index} không hợp lệ để sinh item.`,
+        layerIndex,
+        index,
+        suggestion: "Di chuyển/xóa item khóa trong LevelDes hoặc mở khóa layer để generator tự sinh lại."
+      }));
+    });
   });
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
@@ -238,6 +257,7 @@ export function analyzeGenerateSource(state) {
   const trayCount = new Set(rawRequirements.map((entry) => entry.trayId)).size;
   const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
   const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
+  const effectiveItemCells = new Set([...(validByLayer.values() ?? [])].flat()).size;
   const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
   const totalDemand = rawRequirements.reduce((sum, entry) => sum + entry.amount, 0);
   if (totalRequired > totalValidSlots) {
@@ -266,6 +286,9 @@ export function analyzeGenerateSource(state) {
       totalRequired,
       totalDemand,
       lockedItems: lockedTotals.total,
+      pathCells: pathIndexes.length,
+      effectiveItemCells,
+      restrictedItemCells: Math.max(0, pathIndexes.length - effectiveItemCells),
       totalValidSlots,
       itemDensity: totalValidSlots > 0 ? totalRequired / totalValidSlots : 0
     }

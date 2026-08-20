@@ -1,5 +1,6 @@
 import { pathConnectionsAt } from "../objects/element-placement-rules.js";
 import { indexToPosition } from "../utils/grid-utils.js";
+import { createAdaptiveRegionLayout } from "./cluster-distribution.js";
 
 const clampAdaptiveValue = (value, min, max) => Math.max(min, Math.min(max, value));
 const roundAdaptiveValue = (value, digits = 0) => Number(value.toFixed(digits));
@@ -75,6 +76,8 @@ export function analyzeAdaptiveLevel(state, source) {
   const topology = collectPathTopology(state, source);
   const demand = collectDemandMetrics(source);
   const release = collectReleaseOpportunityMetrics(state, source);
+  const effectiveCells = [...new Set([...(source.validByLayer?.values?.() ?? [])].flat())];
+  const regionLayout = createAdaptiveRegionLayout(state, effectiveCells);
   const branchCounts = [...(source.validByLayer?.values?.() ?? [])].map((cells) => cells.length);
   const averageLayerCapacity = average(branchCounts);
   const density = source.stats.itemDensity ?? 0;
@@ -90,6 +93,10 @@ export function analyzeAdaptiveLevel(state, source) {
     topology,
     demand,
     release,
+    regionLayout: {
+      ...regionLayout,
+      usableRegionCount: regionLayout.columns * regionLayout.rows
+    },
     capacity: {
       averageLayerCapacity,
       totalValidSlots: source.stats.totalValidSlots,
@@ -103,10 +110,16 @@ export function createTuningState() {
   return {
     iteration: 0,
     repairIntensity: 0,
+    capacityRelief: 0,
+    distributionRelief: 0,
     tailRelief: 0,
     releaseRelief: 0,
     spawnRelief: 0,
-    quotaRelief: 0
+    quotaRelief: 0,
+    layerRelief: 0,
+    trayTimingRelief: 0,
+    searchRelief: 0,
+    activeErrorGroup: null
   };
 }
 
@@ -117,8 +130,10 @@ export function updateTuningState(tuning, result) {
     else if (issue.code === "RELEASE_PRESSURE_EXCEEDED") next.releaseRelief += 1;
     else if (issue.code === "NEXT_LAYER_SPAWN_TRAP") next.spawnRelief += 1;
     else if (issue.code?.includes("QUOTA")) next.quotaRelief += 1;
+    else if (issue.code === "NOT_ENOUGH_VALID_CELLS") next.capacityRelief += 1;
+    else if (issue.code?.includes("DISTRIBUTION") || issue.code?.includes("PLACEMENT")) next.distributionRelief += 1;
   });
-  next.repairIntensity = clampAdaptiveValue(next.tailRelief + next.releaseRelief + next.spawnRelief + next.quotaRelief, 0, 12);
+  next.repairIntensity = clampAdaptiveValue(next.tailRelief + next.releaseRelief + next.spawnRelief + next.quotaRelief + next.capacityRelief + next.distributionRelief + next.layerRelief + next.trayTimingRelief + next.searchRelief, 0, 18);
   return next;
 }
 
@@ -130,20 +145,24 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
   const topologyPressure = analysis.topologyPressure;
   const releaseDistance = analysis.release.averageReleaseDistance || Math.max(3, source.pathIndexes.length / 4);
   const repair = tuning.repairIntensity * 0.025;
+  const capacityRelief = Number(tuning.capacityRelief ?? 0);
+  const distributionRelief = Number(tuning.distributionRelief ?? 0);
+  const layerRelief = Number(tuning.layerRelief ?? 0);
+  const trayTimingRelief = Number(tuning.trayTimingRelief ?? 0);
 
   const targetAverageTail = clampAdaptiveValue(Math.round(2 + difficultyScore * 4.5 + density * 3 + topologyPressure * 2 - tuning.tailRelief * 0.45), 2, 18);
   const targetPeakTail = clampAdaptiveValue(Math.round(targetAverageTail + 2 + difficultyScore * 3 + demandScale + density * 2 - tuning.tailRelief * 0.25), targetAverageTail + 1, 32);
   const safeTailLimit = clampAdaptiveValue(Math.round(targetPeakTail + 2 + topologyPressure * 4 + demandScale), targetPeakTail + 1, 60);
-  const noiseRatio = clampAdaptiveValue(0.24 + difficultyScore * 0.34 + density * 0.1 + analysis.demand.colorDiversityRatio * 0.08 - tuning.releaseRelief * 0.02, 0.18, 0.68);
+  const noiseRatio = clampAdaptiveValue(0.24 + difficultyScore * 0.34 + density * 0.1 + analysis.demand.colorDiversityRatio * 0.08 - tuning.releaseRelief * 0.035 - trayTimingRelief * 0.025, 0.12, 0.68);
   const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.32, 0.82);
-  const clusterMin = 1;
-  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 6 + demandScale * 1.4 - tuning.quotaRelief * 0.25), clusterMin, 20);
-  const clusterAdjacencyRatio = clampAdaptiveValue(0.96 - difficultyScore * 0.16 + density * 0.04 + tuning.releaseRelief * 0.025, 0.72, 0.96);
+  const clusterMin = density < 0.22 && source.stats.totalRequired > 8 ? 2 : 1;
+  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 3.2 + demandScale * 0.9 + capacityRelief * 0.45 - tuning.quotaRelief * 0.15), clusterMin, 6);
+  const clusterAdjacencyRatio = clampAdaptiveValue(0.94 - difficultyScore * 0.12 + density * 0.05 + tuning.releaseRelief * 0.025 + capacityRelief * 0.018 - distributionRelief * 0.02, 0.68, 0.96);
   const highPressureRatio = clampAdaptiveValue(0.16 + difficultyScore * 0.28 + density * 0.14 + topologyPressure * 0.1 - tuning.releaseRelief * 0.02, 0.1, 0.58);
-  const releaseDelayTarget = clampAdaptiveValue(Math.round(releaseDistance * (0.18 + difficultyScore * 0.18) + 2 + topologyPressure * 3 - tuning.releaseRelief), 2, 80);
+  const releaseDelayTarget = clampAdaptiveValue(Math.round(releaseDistance * (0.18 + difficultyScore * 0.18) + 2 + topologyPressure * 3 - tuning.releaseRelief - trayTimingRelief * 0.8), 2, 80);
   const maxUnreleasedItems = clampAdaptiveValue(Math.round(targetPeakTail + clusterMax * 0.5 + highPressureRatio * 5), 3, 80);
-  const spawnSafetyDistance = clampAdaptiveValue(Math.round(8 - difficultyScore * 4 + density * 2 + topologyPressure * 3), 1, 30);
-  const branchDistribution = clampAdaptiveValue(0.96 - difficultyScore * 0.28 + Math.min(0.08, analysis.topology.junctionRatio) - repair, 0.55, 0.98);
+  const spawnSafetyDistance = clampAdaptiveValue(Math.round(8 - difficultyScore * 4 + density * 2 + topologyPressure * 3 - capacityRelief * 0.4), 1, 30);
+  const branchDistribution = clampAdaptiveValue(0.9 - difficultyScore * 0.18 + Math.min(0.08, analysis.topology.junctionRatio) + distributionRelief * 0.045 - capacityRelief * 0.035 - layerRelief * 0.018 - repair * 0.35, 0.48, 0.98);
   const releaseCycleCount = analysis.release.releaseCycleCount;
   const reliefDuration = clampAdaptiveValue(Math.round(2 + (1 - difficultyScore) * 3 + tuning.releaseRelief), 1, 10);
   const continuousGrowthTarget = clampAdaptiveValue(Math.round(targetAverageTail + difficultyScore * 3 + density * 2 - tuning.tailRelief * 0.4), 2, 18);
@@ -164,7 +183,7 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     unreleasedInventoryTarget: highPressureRatio,
     maxUnreleasedItems,
     releaseDistanceWeight: clampAdaptiveValue(0.24 + difficultyScore * 0.38 + topologyPressure * 0.14 - tuning.releaseRelief * 0.025, 0.15, 0.9),
-    layerDistributionBalance: clampAdaptiveValue(0.96 - difficultyScore * 0.18 - analysis.demand.layerImbalance * 0.08, 0.62, 0.98),
+    layerDistributionBalance: clampAdaptiveValue(0.96 - difficultyScore * 0.18 - analysis.demand.layerImbalance * 0.08 - layerRelief * 0.035, 0.55, 0.98),
     spawnSafetyDistance,
     maxImmediateChainCount: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 - tuning.spawnRelief * 0.2), 1, 12),
     nextLayerTrapPressure: clampAdaptiveValue(0.08 + difficultyScore * 0.46 - tuning.spawnRelief * 0.06, 0.02, 0.7),
@@ -184,7 +203,7 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     safeTailLimit,
     noiseRatio: roundAdaptiveValue(noiseRatio, 3),
     requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
-    carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08, 0.18, 0.72), 3),
+    carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08 - trayTimingRelief * 0.02, 0.12, 0.72), 3),
     clusterSizeDistribution: { min: clusterMin, preferred: clampAdaptiveValue(Math.round((clusterMin + clusterMax) / 2), clusterMin, clusterMax), max: clusterMax },
     clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
     highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),
@@ -196,8 +215,8 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     branchDistribution: roundAdaptiveValue(branchDistribution, 3),
     firstTraySafety: Math.round(analysis.release.firstTraySafety),
     repairIntensity: roundAdaptiveValue(tuning.repairIntensity, 2),
-    searchDepth: clampAdaptiveValue(Math.round(8 + difficultyScore * 8 + demandScale * 2 + tuning.repairIntensity), 8, 40),
-    beamWidth: clampAdaptiveValue(Math.round(6 + difficultyScore * 10 + topologyPressure * 8 + tuning.repairIntensity), 6, 48)
+    searchDepth: clampAdaptiveValue(Math.round(8 + difficultyScore * 8 + demandScale * 2 + tuning.repairIntensity + Number(tuning.searchRelief ?? 0)), 8, 40),
+    beamWidth: clampAdaptiveValue(Math.round(6 + difficultyScore * 10 + topologyPressure * 8 + tuning.repairIntensity + distributionRelief), 6, 48)
   };
 
   return {

@@ -1,5 +1,6 @@
 import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_FIELDS, GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
 import { analyzeAdaptiveLevel, estimateDerivedGenerateParameters } from "../generate/adaptive-parameters.js";
+import { buildAutoGenerateProfile } from "../generate/auto-generate-profile.js";
 import { analyzeGenerateSource } from "../generate/generate-source.js";
 import { ITEM_LAYER_LOCKED, getItemLayerLockRows } from "../generate/item-layer-locks.js";
 
@@ -19,6 +20,7 @@ function formatPercent(value) {
 function statusOf(state) {
   const meta = state.generationMeta;
   if (meta?.status === "Error") return "Lỗi";
+  if (meta?.status === "Need Review") return "Cần review";
   if (meta?.status === "Generated" && state.fileDirty) return "Đã chỉnh sửa";
   if (meta?.status === "Generated") return "Đã sinh";
   return "Chưa sinh";
@@ -30,6 +32,7 @@ function statusClass(status) {
     "Đã sinh": "generated",
     "Đã chỉnh sửa": "modified",
     "Lỗi": "error",
+    "Cần review": "need-review",
     "Chưa sinh": "not-generated"
   }[status] ?? "not-generated";
 }
@@ -38,7 +41,7 @@ function issueRows(issues) {
   if (!issues?.length) return `<div class="generate-issue ok"><strong>Ổn</strong><span>Không có lỗi bộ sinh.</span></div>`;
   return issues.map((issue) => `
     <div class="generate-issue ${escapeHtml(issue.severity ?? "error")}">
-      <strong>${escapeHtml(issue.code)}</strong>
+      <strong>${escapeHtml(issue.code)}${issue.errorGroup ? ` · ${escapeHtml(issue.errorGroup)}` : ""}</strong>
       <span>${escapeHtml(issue.message)}</span>
       ${issue.suggestion ? `<small>${escapeHtml(issue.suggestion)}</small>` : ""}
     </div>
@@ -138,16 +141,29 @@ function derivedSummaryCardsHtml(settings, derived, overrideKeys) {
     if (!field) return "";
     const rawValue = overrideKeys.has(card.key) ? settings[card.key] : card.value(derived);
     const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
-    const min = field.type === "percent" ? field.min * 100 : field.min;
-    const max = field.type === "percent" ? field.max * 100 : field.max;
-    const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
     return `
-      <label class="generate-derived-card ${overrideKeys.has(card.key) ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
+      <div class="generate-derived-card ${overrideKeys.has(card.key) ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
         <span>${escapeHtml(card.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
-        <input type="number" data-generate-derived-setting="${escapeHtml(card.key)}" data-generate-setting="${escapeHtml(card.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
-      </label>
+        <strong>${escapeHtml(value)}${field.type === "percent" ? "%" : ""}</strong>
+      </div>
     `;
   }).join("");
+}
+
+function autoBalanceGridHtml(profile, derived) {
+  const cluster = derived?.clusterSizeDistribution ?? {};
+  return `
+    <div class="generate-source-grid compact">
+      <div><span>Map Capacity</span><strong>${profile.map.effectiveCapacity}</strong></div>
+      <div><span>Auto Layers</span><strong>${profile.layer.autoLayers}</strong></div>
+      <div><span>Remaining</span><strong>${Object.values(profile.tray.remainingColorDemand).reduce((sum, value) => sum + value, 0)}</strong></div>
+      <div><span>Density</span><strong>${formatPercent(profile.map.requiredDensity)}</strong></div>
+      <div><span>Tray Layers</span><strong>${profile.tray.trayLayerCount}</strong></div>
+      <div><span>Adaptive Cluster</span><strong>${cluster.min ?? "-"}-${cluster.max ?? "-"}</strong></div>
+      <div><span>Safe Tail</span><strong>${derived?.safeTailLimit ?? "-"}</strong></div>
+      <div><span>Regions</span><strong>${profile.map.usableRegions ?? "-"}</strong></div>
+    </div>
+  `;
 }
 
 export function renderGenerateControls(container, state) {
@@ -157,7 +173,7 @@ export function renderGenerateControls(container, state) {
   const derivedEstimate = estimateDerivedGenerateParameters(source, analysis, settings);
   const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
   const derived = applyDerivedDisplayOverrides(derivedEstimate.derivedParameters, settings, overrideKeys);
-  const overrideCount = settings.derivedOverrideKeys?.length ?? 0;
+  const profile = buildAutoGenerateProfile(state, source, analysis, derived);
 
   container.innerHTML = `
     <section class="control-section">
@@ -167,21 +183,10 @@ export function renderGenerateControls(container, state) {
         <div><span>Khay</span><strong>${source.stats.trays}</strong></div>
         <div><span>Cần sinh</span><strong>${source.stats.totalRequired}</strong></div>
         <div><span>Đã khóa</span><strong>${source.stats.lockedItems}</strong></div>
-        <div><span>Ô hợp lệ</span><strong>${source.stats.totalValidSlots}</strong></div>
+        <div><span>Path usable</span><strong>${source.stats.effectiveItemCells}</strong></div>
+        <div><span>Layer slots</span><strong>${source.stats.totalValidSlots}</strong></div>
       </div>
       <div class="generate-source-note">Đường ray, khay, điểm bắt đầu, điểm giao, điểm ưu tiên và đối tượng đặc biệt chỉ được đọc. Muốn sửa nguồn hãy mở tab LevelDes.</div>
-    </section>
-
-    <section class="control-section">
-      <div class="section-heading"><h2>Phân bổ</h2><span>Tự động</span></div>
-      <div class="generate-field-grid">
-        <label class="generate-field"><span>Số lần thử lại</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
-        <label class="generate-field wide"><span>Chế độ nhiều nhánh</span>
-          <select data-generate-setting="multiBranchMode">
-            ${Object.entries(MULTI_BRANCH_MODE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.multiBranchMode === value ? "selected" : ""}>${label}</option>`).join("")}
-          </select>
-        </label>
-      </div>
     </section>
 
     <section class="control-section">
@@ -198,11 +203,11 @@ export function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Auto Derived</h2><span>${overrideCount ? `${overrideCount} chỉnh tay` : "Level riêng"}</span></div>
+      <div class="section-heading"><h2>Auto Balance</h2><span>Chỉ đọc</span></div>
+      ${autoBalanceGridHtml(profile, derived)}
       <div class="generate-derived-grid">
         ${derivedSummaryCardsHtml(settings, derived, overrideKeys)}
       </div>
-      <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
   `;
 }
@@ -211,8 +216,9 @@ export function renderGenerateResults(container, state, result = null) {
   const source = result?.source ?? analyzeGenerateSource(state);
   const meta = result?.meta ?? state.generationMeta ?? {};
   const derived = meta.derivedParameters ?? result?.settings?.autoDerivedParameters ?? null;
+  const profile = meta.autoGenerateProfile ?? result?.profile ?? null;
   const issues = result?.issues?.length ? result.issues : source.issues;
-  const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
+  const status = result ? (result.ok ? "Sẵn sàng xem trước" : result.preview ? "Cần review" : statusOf(state)) : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
   container.innerHTML = `
     <header class="panel-header">
@@ -255,6 +261,33 @@ export function renderGenerateResults(container, state, result = null) {
           <div><span>Search/Beam</span><strong>${derived ? `${derived.searchDepth}/${derived.beamWidth}` : "-"}</strong></div>
         </div>
       </section>
+      <section class="generate-result-card">
+        <header><h3>Auto Balance</h3><span>${meta.finalStatus ?? profile?.repair?.activeErrorGroup ?? "Runtime"}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Map Capacity</span><strong>${profile?.map?.effectiveCapacity ?? source.stats.effectiveItemCells ?? "-"}</strong></div>
+          <div><span>Restricted</span><strong>${profile?.map?.restrictedCells ?? source.stats.restrictedItemCells ?? "-"}</strong></div>
+          <div><span>Density</span><strong>${profile?.map ? formatPercent(profile.map.requiredDensity) : "-"}</strong></div>
+          <div><span>Density Class</span><strong>${profile?.map?.densityClass ?? "-"}</strong></div>
+          <div><span>Current Attempt</span><strong>${profile?.repair?.currentAttempt ?? meta.autoTuningAttempt ?? "-"}</strong></div>
+          <div><span>Repair</span><strong>${profile?.repair?.activeErrorGroup ?? "-"}</strong></div>
+          <div><span>Best Score</span><strong>${meta.bestCandidateScore ?? "-"}</strong></div>
+          <div><span>Tray/Item Ratio</span><strong>${profile?.tray?.trayLayerPerItemLayerRatio ?? "-"}</strong></div>
+        </div>
+      </section>
+      ${meta.autoRepairStatus?.length ? `
+        <section class="generate-result-card">
+          <header><h3>Lịch sử Auto Repair</h3><span>${meta.autoRepairStatus.length}</span></header>
+          <div class="generate-issue-list">
+            ${meta.autoRepairStatus.slice(-6).map((entry) => `
+              <div class="generate-issue warning">
+                <strong>${escapeHtml(entry.code)} · ${escapeHtml(entry.errorGroup)}</strong>
+                <span>${escapeHtml(entry.status)}</span>
+                <small>${escapeHtml(entry.action)}</small>
+              </div>
+            `).join("")}
+          </div>
+        </section>
+      ` : ""}
       <section class="generate-result-card">
         <header><h3>Cảnh báo & lỗi</h3><span>${issues.length}</span></header>
         <div class="generate-issue-list">${issueRows(issues)}</div>

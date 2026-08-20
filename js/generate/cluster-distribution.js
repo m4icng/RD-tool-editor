@@ -1,7 +1,5 @@
 import { indexToPosition, isInsideGrid, positionToIndex } from "../utils/grid-utils.js";
 
-const REGION_COLUMNS = 3;
-const REGION_ROWS = 4;
 const LOCAL_DENSITY_RADIUS = 4;
 const MAX_DISTRIBUTION_REPAIR_ITERATIONS = 24;
 
@@ -13,12 +11,45 @@ function gridDistance(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-function spatialRegionKey(state, index) {
+export function createAdaptiveRegionLayout(state, validCells = []) {
+  const positions = validCells.map((index) => indexToPosition(index, state.grid.columns));
+  const minX = positions.length ? Math.min(...positions.map((position) => position.x)) : 0;
+  const maxX = positions.length ? Math.max(...positions.map((position) => position.x)) : Math.max(0, state.grid.columns - 1);
+  const minY = positions.length ? Math.min(...positions.map((position) => position.y)) : 0;
+  const maxY = positions.length ? Math.max(...positions.map((position) => position.y)) : Math.max(0, state.grid.rows - 1);
+  const width = Math.max(1, maxX - minX + 1);
+  const height = Math.max(1, maxY - minY + 1);
+  const cellCount = validCells.length;
+  const aspect = height / Math.max(1, width);
+  let columns = 3;
+  let rows = 3;
+  if (cellCount <= 50) {
+    columns = 2;
+    rows = 2;
+  } else if (cellCount >= 180) {
+    columns = 4;
+    rows = 4;
+  } else if (aspect >= 1.35) {
+    columns = 3;
+    rows = 4;
+  } else if (aspect <= 0.74) {
+    columns = 4;
+    rows = 3;
+  }
+  while (columns * rows > 4 && cellCount / Math.max(1, columns * rows) < 3) {
+    if (columns >= rows && columns > 2) columns -= 1;
+    else if (rows > 2) rows -= 1;
+    else break;
+  }
+  return { columns, rows, minX, minY, width, height };
+}
+
+function spatialRegionKey(state, index, layout) {
   const { x, y } = indexToPosition(index, state.grid.columns);
-  const xBandSize = Math.max(1, Math.ceil(state.grid.columns / REGION_COLUMNS));
-  const yBandSize = Math.max(1, Math.ceil(state.grid.rows / REGION_ROWS));
-  const xBand = Math.min(REGION_COLUMNS - 1, Math.floor(x / xBandSize));
-  const yBand = Math.min(REGION_ROWS - 1, Math.floor(y / yBandSize));
+  const xBandSize = Math.max(1, Math.ceil(layout.width / layout.columns));
+  const yBandSize = Math.max(1, Math.ceil(layout.height / layout.rows));
+  const xBand = Math.min(layout.columns - 1, Math.max(0, Math.floor((x - layout.minX) / xBandSize)));
+  const yBand = Math.min(layout.rows - 1, Math.max(0, Math.floor((y - layout.minY) / yBandSize)));
   return `${xBand}:${yBand}`;
 }
 
@@ -70,11 +101,11 @@ function createBranchStats(state, validCells, targetAmount) {
   return { branchByIndex, stats };
 }
 
-function createRegionStats(state, validCells, targetAmount) {
+function createRegionStats(state, validCells, targetAmount, layout) {
   const totalCapacity = Math.max(1, validCells.length);
   const stats = new Map();
   validCells.forEach((index) => {
-    const regionId = spatialRegionKey(state, index);
+    const regionId = spatialRegionKey(state, index, layout);
     const current = stats.get(regionId) ?? {
       regionId,
       capacity: 0,
@@ -91,7 +122,7 @@ function createRegionStats(state, validCells, targetAmount) {
   return stats;
 }
 
-function buildStraightRuns(state, validCells, branchByIndex) {
+function buildStraightRuns(state, validCells, branchByIndex, layout) {
   const validSet = new Set(validCells);
   const runs = [];
   const axes = [
@@ -121,7 +152,7 @@ function buildStraightRuns(state, validCells, branchByIndex) {
         indices,
         length: indices.length,
         branchId: branchByIndex.get(indices[0]) ?? "branch_1",
-        regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)]),
+        regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)], layout),
         usableIndices: indices.slice()
       });
     });
@@ -129,7 +160,7 @@ function buildStraightRuns(state, validCells, branchByIndex) {
   return runs;
 }
 
-function buildClusterCandidates(state, runs, maxClusterSize) {
+function buildClusterCandidates(state, runs, maxClusterSize, layout) {
   const candidates = [];
   runs.forEach((run) => {
     for (let size = 1; size <= maxClusterSize; size += 1) {
@@ -147,7 +178,7 @@ function buildClusterCandidates(state, runs, maxClusterSize) {
           size,
           centerX,
           centerY,
-          regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)]),
+          regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)], layout),
           branchId: run.branchId
         });
       }
@@ -157,14 +188,16 @@ function buildClusterCandidates(state, runs, maxClusterSize) {
 }
 
 export function buildStraightClusterContext(state, validCells, targetAmount, maxClusterSize) {
-  const maxSize = clamp(Number(maxClusterSize) || 6, 1, 20);
+  const maxSize = clamp(Number(maxClusterSize) || 6, 1, 6);
+  const regionLayout = createAdaptiveRegionLayout(state, validCells);
   const branch = createBranchStats(state, validCells, targetAmount);
-  const regionStats = createRegionStats(state, validCells, targetAmount);
-  const straightRuns = buildStraightRuns(state, validCells, branch.branchByIndex);
-  const candidates = buildClusterCandidates(state, straightRuns, maxSize);
+  const regionStats = createRegionStats(state, validCells, targetAmount, regionLayout);
+  const straightRuns = buildStraightRuns(state, validCells, branch.branchByIndex, regionLayout);
+  const candidates = buildClusterCandidates(state, straightRuns, maxSize, regionLayout);
   return {
     validCells,
     maxClusterSize: maxSize,
+    regionLayout,
     regionStats,
     branchStats: branch.stats,
     branchByIndex: branch.branchByIndex,
@@ -419,6 +452,7 @@ export function summarizeSpatialDistribution(context, placedClusters) {
     largestRegionShare: totalItems ? Number((largestRegionItems / totalItems).toFixed(3)) : 0,
     averageClusterSize: placedClusters.length ? Number((totalItems / placedClusters.length).toFixed(2)) : 0,
     averageClusterDistance: Number(averageClusterDistance.toFixed(2)),
+    regionGrid: `${context.regionLayout.columns}x${context.regionLayout.rows}`,
     repairIterationCap: MAX_DISTRIBUTION_REPAIR_ITERATIONS
   };
 }

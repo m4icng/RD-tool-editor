@@ -2972,7 +2972,7 @@ class LevelFileManager {
 
 
 // ---- js/generate/generate-settings.js ----
-const GENERATOR_VERSION = "1.3.0";
+const GENERATOR_VERSION = "1.4.0";
 
 const GENERATE_PRESETS = Object.freeze({
   De: { difficultyScore: 0.25 },
@@ -3019,8 +3019,8 @@ const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
   { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
   { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
-  { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
-  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
+  { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
+  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
@@ -3445,10 +3445,11 @@ function analyzeGenerateSource(state) {
   const lockedTotals = lockedItemLayerTotals(state);
   const lockedInput = applyLockedLayerInput(rawRequirements, lockedTotals);
   const requirements = lockedInput.requirements;
+  const itemLayerIndexes = (state.layers ?? []).map((layer, order) => getLayerNumber(layer, order));
   const autoLayerIndexes = (state.layers ?? [])
     .map((layer, order) => getLayerNumber(layer, order))
     .filter((layerIndex) => !isItemLayerLocked(state, layerIndex));
-  const allValidByLayer = collectValidCellsByLayer(state, autoLayerIndexes);
+  const allValidByLayer = collectValidCellsByLayer(state, itemLayerIndexes);
   const validByLayer = new Map(autoLayerIndexes.map((layerIndex) => [layerIndex, allValidByLayer.get(layerIndex) ?? []]));
   rawRequirements.forEach((entry) => {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
@@ -3468,6 +3469,24 @@ function analyzeGenerateSource(state) {
       message: `Layer khóa đang có dư ${amount} vật phẩm mã ${itemId} so với tổng yêu cầu khay.`,
       suggestion: "Mở khóa layer để generator sửa hoặc giảm item khóa trước khi sinh."
     }));
+  });
+  (state.layers ?? []).forEach((layer, order) => {
+    const layerIndex = getLayerNumber(layer, order);
+    if (!isItemLayerLocked(state, layerIndex)) return;
+    const validIndexes = new Set(allValidByLayer.get(layerIndex) ?? []);
+    Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
+      if (!getItemIdFromLayerItem(cell?.item)) return;
+      const { x, y } = parseCellKey(key);
+      const index = positionToIndex(x, y, state.grid.columns);
+      if (validIndexes.has(index)) return;
+      issues.push(createGeneratorIssue({
+        code: "LOCKED_ITEM_INVALID_POSITION",
+        message: `Layer khóa ${layerIndex + 1} có vật phẩm ở ô ${index} không hợp lệ để sinh item.`,
+        layerIndex,
+        index,
+        suggestion: "Di chuyển/xóa item khóa trong LevelDes hoặc mở khóa layer để generator tự sinh lại."
+      }));
+    });
   });
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
@@ -3493,6 +3512,7 @@ function analyzeGenerateSource(state) {
   const trayCount = new Set(rawRequirements.map((entry) => entry.trayId)).size;
   const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
   const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
+  const effectiveItemCells = new Set([...(validByLayer.values() ?? [])].flat()).size;
   const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
   const totalDemand = rawRequirements.reduce((sum, entry) => sum + entry.amount, 0);
   if (totalRequired > totalValidSlots) {
@@ -3521,6 +3541,9 @@ function analyzeGenerateSource(state) {
       totalRequired,
       totalDemand,
       lockedItems: lockedTotals.total,
+      pathCells: pathIndexes.length,
+      effectiveItemCells,
+      restrictedItemCells: Math.max(0, pathIndexes.length - effectiveItemCells),
       totalValidSlots,
       itemDensity: totalValidSlots > 0 ? totalRequired / totalValidSlots : 0
     }
@@ -3528,221 +3551,8 @@ function analyzeGenerateSource(state) {
 }
 
 
-// ---- js/generate/adaptive-parameters.js ----
-
-
-const clampAdaptiveValue = (value, min, max) => Math.max(min, Math.min(max, value));
-const roundAdaptiveValue = (value, digits = 0) => Number(value.toFixed(digits));
-
-function average(values) {
-  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
-}
-
-function distance(a, b, columns) {
-  const pa = indexToPosition(a, columns);
-  const pb = indexToPosition(b, columns);
-  return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
-}
-
-function collectPathTopology(state, source) {
-  const pathIndexes = source.pathIndexes ?? [];
-  const degrees = pathIndexes.map((index) => pathConnectionsAt(state, index).length);
-  const narrowCount = degrees.filter((degree) => degree <= 1).length;
-  const corridorCount = degrees.filter((degree) => degree === 2).length;
-  const junctionCount = degrees.filter((degree) => degree >= 3).length;
-  return {
-    pathCellCount: pathIndexes.length,
-    deadEndCount: narrowCount,
-    corridorCount,
-    junctionCount,
-    narrowPathRatio: pathIndexes.length ? narrowCount / pathIndexes.length : 0,
-    junctionRatio: pathIndexes.length ? junctionCount / pathIndexes.length : 0
-  };
-}
-
-function collectDemandMetrics(source) {
-  const byLayer = new Map();
-  const byItem = new Map();
-  const trayIds = new Set();
-  source.requirements.forEach((entry) => {
-    byLayer.set(entry.layerIndex, (byLayer.get(entry.layerIndex) ?? 0) + entry.amount);
-    byItem.set(entry.itemId, (byItem.get(entry.itemId) ?? 0) + entry.amount);
-    trayIds.add(entry.trayId);
-  });
-  const layerDemands = [...byLayer.values()];
-  const maxLayerDemand = Math.max(0, ...layerDemands);
-  const minLayerDemand = Math.min(...layerDemands, maxLayerDemand);
-  return {
-    totalRequired: source.stats.totalRequired,
-    trayCount: trayIds.size,
-    demandLayerCount: byLayer.size,
-    itemColorCount: byItem.size,
-    maxLayerDemand,
-    averageLayerDemand: average(layerDemands),
-    layerImbalance: maxLayerDemand ? (maxLayerDemand - minLayerDemand) / maxLayerDemand : 0,
-    colorDiversityRatio: clampAdaptiveValue(byItem.size / 7, 0, 1)
-  };
-}
-
-function collectReleaseOpportunityMetrics(state, source) {
-  const columns = state.grid.columns;
-  const distances = [];
-  source.requirements.forEach((requirement) => {
-    const cells = source.validByLayer.get(requirement.layerIndex) ?? [];
-    cells.forEach((index) => distances.push(distance(index, requirement.deliverIndex, columns)));
-  });
-  const deliverIndexes = new Set(source.requirements.map((entry) => entry.deliverIndex));
-  return {
-    deliverPointCount: deliverIndexes.size,
-    releaseCycleCount: Math.max(1, deliverIndexes.size + (source.stats.priorityPoints ?? 0)),
-    averageReleaseDistance: average(distances),
-    maxReleaseDistance: Math.max(0, ...distances),
-    firstTraySafety: distances.length ? Math.min(...distances) : 0
-  };
-}
-
-function analyzeAdaptiveLevel(state, source) {
-  const topology = collectPathTopology(state, source);
-  const demand = collectDemandMetrics(source);
-  const release = collectReleaseOpportunityMetrics(state, source);
-  const branchCounts = [...(source.validByLayer?.values?.() ?? [])].map((cells) => cells.length);
-  const averageLayerCapacity = average(branchCounts);
-  const density = source.stats.itemDensity ?? 0;
-  const topologyPressure = clampAdaptiveValue(
-    topology.narrowPathRatio * 0.35
-      + topology.junctionRatio * 0.25
-      + density * 0.3
-      + demand.layerImbalance * 0.1,
-    0,
-    1
-  );
-  return {
-    topology,
-    demand,
-    release,
-    capacity: {
-      averageLayerCapacity,
-      totalValidSlots: source.stats.totalValidSlots,
-      itemDensity: density
-    },
-    topologyPressure
-  };
-}
-
-function createTuningState() {
-  return {
-    iteration: 0,
-    repairIntensity: 0,
-    tailRelief: 0,
-    releaseRelief: 0,
-    spawnRelief: 0,
-    quotaRelief: 0
-  };
-}
-
-function updateTuningState(tuning, result) {
-  const next = { ...tuning, iteration: tuning.iteration + 1 };
-  (result?.issues ?? []).forEach((issue) => {
-    if (issue.code === "TAIL_PRESSURE_EXCEEDED") next.tailRelief += 1;
-    else if (issue.code === "RELEASE_PRESSURE_EXCEEDED") next.releaseRelief += 1;
-    else if (issue.code === "NEXT_LAYER_SPAWN_TRAP") next.spawnRelief += 1;
-    else if (issue.code?.includes("QUOTA")) next.quotaRelief += 1;
-  });
-  next.repairIntensity = clampAdaptiveValue(next.tailRelief + next.releaseRelief + next.spawnRelief + next.quotaRelief, 0, 12);
-  return next;
-}
-
-function estimateDerivedGenerateParameters(source, analysis, intent, tuning = createTuningState()) {
-  const intentScore = Number(intent.difficultyScore);
-  const difficultyScore = clampAdaptiveValue(Number.isFinite(intentScore) ? intentScore : 0.45, 0, 1);
-  const density = clampAdaptiveValue(analysis.capacity.itemDensity, 0, 1.5);
-  const demandScale = clampAdaptiveValue(Math.sqrt(Math.max(0, analysis.demand.totalRequired)) / 12, 0, 2);
-  const topologyPressure = analysis.topologyPressure;
-  const releaseDistance = analysis.release.averageReleaseDistance || Math.max(3, source.pathIndexes.length / 4);
-  const repair = tuning.repairIntensity * 0.025;
-
-  const targetAverageTail = clampAdaptiveValue(Math.round(2 + difficultyScore * 4.5 + density * 3 + topologyPressure * 2 - tuning.tailRelief * 0.45), 2, 18);
-  const targetPeakTail = clampAdaptiveValue(Math.round(targetAverageTail + 2 + difficultyScore * 3 + demandScale + density * 2 - tuning.tailRelief * 0.25), targetAverageTail + 1, 32);
-  const safeTailLimit = clampAdaptiveValue(Math.round(targetPeakTail + 2 + topologyPressure * 4 + demandScale), targetPeakTail + 1, 60);
-  const noiseRatio = clampAdaptiveValue(0.24 + difficultyScore * 0.34 + density * 0.1 + analysis.demand.colorDiversityRatio * 0.08 - tuning.releaseRelief * 0.02, 0.18, 0.68);
-  const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.32, 0.82);
-  const clusterMin = 1;
-  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 6 + demandScale * 1.4 - tuning.quotaRelief * 0.25), clusterMin, 20);
-  const clusterAdjacencyRatio = clampAdaptiveValue(0.96 - difficultyScore * 0.16 + density * 0.04 + tuning.releaseRelief * 0.025, 0.72, 0.96);
-  const highPressureRatio = clampAdaptiveValue(0.16 + difficultyScore * 0.28 + density * 0.14 + topologyPressure * 0.1 - tuning.releaseRelief * 0.02, 0.1, 0.58);
-  const releaseDelayTarget = clampAdaptiveValue(Math.round(releaseDistance * (0.18 + difficultyScore * 0.18) + 2 + topologyPressure * 3 - tuning.releaseRelief), 2, 80);
-  const maxUnreleasedItems = clampAdaptiveValue(Math.round(targetPeakTail + clusterMax * 0.5 + highPressureRatio * 5), 3, 80);
-  const spawnSafetyDistance = clampAdaptiveValue(Math.round(8 - difficultyScore * 4 + density * 2 + topologyPressure * 3), 1, 30);
-  const branchDistribution = clampAdaptiveValue(0.96 - difficultyScore * 0.28 + Math.min(0.08, analysis.topology.junctionRatio) - repair, 0.55, 0.98);
-  const releaseCycleCount = analysis.release.releaseCycleCount;
-  const reliefDuration = clampAdaptiveValue(Math.round(2 + (1 - difficultyScore) * 3 + tuning.releaseRelief), 1, 10);
-  const continuousGrowthTarget = clampAdaptiveValue(Math.round(targetAverageTail + difficultyScore * 3 + density * 2 - tuning.tailRelief * 0.4), 2, 18);
-  const releaseAmountTarget = clampAdaptiveValue(Math.round(clusterMax * requiredColorRatio + reliefDuration * 0.35), 1, 9);
-  const layerDensity = source.validByLayer
-    ? [...source.validByLayer.entries()].map(([layerIndex, cells]) => ({
-      layerIndex,
-      density: roundAdaptiveValue((source.requirements.filter((entry) => entry.layerIndex === layerIndex).reduce((sum, entry) => sum + entry.amount, 0)) / Math.max(1, cells.length), 3)
-    }))
-    : [];
-
-  const engineSettings = {
-    avgTailLengthTarget: targetAverageTail,
-    tailLengthCap: safeTailLimit,
-    tailLengthGrowthCurve: difficultyScore >= 0.8 ? "peak-late" : difficultyScore >= 0.58 ? "sawtooth" : difficultyScore <= 0.3 ? "flat" : "linear",
-    tailLengthVariance: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 + topologyPressure * 2 - tuning.tailRelief * 0.35), 1, 12),
-    releaseDelayTarget,
-    unreleasedInventoryTarget: highPressureRatio,
-    maxUnreleasedItems,
-    releaseDistanceWeight: clampAdaptiveValue(0.24 + difficultyScore * 0.38 + topologyPressure * 0.14 - tuning.releaseRelief * 0.025, 0.15, 0.9),
-    layerDistributionBalance: clampAdaptiveValue(0.96 - difficultyScore * 0.18 - analysis.demand.layerImbalance * 0.08, 0.62, 0.98),
-    spawnSafetyDistance,
-    maxImmediateChainCount: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 - tuning.spawnRelief * 0.2), 1, 12),
-    nextLayerTrapPressure: clampAdaptiveValue(0.08 + difficultyScore * 0.46 - tuning.spawnRelief * 0.06, 0.02, 0.7),
-    clusterRatio: clusterAdjacencyRatio,
-    minClusterSizePerBranch: clusterMin,
-    maxClusterSizePerBranch: clusterMax,
-    branchDistributionBalance: branchDistribution,
-    routeChoicePressure: clampAdaptiveValue(0.12 + difficultyScore * 0.68 + analysis.topology.junctionRatio * 0.3, 0.08, 0.92),
-    narrowPathUsage: clampAdaptiveValue(0.08 + difficultyScore * 0.48 + analysis.topology.narrowPathRatio * 0.25 - tuning.tailRelief * 0.02, 0.04, 0.85),
-    loopRiskPressure: clampAdaptiveValue(0.07 + difficultyScore * 0.5 + analysis.topology.narrowPathRatio * 0.22 - tuning.tailRelief * 0.02, 0.04, 0.85)
-  };
-
-  const derivedParameters = {
-    difficultyScore,
-    targetAverageTail,
-    targetPeakTail,
-    safeTailLimit,
-    noiseRatio: roundAdaptiveValue(noiseRatio, 3),
-    requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
-    carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08, 0.18, 0.72), 3),
-    clusterSizeDistribution: { min: clusterMin, preferred: clampAdaptiveValue(Math.round((clusterMin + clusterMax) / 2), clusterMin, clusterMax), max: clusterMax },
-    clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
-    highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),
-    continuousGrowthTarget,
-    releaseAmountTarget,
-    releaseCycleCount,
-    reliefDuration,
-    layerDensity,
-    branchDistribution: roundAdaptiveValue(branchDistribution, 3),
-    firstTraySafety: Math.round(analysis.release.firstTraySafety),
-    repairIntensity: roundAdaptiveValue(tuning.repairIntensity, 2),
-    searchDepth: clampAdaptiveValue(Math.round(8 + difficultyScore * 8 + demandScale * 2 + tuning.repairIntensity), 8, 40),
-    beamWidth: clampAdaptiveValue(Math.round(6 + difficultyScore * 10 + topologyPressure * 8 + tuning.repairIntensity), 6, 48)
-  };
-
-  return {
-    settings: engineSettings,
-    derivedParameters,
-    analysis,
-    tuning
-  };
-}
-
-
 // ---- js/generate/cluster-distribution.js ----
 
-const REGION_COLUMNS = 3;
-const REGION_ROWS = 4;
 const LOCAL_DENSITY_RADIUS = 4;
 const MAX_DISTRIBUTION_REPAIR_ITERATIONS = 24;
 
@@ -3754,12 +3564,45 @@ function gridDistance(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
 
-function spatialRegionKey(state, index) {
+function createAdaptiveRegionLayout(state, validCells = []) {
+  const positions = validCells.map((index) => indexToPosition(index, state.grid.columns));
+  const minX = positions.length ? Math.min(...positions.map((position) => position.x)) : 0;
+  const maxX = positions.length ? Math.max(...positions.map((position) => position.x)) : Math.max(0, state.grid.columns - 1);
+  const minY = positions.length ? Math.min(...positions.map((position) => position.y)) : 0;
+  const maxY = positions.length ? Math.max(...positions.map((position) => position.y)) : Math.max(0, state.grid.rows - 1);
+  const width = Math.max(1, maxX - minX + 1);
+  const height = Math.max(1, maxY - minY + 1);
+  const cellCount = validCells.length;
+  const aspect = height / Math.max(1, width);
+  let columns = 3;
+  let rows = 3;
+  if (cellCount <= 50) {
+    columns = 2;
+    rows = 2;
+  } else if (cellCount >= 180) {
+    columns = 4;
+    rows = 4;
+  } else if (aspect >= 1.35) {
+    columns = 3;
+    rows = 4;
+  } else if (aspect <= 0.74) {
+    columns = 4;
+    rows = 3;
+  }
+  while (columns * rows > 4 && cellCount / Math.max(1, columns * rows) < 3) {
+    if (columns >= rows && columns > 2) columns -= 1;
+    else if (rows > 2) rows -= 1;
+    else break;
+  }
+  return { columns, rows, minX, minY, width, height };
+}
+
+function spatialRegionKey(state, index, layout) {
   const { x, y } = indexToPosition(index, state.grid.columns);
-  const xBandSize = Math.max(1, Math.ceil(state.grid.columns / REGION_COLUMNS));
-  const yBandSize = Math.max(1, Math.ceil(state.grid.rows / REGION_ROWS));
-  const xBand = Math.min(REGION_COLUMNS - 1, Math.floor(x / xBandSize));
-  const yBand = Math.min(REGION_ROWS - 1, Math.floor(y / yBandSize));
+  const xBandSize = Math.max(1, Math.ceil(layout.width / layout.columns));
+  const yBandSize = Math.max(1, Math.ceil(layout.height / layout.rows));
+  const xBand = Math.min(layout.columns - 1, Math.max(0, Math.floor((x - layout.minX) / xBandSize)));
+  const yBand = Math.min(layout.rows - 1, Math.max(0, Math.floor((y - layout.minY) / yBandSize)));
   return `${xBand}:${yBand}`;
 }
 
@@ -3811,11 +3654,11 @@ function createBranchStats(state, validCells, targetAmount) {
   return { branchByIndex, stats };
 }
 
-function createRegionStats(state, validCells, targetAmount) {
+function createRegionStats(state, validCells, targetAmount, layout) {
   const totalCapacity = Math.max(1, validCells.length);
   const stats = new Map();
   validCells.forEach((index) => {
-    const regionId = spatialRegionKey(state, index);
+    const regionId = spatialRegionKey(state, index, layout);
     const current = stats.get(regionId) ?? {
       regionId,
       capacity: 0,
@@ -3832,7 +3675,7 @@ function createRegionStats(state, validCells, targetAmount) {
   return stats;
 }
 
-function buildStraightRuns(state, validCells, branchByIndex) {
+function buildStraightRuns(state, validCells, branchByIndex, layout) {
   const validSet = new Set(validCells);
   const runs = [];
   const axes = [
@@ -3862,7 +3705,7 @@ function buildStraightRuns(state, validCells, branchByIndex) {
         indices,
         length: indices.length,
         branchId: branchByIndex.get(indices[0]) ?? "branch_1",
-        regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)]),
+        regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)], layout),
         usableIndices: indices.slice()
       });
     });
@@ -3870,7 +3713,7 @@ function buildStraightRuns(state, validCells, branchByIndex) {
   return runs;
 }
 
-function buildClusterCandidates(state, runs, maxClusterSize) {
+function buildClusterCandidates(state, runs, maxClusterSize, layout) {
   const candidates = [];
   runs.forEach((run) => {
     for (let size = 1; size <= maxClusterSize; size += 1) {
@@ -3888,7 +3731,7 @@ function buildClusterCandidates(state, runs, maxClusterSize) {
           size,
           centerX,
           centerY,
-          regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)]),
+          regionId: spatialRegionKey(state, indices[Math.floor(indices.length / 2)], layout),
           branchId: run.branchId
         });
       }
@@ -3898,14 +3741,16 @@ function buildClusterCandidates(state, runs, maxClusterSize) {
 }
 
 function buildStraightClusterContext(state, validCells, targetAmount, maxClusterSize) {
-  const maxSize = clamp(Number(maxClusterSize) || 6, 1, 20);
+  const maxSize = clamp(Number(maxClusterSize) || 6, 1, 6);
+  const regionLayout = createAdaptiveRegionLayout(state, validCells);
   const branch = createBranchStats(state, validCells, targetAmount);
-  const regionStats = createRegionStats(state, validCells, targetAmount);
-  const straightRuns = buildStraightRuns(state, validCells, branch.branchByIndex);
-  const candidates = buildClusterCandidates(state, straightRuns, maxSize);
+  const regionStats = createRegionStats(state, validCells, targetAmount, regionLayout);
+  const straightRuns = buildStraightRuns(state, validCells, branch.branchByIndex, regionLayout);
+  const candidates = buildClusterCandidates(state, straightRuns, maxSize, regionLayout);
   return {
     validCells,
     maxClusterSize: maxSize,
+    regionLayout,
     regionStats,
     branchStats: branch.stats,
     branchByIndex: branch.branchByIndex,
@@ -4160,12 +4005,631 @@ function summarizeSpatialDistribution(context, placedClusters) {
     largestRegionShare: totalItems ? Number((largestRegionItems / totalItems).toFixed(3)) : 0,
     averageClusterSize: placedClusters.length ? Number((totalItems / placedClusters.length).toFixed(2)) : 0,
     averageClusterDistance: Number(averageClusterDistance.toFixed(2)),
+    regionGrid: `${context.regionLayout.columns}x${context.regionLayout.rows}`,
     repairIterationCap: MAX_DISTRIBUTION_REPAIR_ITERATIONS
   };
 }
 
 
+// ---- js/generate/adaptive-parameters.js ----
+
+
+
+const clampAdaptiveValue = (value, min, max) => Math.max(min, Math.min(max, value));
+const roundAdaptiveValue = (value, digits = 0) => Number(value.toFixed(digits));
+
+function average(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function distance(a, b, columns) {
+  const pa = indexToPosition(a, columns);
+  const pb = indexToPosition(b, columns);
+  return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
+}
+
+function collectPathTopology(state, source) {
+  const pathIndexes = source.pathIndexes ?? [];
+  const degrees = pathIndexes.map((index) => pathConnectionsAt(state, index).length);
+  const narrowCount = degrees.filter((degree) => degree <= 1).length;
+  const corridorCount = degrees.filter((degree) => degree === 2).length;
+  const junctionCount = degrees.filter((degree) => degree >= 3).length;
+  return {
+    pathCellCount: pathIndexes.length,
+    deadEndCount: narrowCount,
+    corridorCount,
+    junctionCount,
+    narrowPathRatio: pathIndexes.length ? narrowCount / pathIndexes.length : 0,
+    junctionRatio: pathIndexes.length ? junctionCount / pathIndexes.length : 0
+  };
+}
+
+function collectDemandMetrics(source) {
+  const byLayer = new Map();
+  const byItem = new Map();
+  const trayIds = new Set();
+  source.requirements.forEach((entry) => {
+    byLayer.set(entry.layerIndex, (byLayer.get(entry.layerIndex) ?? 0) + entry.amount);
+    byItem.set(entry.itemId, (byItem.get(entry.itemId) ?? 0) + entry.amount);
+    trayIds.add(entry.trayId);
+  });
+  const layerDemands = [...byLayer.values()];
+  const maxLayerDemand = Math.max(0, ...layerDemands);
+  const minLayerDemand = Math.min(...layerDemands, maxLayerDemand);
+  return {
+    totalRequired: source.stats.totalRequired,
+    trayCount: trayIds.size,
+    demandLayerCount: byLayer.size,
+    itemColorCount: byItem.size,
+    maxLayerDemand,
+    averageLayerDemand: average(layerDemands),
+    layerImbalance: maxLayerDemand ? (maxLayerDemand - minLayerDemand) / maxLayerDemand : 0,
+    colorDiversityRatio: clampAdaptiveValue(byItem.size / 7, 0, 1)
+  };
+}
+
+function collectReleaseOpportunityMetrics(state, source) {
+  const columns = state.grid.columns;
+  const distances = [];
+  source.requirements.forEach((requirement) => {
+    const cells = source.validByLayer.get(requirement.layerIndex) ?? [];
+    cells.forEach((index) => distances.push(distance(index, requirement.deliverIndex, columns)));
+  });
+  const deliverIndexes = new Set(source.requirements.map((entry) => entry.deliverIndex));
+  return {
+    deliverPointCount: deliverIndexes.size,
+    releaseCycleCount: Math.max(1, deliverIndexes.size + (source.stats.priorityPoints ?? 0)),
+    averageReleaseDistance: average(distances),
+    maxReleaseDistance: Math.max(0, ...distances),
+    firstTraySafety: distances.length ? Math.min(...distances) : 0
+  };
+}
+
+function analyzeAdaptiveLevel(state, source) {
+  const topology = collectPathTopology(state, source);
+  const demand = collectDemandMetrics(source);
+  const release = collectReleaseOpportunityMetrics(state, source);
+  const effectiveCells = [...new Set([...(source.validByLayer?.values?.() ?? [])].flat())];
+  const regionLayout = createAdaptiveRegionLayout(state, effectiveCells);
+  const branchCounts = [...(source.validByLayer?.values?.() ?? [])].map((cells) => cells.length);
+  const averageLayerCapacity = average(branchCounts);
+  const density = source.stats.itemDensity ?? 0;
+  const topologyPressure = clampAdaptiveValue(
+    topology.narrowPathRatio * 0.35
+      + topology.junctionRatio * 0.25
+      + density * 0.3
+      + demand.layerImbalance * 0.1,
+    0,
+    1
+  );
+  return {
+    topology,
+    demand,
+    release,
+    regionLayout: {
+      ...regionLayout,
+      usableRegionCount: regionLayout.columns * regionLayout.rows
+    },
+    capacity: {
+      averageLayerCapacity,
+      totalValidSlots: source.stats.totalValidSlots,
+      itemDensity: density
+    },
+    topologyPressure
+  };
+}
+
+function createTuningState() {
+  return {
+    iteration: 0,
+    repairIntensity: 0,
+    capacityRelief: 0,
+    distributionRelief: 0,
+    tailRelief: 0,
+    releaseRelief: 0,
+    spawnRelief: 0,
+    quotaRelief: 0,
+    layerRelief: 0,
+    trayTimingRelief: 0,
+    searchRelief: 0,
+    activeErrorGroup: null
+  };
+}
+
+function updateTuningState(tuning, result) {
+  const next = { ...tuning, iteration: tuning.iteration + 1 };
+  (result?.issues ?? []).forEach((issue) => {
+    if (issue.code === "TAIL_PRESSURE_EXCEEDED") next.tailRelief += 1;
+    else if (issue.code === "RELEASE_PRESSURE_EXCEEDED") next.releaseRelief += 1;
+    else if (issue.code === "NEXT_LAYER_SPAWN_TRAP") next.spawnRelief += 1;
+    else if (issue.code?.includes("QUOTA")) next.quotaRelief += 1;
+    else if (issue.code === "NOT_ENOUGH_VALID_CELLS") next.capacityRelief += 1;
+    else if (issue.code?.includes("DISTRIBUTION") || issue.code?.includes("PLACEMENT")) next.distributionRelief += 1;
+  });
+  next.repairIntensity = clampAdaptiveValue(next.tailRelief + next.releaseRelief + next.spawnRelief + next.quotaRelief + next.capacityRelief + next.distributionRelief + next.layerRelief + next.trayTimingRelief + next.searchRelief, 0, 18);
+  return next;
+}
+
+function estimateDerivedGenerateParameters(source, analysis, intent, tuning = createTuningState()) {
+  const intentScore = Number(intent.difficultyScore);
+  const difficultyScore = clampAdaptiveValue(Number.isFinite(intentScore) ? intentScore : 0.45, 0, 1);
+  const density = clampAdaptiveValue(analysis.capacity.itemDensity, 0, 1.5);
+  const demandScale = clampAdaptiveValue(Math.sqrt(Math.max(0, analysis.demand.totalRequired)) / 12, 0, 2);
+  const topologyPressure = analysis.topologyPressure;
+  const releaseDistance = analysis.release.averageReleaseDistance || Math.max(3, source.pathIndexes.length / 4);
+  const repair = tuning.repairIntensity * 0.025;
+  const capacityRelief = Number(tuning.capacityRelief ?? 0);
+  const distributionRelief = Number(tuning.distributionRelief ?? 0);
+  const layerRelief = Number(tuning.layerRelief ?? 0);
+  const trayTimingRelief = Number(tuning.trayTimingRelief ?? 0);
+
+  const targetAverageTail = clampAdaptiveValue(Math.round(2 + difficultyScore * 4.5 + density * 3 + topologyPressure * 2 - tuning.tailRelief * 0.45), 2, 18);
+  const targetPeakTail = clampAdaptiveValue(Math.round(targetAverageTail + 2 + difficultyScore * 3 + demandScale + density * 2 - tuning.tailRelief * 0.25), targetAverageTail + 1, 32);
+  const safeTailLimit = clampAdaptiveValue(Math.round(targetPeakTail + 2 + topologyPressure * 4 + demandScale), targetPeakTail + 1, 60);
+  const noiseRatio = clampAdaptiveValue(0.24 + difficultyScore * 0.34 + density * 0.1 + analysis.demand.colorDiversityRatio * 0.08 - tuning.releaseRelief * 0.035 - trayTimingRelief * 0.025, 0.12, 0.68);
+  const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.32, 0.82);
+  const clusterMin = density < 0.22 && source.stats.totalRequired > 8 ? 2 : 1;
+  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 3.2 + demandScale * 0.9 + capacityRelief * 0.45 - tuning.quotaRelief * 0.15), clusterMin, 6);
+  const clusterAdjacencyRatio = clampAdaptiveValue(0.94 - difficultyScore * 0.12 + density * 0.05 + tuning.releaseRelief * 0.025 + capacityRelief * 0.018 - distributionRelief * 0.02, 0.68, 0.96);
+  const highPressureRatio = clampAdaptiveValue(0.16 + difficultyScore * 0.28 + density * 0.14 + topologyPressure * 0.1 - tuning.releaseRelief * 0.02, 0.1, 0.58);
+  const releaseDelayTarget = clampAdaptiveValue(Math.round(releaseDistance * (0.18 + difficultyScore * 0.18) + 2 + topologyPressure * 3 - tuning.releaseRelief - trayTimingRelief * 0.8), 2, 80);
+  const maxUnreleasedItems = clampAdaptiveValue(Math.round(targetPeakTail + clusterMax * 0.5 + highPressureRatio * 5), 3, 80);
+  const spawnSafetyDistance = clampAdaptiveValue(Math.round(8 - difficultyScore * 4 + density * 2 + topologyPressure * 3 - capacityRelief * 0.4), 1, 30);
+  const branchDistribution = clampAdaptiveValue(0.9 - difficultyScore * 0.18 + Math.min(0.08, analysis.topology.junctionRatio) + distributionRelief * 0.045 - capacityRelief * 0.035 - layerRelief * 0.018 - repair * 0.35, 0.48, 0.98);
+  const releaseCycleCount = analysis.release.releaseCycleCount;
+  const reliefDuration = clampAdaptiveValue(Math.round(2 + (1 - difficultyScore) * 3 + tuning.releaseRelief), 1, 10);
+  const continuousGrowthTarget = clampAdaptiveValue(Math.round(targetAverageTail + difficultyScore * 3 + density * 2 - tuning.tailRelief * 0.4), 2, 18);
+  const releaseAmountTarget = clampAdaptiveValue(Math.round(clusterMax * requiredColorRatio + reliefDuration * 0.35), 1, 9);
+  const layerDensity = source.validByLayer
+    ? [...source.validByLayer.entries()].map(([layerIndex, cells]) => ({
+      layerIndex,
+      density: roundAdaptiveValue((source.requirements.filter((entry) => entry.layerIndex === layerIndex).reduce((sum, entry) => sum + entry.amount, 0)) / Math.max(1, cells.length), 3)
+    }))
+    : [];
+
+  const engineSettings = {
+    avgTailLengthTarget: targetAverageTail,
+    tailLengthCap: safeTailLimit,
+    tailLengthGrowthCurve: difficultyScore >= 0.8 ? "peak-late" : difficultyScore >= 0.58 ? "sawtooth" : difficultyScore <= 0.3 ? "flat" : "linear",
+    tailLengthVariance: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 + topologyPressure * 2 - tuning.tailRelief * 0.35), 1, 12),
+    releaseDelayTarget,
+    unreleasedInventoryTarget: highPressureRatio,
+    maxUnreleasedItems,
+    releaseDistanceWeight: clampAdaptiveValue(0.24 + difficultyScore * 0.38 + topologyPressure * 0.14 - tuning.releaseRelief * 0.025, 0.15, 0.9),
+    layerDistributionBalance: clampAdaptiveValue(0.96 - difficultyScore * 0.18 - analysis.demand.layerImbalance * 0.08 - layerRelief * 0.035, 0.55, 0.98),
+    spawnSafetyDistance,
+    maxImmediateChainCount: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 - tuning.spawnRelief * 0.2), 1, 12),
+    nextLayerTrapPressure: clampAdaptiveValue(0.08 + difficultyScore * 0.46 - tuning.spawnRelief * 0.06, 0.02, 0.7),
+    clusterRatio: clusterAdjacencyRatio,
+    minClusterSizePerBranch: clusterMin,
+    maxClusterSizePerBranch: clusterMax,
+    branchDistributionBalance: branchDistribution,
+    routeChoicePressure: clampAdaptiveValue(0.12 + difficultyScore * 0.68 + analysis.topology.junctionRatio * 0.3, 0.08, 0.92),
+    narrowPathUsage: clampAdaptiveValue(0.08 + difficultyScore * 0.48 + analysis.topology.narrowPathRatio * 0.25 - tuning.tailRelief * 0.02, 0.04, 0.85),
+    loopRiskPressure: clampAdaptiveValue(0.07 + difficultyScore * 0.5 + analysis.topology.narrowPathRatio * 0.22 - tuning.tailRelief * 0.02, 0.04, 0.85)
+  };
+
+  const derivedParameters = {
+    difficultyScore,
+    targetAverageTail,
+    targetPeakTail,
+    safeTailLimit,
+    noiseRatio: roundAdaptiveValue(noiseRatio, 3),
+    requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
+    carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08 - trayTimingRelief * 0.02, 0.12, 0.72), 3),
+    clusterSizeDistribution: { min: clusterMin, preferred: clampAdaptiveValue(Math.round((clusterMin + clusterMax) / 2), clusterMin, clusterMax), max: clusterMax },
+    clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
+    highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),
+    continuousGrowthTarget,
+    releaseAmountTarget,
+    releaseCycleCount,
+    reliefDuration,
+    layerDensity,
+    branchDistribution: roundAdaptiveValue(branchDistribution, 3),
+    firstTraySafety: Math.round(analysis.release.firstTraySafety),
+    repairIntensity: roundAdaptiveValue(tuning.repairIntensity, 2),
+    searchDepth: clampAdaptiveValue(Math.round(8 + difficultyScore * 8 + demandScale * 2 + tuning.repairIntensity + Number(tuning.searchRelief ?? 0)), 8, 40),
+    beamWidth: clampAdaptiveValue(Math.round(6 + difficultyScore * 10 + topologyPressure * 8 + tuning.repairIntensity + distributionRelief), 6, 48)
+  };
+
+  return {
+    settings: engineSettings,
+    derivedParameters,
+    analysis,
+    tuning
+  };
+}
+
+
+// ---- js/generate/auto-generate-profile.js ----
+
+
+const profileClamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const profileRound = (value, digits = 0) => Number((Number(value) || 0).toFixed(digits));
+
+function profileAverage(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+function uniqueValidCells(source) {
+  return [...new Set([...(source.validByLayer?.values?.() ?? [])].flat())].sort((a, b) => a - b);
+}
+
+function collectColorDemand(requirements) {
+  const colorDemand = {};
+  requirements.forEach((entry) => {
+    colorDemand[String(entry.itemId)] = (colorDemand[String(entry.itemId)] ?? 0) + entry.amount;
+  });
+  return colorDemand;
+}
+
+function trayLayerStats(requirements) {
+  const trayLayers = new Set();
+  const trayIds = new Set();
+  const colorSwitchesByTray = new Map();
+  requirements.forEach((entry) => {
+    trayLayers.add(`${entry.trayId}:${entry.layerIndex}`);
+    trayIds.add(entry.trayId);
+    const list = colorSwitchesByTray.get(entry.trayId) ?? [];
+    list.push({ layerIndex: entry.layerIndex, itemId: entry.itemId });
+    colorSwitchesByTray.set(entry.trayId, list);
+  });
+  let switches = 0;
+  colorSwitchesByTray.forEach((entries) => {
+    const ordered = entries.slice().sort((a, b) => a.layerIndex - b.layerIndex || a.itemId - b.itemId);
+    for (let i = 1; i < ordered.length; i += 1) {
+      if (ordered[i].itemId !== ordered[i - 1].itemId) switches += 1;
+    }
+  });
+  return {
+    trayCount: trayIds.size,
+    trayLayerCount: trayLayers.size,
+    colorSwitches: switches
+  };
+}
+function layerCapacityRows(source) {
+  return (source.autoLayerIndexes ?? []).map((layerIndex) => {
+    const capacity = source.validByLayer?.get(layerIndex)?.length ?? 0;
+    return { layerIndex, capacity };
+  });
+}
+
+function targetLayerLoad(source) {
+  const rows = layerCapacityRows(source);
+  const totalCapacity = rows.reduce((sum, row) => sum + row.capacity, 0);
+  let assigned = 0;
+  const targets = rows.map((row, index) => {
+    if (totalCapacity <= 0) return { ...row, targetLoad: 0 };
+    const isLast = index === rows.length - 1;
+    const targetLoad = isLast
+      ? Math.max(0, source.stats.totalRequired - assigned)
+      : Math.min(row.capacity, Math.round(source.stats.totalRequired * row.capacity / totalCapacity));
+    assigned += targetLoad;
+    return { ...row, targetLoad };
+  });
+  return targets;
+}
+
+function releaseWindows(state, source) {
+  const columns = state.grid.columns;
+  const effectiveCells = uniqueValidCells(source);
+  const grouped = new Map();
+  source.requirements.forEach((entry) => {
+    const group = grouped.get(entry.deliverIndex) ?? { deliverIndex: entry.deliverIndex, demand: 0, itemIds: new Set() };
+    group.demand += entry.amount;
+    group.itemIds.add(entry.itemId);
+    grouped.set(entry.deliverIndex, group);
+  });
+  return [...grouped.values()].map((group) => {
+    const deliverPosition = indexToPosition(group.deliverIndex, columns);
+    const distances = effectiveCells.map((index) => {
+      const position = indexToPosition(index, columns);
+      return Math.abs(position.x - deliverPosition.x) + Math.abs(position.y - deliverPosition.y);
+    });
+    const routeLength = profileRound(profileAverage(distances), 1);
+    const candidateItemCount = effectiveCells.length;
+    const possibleRelease = Math.min(group.demand, Math.max(1, group.itemIds.size * 9));
+    const tailRisk = profileRound(profileClamp(routeLength / Math.max(1, effectiveCells.length) + group.demand / Math.max(1, candidateItemCount), 0, 1), 3);
+    return {
+      deliverIndex: group.deliverIndex,
+      routeLength,
+      candidateItemCount,
+      expectedCollect: Math.min(group.demand, candidateItemCount),
+      possibleRelease,
+      tailRisk
+    };
+  });
+}
+
+function demandComplexity(source, trayStats, colorDemand) {
+  const colorCount = Object.keys(colorDemand).length;
+  const itemLayerCount = Math.max(1, source.stats.editorLayers ?? source.stats.layers ?? 1);
+  const trayLayerRatio = trayStats.trayLayerCount / itemLayerCount;
+  return profileRound(profileClamp(
+    colorCount / 7 * 0.28
+      + trayStats.trayCount / Math.max(1, itemLayerCount) * 0.18
+      + trayLayerRatio / 5 * 0.32
+      + trayStats.colorSwitches / Math.max(1, trayStats.trayLayerCount) * 0.22,
+    0,
+    1
+  ), 3);
+}
+
+function topologyTailCapacity(state, analysis, source) {
+  const pathCount = Math.max(1, source.pathIndexes?.length ?? 0);
+  const branchCount = branchCellsForIndexes(state, source.pathIndexes ?? []).length;
+  const junctionBonus = (analysis.topology?.junctionCount ?? 0) * 0.65;
+  const corridorBonus = Math.sqrt(Math.max(0, analysis.topology?.corridorCount ?? 0)) * 1.4;
+  const narrowPenalty = (analysis.topology?.deadEndCount ?? 0) * 0.2;
+  const branchBonus = Math.sqrt(Math.max(1, branchCount)) * 0.8;
+  return profileClamp(Math.round(3 + Math.sqrt(pathCount) * 0.55 + junctionBonus + corridorBonus + branchBonus - narrowPenalty), 3, 60);
+}
+
+function buildAutoGenerateProfile(state, source, analysis, derivedParameters = {}, tuning = {}) {
+  const effectiveCells = uniqueValidCells(source);
+  const trayStats = trayLayerStats(source.rawRequirements ?? source.requirements ?? []);
+  const remainingColorDemand = collectColorDemand(source.requirements ?? []);
+  const totalColorDemand = collectColorDemand(source.rawRequirements ?? source.requirements ?? []);
+  const autoLayerCount = source.stats.autoLayers ?? source.autoLayerIndexes?.length ?? 0;
+  const totalAvailableAutoLayerCells = source.stats.totalValidSlots ?? 0;
+  const practicalLayerCapacity = Math.floor(totalAvailableAutoLayerCells * (source.stats.itemDensity > 0.72 ? 0.92 : 0.82));
+  const requiredDensity = totalAvailableAutoLayerCells > 0 ? source.stats.totalRequired / totalAvailableAutoLayerCells : 0;
+  const branches = effectiveCells.length ? branchCellsForIndexes(state, effectiveCells) : [];
+  const complexity = demandComplexity(source, trayStats, totalColorDemand);
+  const safeTail = Math.max(Number(derivedParameters.safeTailLimit) || 0, topologyTailCapacity(state, analysis, source));
+  const release = releaseWindows(state, source);
+  return {
+    map: {
+      pathCells: source.pathIndexes?.length ?? 0,
+      effectiveCapacity: effectiveCells.length,
+      restrictedCells: Math.max(0, (source.pathIndexes?.length ?? 0) - effectiveCells.length),
+      totalAvailableAutoLayerCells,
+      practicalLayerCapacity,
+      requiredDensity: profileRound(requiredDensity, 3),
+      densityClass: requiredDensity < 0.28 ? "Low" : requiredDensity < 0.64 ? "Medium" : "High",
+      branchCount: branches.length,
+      usableRegions: analysis.regionLayout?.usableRegionCount ?? null
+    },
+    layer: {
+      totalLayers: source.stats.editorLayers ?? 0,
+      lockedLayers: source.stats.lockedLayers ?? 0,
+      autoLayers: autoLayerCount,
+      targetLoad: targetLayerLoad(source)
+    },
+    tray: {
+      trayCount: trayStats.trayCount,
+      trayLayerCount: trayStats.trayLayerCount,
+      trayLayerPerItemLayerRatio: profileRound(trayStats.trayLayerCount / Math.max(1, source.stats.editorLayers ?? 1), 2),
+      totalColorDemand,
+      remainingColorDemand,
+      demandComplexity: complexity
+    },
+    cluster: {
+      adaptiveMinSize: derivedParameters.clusterSizeDistribution?.min ?? null,
+      adaptivePreferredSize: derivedParameters.clusterSizeDistribution?.preferred ?? null,
+      adaptiveMaxSize: derivedParameters.clusterSizeDistribution?.max ?? null,
+      expectedClusterCount: Math.ceil((source.stats.totalRequired ?? 0) / Math.max(1, derivedParameters.clusterSizeDistribution?.preferred ?? 3))
+    },
+    difficulty: {
+      safeTail,
+      targetAverageTail: derivedParameters.targetAverageTail ?? null,
+      targetPeakTail: derivedParameters.targetPeakTail ?? null,
+      noiseBudget: derivedParameters.noiseRatio ?? null,
+      releaseTargets: release,
+      demandComplexity: complexity
+    },
+    repair: {
+      currentAttempt: Number(tuning.iteration ?? 0) + 1,
+      repairIntensity: Number(tuning.repairIntensity ?? 0),
+      activeErrorGroup: tuning.activeErrorGroup ?? null
+    }
+  };
+}
+
+
+// ---- js/generate/error-analyzer.js ----
+const ERROR_GROUP_PRIORITY = Object.freeze({
+  HARD_SOURCE_ERROR: 1,
+  SOLVABILITY_ERROR: 2,
+  CAPACITY_ERROR: 3,
+  TRAY_BALANCE_ERROR: 4,
+  DIFFICULTY_ERROR: 5,
+  LAYER_DISTRIBUTION_ERROR: 6,
+  DISTRIBUTION_ERROR: 7,
+  GENERATION_SEARCH_ERROR: 8,
+  VISUAL_CLUSTER_QUALITY_ERROR: 9
+});
+
+const ERROR_CODE_GROUPS = Object.freeze({
+  SOURCE_INVALID: "HARD_SOURCE_ERROR",
+  TRAY_INVALID: "HARD_SOURCE_ERROR",
+  LOCKED_ITEM_QUOTA_EXCEEDED: "HARD_SOURCE_ERROR",
+  LOCKED_ITEM_INVALID_POSITION: "HARD_SOURCE_ERROR",
+  ALL_ITEM_LAYERS_LOCKED: "HARD_SOURCE_ERROR",
+  SOLVABILITY_FAILED: "SOLVABILITY_ERROR",
+  DEADLOCK_DETECTED: "SOLVABILITY_ERROR",
+  NOT_ENOUGH_VALID_CELLS: "CAPACITY_ERROR",
+  ITEM_QUOTA_MISMATCH: "CAPACITY_ERROR",
+  ITEM_ID_QUOTA_MISMATCH: "CAPACITY_ERROR",
+  LAYER_QUOTA_MISMATCH: "LAYER_DISTRIBUTION_ERROR",
+  LAYER_IMBALANCE: "LAYER_DISTRIBUTION_ERROR",
+  TRAY_LAYER_TIMING_ERROR: "TRAY_BALANCE_ERROR",
+  TAIL_PRESSURE_EXCEEDED: "DIFFICULTY_ERROR",
+  TAIL_PRESSURE_TOO_HIGH: "DIFFICULTY_ERROR",
+  TAIL_PRESSURE_TOO_LOW: "DIFFICULTY_ERROR",
+  RELEASE_PRESSURE_EXCEEDED: "DIFFICULTY_ERROR",
+  NEXT_LAYER_SPAWN_TRAP: "DIFFICULTY_ERROR",
+  ITEM_DISTRIBUTION_REPAIR_FAILED: "DISTRIBUTION_ERROR",
+  BRANCH_DISTRIBUTION_FAILED: "DISTRIBUTION_ERROR",
+  CLUSTER_PLACEMENT_ERROR: "DISTRIBUTION_ERROR",
+  GENERATION_SEARCH_EXHAUSTED: "GENERATION_SEARCH_ERROR"
+});
+
+function classifyGeneratorIssue(issue) {
+  const group = ERROR_CODE_GROUPS[issue?.code] ?? "GENERATION_SEARCH_ERROR";
+  return {
+    ...issue,
+    errorGroup: group,
+    priority: ERROR_GROUP_PRIORITY[group] ?? ERROR_GROUP_PRIORITY.GENERATION_SEARCH_ERROR
+  };
+}
+
+function classifyGeneratorIssues(issues = []) {
+  return issues
+    .map((issue) => classifyGeneratorIssue(issue))
+    .sort((a, b) => a.priority - b.priority);
+}
+
+function highestPriorityIssue(issues = []) {
+  return classifyGeneratorIssues(issues)[0] ?? null;
+}
+
+function isHardSourceIssue(issue) {
+  return classifyGeneratorIssue(issue).errorGroup === "HARD_SOURCE_ERROR";
+}
+
+function scoreGeneratorCandidate(result) {
+  if (!result?.generatedItems?.length && !result?.preview) return Number.NEGATIVE_INFINITY;
+  const issues = classifyGeneratorIssues(result.issues ?? []);
+  if (issues.some((issue) => issue.errorGroup === "HARD_SOURCE_ERROR" || issue.errorGroup === "SOLVABILITY_ERROR")) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const meta = result.meta ?? {};
+  const totalRequired = Number(meta.totalRequired ?? result.source?.stats?.totalRequired ?? 0);
+  const totalGenerated = Number(meta.totalGenerated ?? result.generatedItems?.length ?? 0);
+  const quotaScore = totalRequired > 0 ? Math.min(totalGenerated / totalRequired, 1) * 420 : 0;
+  const issuePenalty = issues.reduce((sum, issue) => sum + issue.priority * 34, 0);
+  const missingPenalty = Number(meta.missing ?? Math.max(0, totalRequired - totalGenerated)) * 18;
+  const tailPenalty = Math.max(0, Number(meta.peakTailLength ?? 0) - Number(meta.derivedParameters?.safeTailLimit ?? 0)) * 12;
+  const releasePenalty = Math.max(0, Number(meta.maxUnreleasedItems ?? 0) - Number(meta.settings?.maxUnreleasedItems ?? 0)) * 10;
+  const distributionScore = Number(meta.spatialDistributionScore ?? 0) * 80;
+  const clusterQuality = Number(meta.actualClusterRatio ?? 0) * 35;
+  return quotaScore + distributionScore + clusterQuality - issuePenalty - missingPenalty - tailPenalty - releasePenalty;
+}
+
+function explainAutoRepair(issue) {
+  const classified = classifyGeneratorIssue(issue);
+  const messages = {
+    HARD_SOURCE_ERROR: "Không tự sửa dữ liệu nguồn hoặc layer đang khóa.",
+    SOLVABILITY_ERROR: "Ưu tiên giữ solvability, không đổi Tray hay Locked Layer.",
+    CAPACITY_ERROR: "Giảm spacing, tăng cụm hợp lệ và phân lại tải layer Auto.",
+    TRAY_BALANCE_ERROR: "Dời màu cần sớm hơn và reserve demand tương lai.",
+    DIFFICULTY_ERROR: "Giảm áp lực tail/release bằng cách giảm noise và dời cụm required.",
+    LAYER_DISTRIBUTION_ERROR: "Phân phối lại item giữa các Auto Layer theo capacity.",
+    DISTRIBUTION_ERROR: "Sửa cục bộ region/branch/candidate trước khi sinh lại layer.",
+    GENERATION_SEARCH_ERROR: "Thử candidate giới hạn với profile mới.",
+    VISUAL_CLUSTER_QUALITY_ERROR: "Tách cụm và cải thiện khoảng cách cụm."
+  };
+  return messages[classified.errorGroup] ?? messages.GENERATION_SEARCH_ERROR;
+}
+
+
+// ---- js/generate/auto-rebalance-controller.js ----
+
+const DEFAULT_GROUP_BUDGETS = Object.freeze({
+  CAPACITY_ERROR: 8,
+  DISTRIBUTION_ERROR: 10,
+  DIFFICULTY_ERROR: 10,
+  LAYER_DISTRIBUTION_ERROR: 6,
+  TRAY_BALANCE_ERROR: 6,
+  GENERATION_SEARCH_ERROR: 5,
+  VISUAL_CLUSTER_QUALITY_ERROR: 4,
+  SOLVABILITY_ERROR: 0,
+  HARD_SOURCE_ERROR: 0
+});
+
+function levelScale(profile) {
+  const cells = Number(profile?.map?.effectiveCapacity ?? 0);
+  if (cells < 60) return 0.75;
+  if (cells > 160) return 1.25;
+  return 1;
+}
+
+function createRebalanceState(profile, maxRetries) {
+  const scale = levelScale(profile);
+  const hardMax = Math.max(1, Math.min(Number(maxRetries) || 1, Math.round(36 * scale)));
+  return {
+    iteration: 0,
+    hardMax,
+    budgets: Object.fromEntries(Object.entries(DEFAULT_GROUP_BUDGETS).map(([group, budget]) => [group, Math.max(0, Math.round(budget * scale))])),
+    repairIntensity: 0,
+    capacityRelief: 0,
+    distributionRelief: 0,
+    tailRelief: 0,
+    releaseRelief: 0,
+    spawnRelief: 0,
+    quotaRelief: 0,
+    layerRelief: 0,
+    trayTimingRelief: 0,
+    searchRelief: 0,
+    activeErrorGroup: null,
+    lastRepairAction: null,
+    repairHistory: []
+  };
+}
+
+function applyGroupFeedback(next, issue) {
+  const code = issue?.code;
+  const group = issue?.errorGroup;
+  if (group === "CAPACITY_ERROR") {
+    next.capacityRelief += 1;
+    next.quotaRelief += 1;
+  } else if (group === "DISTRIBUTION_ERROR") {
+    next.distributionRelief += 1;
+  } else if (group === "DIFFICULTY_ERROR") {
+    if (code === "TAIL_PRESSURE_EXCEEDED" || code === "TAIL_PRESSURE_TOO_HIGH") next.tailRelief += 1;
+    if (code === "TAIL_PRESSURE_TOO_LOW") next.tailRelief = Math.max(0, next.tailRelief - 0.5);
+    if (code === "RELEASE_PRESSURE_EXCEEDED") next.releaseRelief += 1;
+    if (code === "NEXT_LAYER_SPAWN_TRAP") next.spawnRelief += 1;
+  } else if (group === "LAYER_DISTRIBUTION_ERROR") {
+    next.layerRelief += 1;
+  } else if (group === "TRAY_BALANCE_ERROR") {
+    next.trayTimingRelief += 1;
+    next.releaseRelief += 0.5;
+  } else if (group === "GENERATION_SEARCH_ERROR") {
+    next.searchRelief += 1;
+  }
+}
+
+function rebalanceAfterFailure(rebalance, result) {
+  const issue = highestPriorityIssue(result?.issues ?? []);
+  if (!issue || isHardSourceIssue(issue)) {
+    return { canContinue: false, rebalance, issue, action: null };
+  }
+  const next = structuredClone(rebalance);
+  const group = issue.errorGroup;
+  const remainingBudget = Number(next.budgets[group] ?? 0);
+  if (next.iteration >= next.hardMax || remainingBudget <= 0) {
+    return { canContinue: false, rebalance: next, issue, action: null };
+  }
+  next.iteration += 1;
+  next.budgets[group] = remainingBudget - 1;
+  next.activeErrorGroup = group;
+  next.lastRepairAction = explainAutoRepair(issue);
+  applyGroupFeedback(next, issue);
+  next.repairIntensity = Math.min(18, next.capacityRelief + next.distributionRelief + next.tailRelief + next.releaseRelief + next.spawnRelief + next.layerRelief + next.trayTimingRelief + next.searchRelief);
+  next.repairHistory.push({
+    attempt: next.iteration,
+    code: issue.code,
+    errorGroup: group,
+    action: next.lastRepairAction
+  });
+  return { canContinue: true, rebalance: next, issue, action: next.lastRepairAction };
+}
+
+function autoRepairStatusRows(rebalance) {
+  return (rebalance?.repairHistory ?? []).map((entry) => ({
+    code: entry.code,
+    errorGroup: entry.errorGroup,
+    action: entry.action,
+    status: "Auto balanced"
+  }));
+}
+
+
 // ---- js/generate/generator-engine.js ----
+
+
+
 
 
 
@@ -4544,6 +5008,10 @@ function generatedMetrics(generatedItems, settings, source) {
   const loopRiskScore = generatedItems.length
     ? generatedItems.filter((item) => item.connectionCount <= 1).length / generatedItems.length
     : 0;
+  const spatialSummaries = Object.values(source.spatialDistribution ?? {});
+  const spatialDistributionScore = spatialSummaries.length
+    ? spatialSummaries.reduce((sum, entry) => sum + (Number(entry.coverageRatio) || 0) + (1 - Number(entry.largestRegionShare || 0)), 0) / (spatialSummaries.length * 2)
+    : 0;
   return {
     status: "Generated",
     generatedAt: Date.now(),
@@ -4574,6 +5042,13 @@ function generatedMetrics(generatedItems, settings, source) {
     derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
     autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
     autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null),
+    autoGenerateProfile: structuredClone(settings.autoGenerateProfile ?? null),
+    autoRepairStatus: autoRepairStatusRows(settings.autoTuningProfile ?? null),
+    settings: {
+      maxUnreleasedItems: settings.maxUnreleasedItems,
+      tailLengthCap: settings.tailLengthCap
+    },
+    spatialDistributionScore: Number(spatialDistributionScore.toFixed(3)),
     spatialDistribution: structuredClone(source.spatialDistribution ?? null)
   };
 }
@@ -4607,8 +5082,9 @@ function validateDifficultyMetrics(meta, settings) {
 function generatePreviewAttempt(state, source, settings) {
   const random = createRandom(settings.seed);
   const next = structuredClone(state);
+  source.spatialDistribution = {};
   const layerPlan = buildAdaptiveLayerRequirements(state, source, settings, random);
-  const maxLayerIndex = Math.max(0, layerPlan.layerCount - 1);
+  const maxLayerIndex = Math.max(0, ...(layerPlan.layerIndexes ?? []));
   ensureLayers(next, maxLayerIndex);
   clearGeneratedLayerItems(next);
 
@@ -4621,37 +5097,57 @@ function generatePreviewAttempt(state, source, settings) {
   });
   const generatedLayerIndexes = new Map();
 
+  const invalidCandidate = (issues, meta = null) => {
+    const classifiedIssues = classifyGeneratorIssues(issues);
+    const candidateMeta = meta ?? (generatedItems.length ? generatedMetrics(generatedItems, settings, source) : {
+      status: "Need Review",
+      generatedAt: Date.now(),
+      generatorVersion: GENERATOR_VERSION,
+      totalRequired: source.stats.totalRequired,
+      totalGenerated: generatedItems.length,
+      missing: Math.max(0, source.stats.totalRequired - generatedItems.length),
+      derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
+      autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
+      autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null),
+      autoGenerateProfile: structuredClone(settings.autoGenerateProfile ?? null),
+      autoRepairStatus: autoRepairStatusRows(settings.autoTuningProfile ?? null)
+    });
+    candidateMeta.status = "Need Review";
+    candidateMeta.invalid = true;
+    candidateMeta.issues = structuredClone(classifiedIssues);
+    next.generateSettings = settings;
+    next.generatedItems = generatedItems;
+    next.generationMeta = candidateMeta;
+    return {
+      ok: false,
+      preview: generatedItems.length ? next : null,
+      source,
+      settings,
+      issues: classifiedIssues,
+      generatedItems,
+      meta: candidateMeta
+    };
+  };
+
   for (const [layerIndex, requirements] of [...sourceByLayer.entries()].sort(([a], [b]) => a - b)) {
     const validCells = source.validByLayer.get(layerIndex) ?? [];
     const requiredInGeneratedLayer = requirements.reduce((sum, entry) => sum + entry.amount, 0);
     if (requiredInGeneratedLayer > validCells.length) {
-      return {
-        ok: false,
-        preview: null,
-        source,
-        settings,
-        issues: [createGeneratorIssue({
+      return invalidCandidate([createGeneratorIssue({
           code: "NOT_ENOUGH_VALID_CELLS",
           message: `Layer sinh ${layerIndex + 1} cần ${requiredInGeneratedLayer} vật phẩm nhưng chỉ có ${validCells.length} ô hợp lệ.`,
           layerIndex,
           suggestion: "Tăng số item layer hoặc mở thêm path hợp lệ để giảm mật độ mỗi layer."
-        })]
-      };
+        })]);
     }
     const context = buildStraightClusterContext(state, validCells, requiredInGeneratedLayer, settings.maxClusterSizePerBranch);
     if (context.straightRuns.length === 0 && requirements.some((entry) => entry.amount > 0)) {
-      return {
-        ok: false,
-        preview: null,
-        source,
-        settings,
-        issues: [createGeneratorIssue({
+      return invalidCandidate([createGeneratorIssue({
           code: "BRANCH_DISTRIBUTION_FAILED",
           message: `Lớp ${layerIndex + 1} không có nhánh hợp lệ để sinh vật phẩm.`,
           layerIndex,
           suggestion: "Thêm path có thể đi được hoặc bỏ vùng chặn trên layer này."
-        })]
-      };
+        })]);
     }
     const previousLayerIndexes = generatedLayerIndexes.get(layerIndex - 1) ?? new Set();
     const placed = placeLayerClusters({
@@ -4664,18 +5160,12 @@ function generatePreviewAttempt(state, source, settings) {
       scoreCell: (requirement, index) => scoreCellForRequirement(state, source, settings, requirement, index, random)
     });
     if (!placed.ok) {
-      return {
-        ok: false,
-        preview: null,
-        source,
-        settings,
-        issues: [createGeneratorIssue({
+      return invalidCandidate([createGeneratorIssue({
           code: "ITEM_DISTRIBUTION_REPAIR_FAILED",
           message: `Lớp ${layerIndex + 1} không tìm được cụm thẳng hợp lệ cho ${placed.missing.reduce((sum, entry) => sum + entry.amount, 0)} vật phẩm còn lại.`,
           layerIndex,
           suggestion: "Sinh lại với seed khác, giảm mật độ item hoặc thêm đoạn path thẳng hợp lệ."
-        })]
-      };
+        })]);
     }
     const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
     placed.placedCells.forEach((cell, order) => {
@@ -4713,19 +5203,13 @@ function generatePreviewAttempt(state, source, settings) {
 
   const quotaIssues = validateGeneratedQuotas(generatedItems, source);
   if (quotaIssues.length > 0) {
-    return {
-      ok: false,
-      preview: null,
-      source,
-      settings,
-      issues: quotaIssues
-    };
+    return invalidCandidate(quotaIssues);
   }
 
   const meta = generatedMetrics(generatedItems, settings, source);
   const metricIssues = validateDifficultyMetrics(meta, settings);
   if (metricIssues.length > 0) {
-    return { ok: false, preview: null, source, settings, issues: metricIssues, generatedItems, meta };
+    return invalidCandidate(metricIssues, meta);
   }
   next.generateSettings = settings;
   next.generatedItems = generatedItems;
@@ -4741,6 +5225,8 @@ function canRetryGeneration(result) {
     "TAIL_PRESSURE_EXCEEDED",
     "RELEASE_PRESSURE_EXCEEDED",
     "NEXT_LAYER_SPAWN_TRAP",
+    "NOT_ENOUGH_VALID_CELLS",
+    "BRANCH_DISTRIBUTION_FAILED",
     "ITEM_DISTRIBUTION_REPAIR_FAILED"
   ]);
   return result?.issues?.some((issue) => retryableCodes.has(issue.code));
@@ -4792,34 +5278,61 @@ function generatePreview(state, rawSettings = {}) {
   const analysis = analyzeAdaptiveLevel(state, source);
   const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
   if (errors.length > 0) {
-    return { ok: false, preview: null, source, analysis, settings: baseSettings, issues: errors };
+    return { ok: false, preview: null, source, analysis, settings: baseSettings, issues: classifyGeneratorIssues(errors) };
   }
 
   let lastResult = null;
-  let tuning = createTuningState();
-  for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
+  let bestResult = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  const initialDerived = estimateDerivedGenerateParameters(source, analysis, baseSettings);
+  const initialProfile = buildAutoGenerateProfile(state, source, analysis, initialDerived.derivedParameters);
+  let tuning = createRebalanceState(initialProfile, baseSettings.maxRetries);
+  for (let attempt = 0; attempt < Math.min(baseSettings.maxRetries, tuning.hardMax); attempt += 1) {
     const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
     const overrideSettings = Object.fromEntries((baseSettings.derivedOverrideKeys ?? [])
       .filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key))
       .map((key) => [key, baseSettings[key]]));
     const autoDerivedParameters = applyOverrideDerivedParameters(derived.derivedParameters, overrideSettings);
+    const autoGenerateProfile = buildAutoGenerateProfile(state, source, analysis, autoDerivedParameters, tuning);
     const settings = normalizeGenerateSettings({
       ...baseSettings,
       ...derived.settings,
       ...overrideSettings,
       seed: createRandomGenerateSeed(),
       autoDerivedParameters,
+      autoGenerateProfile,
       autoTuningAttempt: attempt + 1,
       autoTuningProfile: tuning
     });
     const result = generatePreviewAttempt(state, source, settings);
     result.analysis = analysis;
+    result.profile = autoGenerateProfile;
+    result.issues = classifyGeneratorIssues(result.issues ?? []);
     if (result.ok) return result;
     lastResult = result;
-    if (!canRetryGeneration(result)) return result;
-    tuning = updateTuningState(tuning, result);
+    const candidateScore = scoreGeneratorCandidate(result);
+    if (candidateScore > bestScore) {
+      bestScore = candidateScore;
+      bestResult = result;
+    }
+    if (!canRetryGeneration(result)) {
+      const fallback = bestResult?.preview ? bestResult : result;
+      if (fallback?.meta) {
+        fallback.meta.bestCandidateScore = Number(bestScore.toFixed(2));
+        fallback.meta.finalStatus = fallback.preview ? "INVALID / NEED REVIEW" : "INVALID";
+      }
+      return fallback;
+    }
+    const feedback = rebalanceAfterFailure(tuning, result);
+    if (!feedback.canContinue) break;
+    tuning = feedback.rebalance;
   }
-  return lastResult ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
+  const fallback = bestResult?.preview ? bestResult : lastResult;
+  if (fallback?.meta) {
+    fallback.meta.bestCandidateScore = Number(bestScore.toFixed(2));
+    fallback.meta.finalStatus = fallback.preview ? "INVALID / NEED REVIEW" : "INVALID";
+  }
+  return fallback ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
 }
 
 function applyGeneratedPreview(targetState, previewState) {
@@ -6698,6 +7211,7 @@ function createGridIndexTooltip({ grid, getGrid, isEnabled }) {
 
 
 
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -6714,6 +7228,7 @@ function formatPercent(value) {
 function statusOf(state) {
   const meta = state.generationMeta;
   if (meta?.status === "Error") return "Lỗi";
+  if (meta?.status === "Need Review") return "Cần review";
   if (meta?.status === "Generated" && state.fileDirty) return "Đã chỉnh sửa";
   if (meta?.status === "Generated") return "Đã sinh";
   return "Chưa sinh";
@@ -6725,6 +7240,7 @@ function statusClass(status) {
     "Đã sinh": "generated",
     "Đã chỉnh sửa": "modified",
     "Lỗi": "error",
+    "Cần review": "need-review",
     "Chưa sinh": "not-generated"
   }[status] ?? "not-generated";
 }
@@ -6733,7 +7249,7 @@ function issueRows(issues) {
   if (!issues?.length) return `<div class="generate-issue ok"><strong>Ổn</strong><span>Không có lỗi bộ sinh.</span></div>`;
   return issues.map((issue) => `
     <div class="generate-issue ${escapeHtml(issue.severity ?? "error")}">
-      <strong>${escapeHtml(issue.code)}</strong>
+      <strong>${escapeHtml(issue.code)}${issue.errorGroup ? ` · ${escapeHtml(issue.errorGroup)}` : ""}</strong>
       <span>${escapeHtml(issue.message)}</span>
       ${issue.suggestion ? `<small>${escapeHtml(issue.suggestion)}</small>` : ""}
     </div>
@@ -6833,16 +7349,29 @@ function derivedSummaryCardsHtml(settings, derived, overrideKeys) {
     if (!field) return "";
     const rawValue = overrideKeys.has(card.key) ? settings[card.key] : card.value(derived);
     const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
-    const min = field.type === "percent" ? field.min * 100 : field.min;
-    const max = field.type === "percent" ? field.max * 100 : field.max;
-    const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
     return `
-      <label class="generate-derived-card ${overrideKeys.has(card.key) ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
+      <div class="generate-derived-card ${overrideKeys.has(card.key) ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
         <span>${escapeHtml(card.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
-        <input type="number" data-generate-derived-setting="${escapeHtml(card.key)}" data-generate-setting="${escapeHtml(card.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
-      </label>
+        <strong>${escapeHtml(value)}${field.type === "percent" ? "%" : ""}</strong>
+      </div>
     `;
   }).join("");
+}
+
+function autoBalanceGridHtml(profile, derived) {
+  const cluster = derived?.clusterSizeDistribution ?? {};
+  return `
+    <div class="generate-source-grid compact">
+      <div><span>Map Capacity</span><strong>${profile.map.effectiveCapacity}</strong></div>
+      <div><span>Auto Layers</span><strong>${profile.layer.autoLayers}</strong></div>
+      <div><span>Remaining</span><strong>${Object.values(profile.tray.remainingColorDemand).reduce((sum, value) => sum + value, 0)}</strong></div>
+      <div><span>Density</span><strong>${formatPercent(profile.map.requiredDensity)}</strong></div>
+      <div><span>Tray Layers</span><strong>${profile.tray.trayLayerCount}</strong></div>
+      <div><span>Adaptive Cluster</span><strong>${cluster.min ?? "-"}-${cluster.max ?? "-"}</strong></div>
+      <div><span>Safe Tail</span><strong>${derived?.safeTailLimit ?? "-"}</strong></div>
+      <div><span>Regions</span><strong>${profile.map.usableRegions ?? "-"}</strong></div>
+    </div>
+  `;
 }
 
 function renderGenerateControls(container, state) {
@@ -6852,7 +7381,7 @@ function renderGenerateControls(container, state) {
   const derivedEstimate = estimateDerivedGenerateParameters(source, analysis, settings);
   const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
   const derived = applyDerivedDisplayOverrides(derivedEstimate.derivedParameters, settings, overrideKeys);
-  const overrideCount = settings.derivedOverrideKeys?.length ?? 0;
+  const profile = buildAutoGenerateProfile(state, source, analysis, derived);
 
   container.innerHTML = `
     <section class="control-section">
@@ -6862,21 +7391,10 @@ function renderGenerateControls(container, state) {
         <div><span>Khay</span><strong>${source.stats.trays}</strong></div>
         <div><span>Cần sinh</span><strong>${source.stats.totalRequired}</strong></div>
         <div><span>Đã khóa</span><strong>${source.stats.lockedItems}</strong></div>
-        <div><span>Ô hợp lệ</span><strong>${source.stats.totalValidSlots}</strong></div>
+        <div><span>Path usable</span><strong>${source.stats.effectiveItemCells}</strong></div>
+        <div><span>Layer slots</span><strong>${source.stats.totalValidSlots}</strong></div>
       </div>
       <div class="generate-source-note">Đường ray, khay, điểm bắt đầu, điểm giao, điểm ưu tiên và đối tượng đặc biệt chỉ được đọc. Muốn sửa nguồn hãy mở tab LevelDes.</div>
-    </section>
-
-    <section class="control-section">
-      <div class="section-heading"><h2>Phân bổ</h2><span>Tự động</span></div>
-      <div class="generate-field-grid">
-        <label class="generate-field"><span>Số lần thử lại</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
-        <label class="generate-field wide"><span>Chế độ nhiều nhánh</span>
-          <select data-generate-setting="multiBranchMode">
-            ${Object.entries(MULTI_BRANCH_MODE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.multiBranchMode === value ? "selected" : ""}>${label}</option>`).join("")}
-          </select>
-        </label>
-      </div>
     </section>
 
     <section class="control-section">
@@ -6893,11 +7411,11 @@ function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Auto Derived</h2><span>${overrideCount ? `${overrideCount} chỉnh tay` : "Level riêng"}</span></div>
+      <div class="section-heading"><h2>Auto Balance</h2><span>Chỉ đọc</span></div>
+      ${autoBalanceGridHtml(profile, derived)}
       <div class="generate-derived-grid">
         ${derivedSummaryCardsHtml(settings, derived, overrideKeys)}
       </div>
-      <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
   `;
 }
@@ -6906,8 +7424,9 @@ function renderGenerateResults(container, state, result = null) {
   const source = result?.source ?? analyzeGenerateSource(state);
   const meta = result?.meta ?? state.generationMeta ?? {};
   const derived = meta.derivedParameters ?? result?.settings?.autoDerivedParameters ?? null;
+  const profile = meta.autoGenerateProfile ?? result?.profile ?? null;
   const issues = result?.issues?.length ? result.issues : source.issues;
-  const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
+  const status = result ? (result.ok ? "Sẵn sàng xem trước" : result.preview ? "Cần review" : statusOf(state)) : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
   container.innerHTML = `
     <header class="panel-header">
@@ -6950,6 +7469,33 @@ function renderGenerateResults(container, state, result = null) {
           <div><span>Search/Beam</span><strong>${derived ? `${derived.searchDepth}/${derived.beamWidth}` : "-"}</strong></div>
         </div>
       </section>
+      <section class="generate-result-card">
+        <header><h3>Auto Balance</h3><span>${meta.finalStatus ?? profile?.repair?.activeErrorGroup ?? "Runtime"}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Map Capacity</span><strong>${profile?.map?.effectiveCapacity ?? source.stats.effectiveItemCells ?? "-"}</strong></div>
+          <div><span>Restricted</span><strong>${profile?.map?.restrictedCells ?? source.stats.restrictedItemCells ?? "-"}</strong></div>
+          <div><span>Density</span><strong>${profile?.map ? formatPercent(profile.map.requiredDensity) : "-"}</strong></div>
+          <div><span>Density Class</span><strong>${profile?.map?.densityClass ?? "-"}</strong></div>
+          <div><span>Current Attempt</span><strong>${profile?.repair?.currentAttempt ?? meta.autoTuningAttempt ?? "-"}</strong></div>
+          <div><span>Repair</span><strong>${profile?.repair?.activeErrorGroup ?? "-"}</strong></div>
+          <div><span>Best Score</span><strong>${meta.bestCandidateScore ?? "-"}</strong></div>
+          <div><span>Tray/Item Ratio</span><strong>${profile?.tray?.trayLayerPerItemLayerRatio ?? "-"}</strong></div>
+        </div>
+      </section>
+      ${meta.autoRepairStatus?.length ? `
+        <section class="generate-result-card">
+          <header><h3>Lịch sử Auto Repair</h3><span>${meta.autoRepairStatus.length}</span></header>
+          <div class="generate-issue-list">
+            ${meta.autoRepairStatus.slice(-6).map((entry) => `
+              <div class="generate-issue warning">
+                <strong>${escapeHtml(entry.code)} · ${escapeHtml(entry.errorGroup)}</strong>
+                <span>${escapeHtml(entry.status)}</span>
+                <small>${escapeHtml(entry.action)}</small>
+              </div>
+            `).join("")}
+          </div>
+        </section>
+      ` : ""}
       <section class="generate-result-card">
         <header><h3>Cảnh báo & lỗi</h3><span>${issues.length}</span></header>
         <div class="generate-issue-list">${issueRows(issues)}</div>
@@ -10147,14 +10693,15 @@ function validateGenerateSourceOnly() {
 function createGeneratePreviewResult({ silent = false } = {}) {
   const result = generatePreview(editor.data, editor.data.generateSettings);
   generateLastResult = result;
-  generatePreviewState = result.ok ? result.preview : null;
-  generateActiveLayerId = result.ok ? result.preview.activeLayerId : null;
+  generatePreviewState = result.preview ?? null;
+  generateActiveLayerId = result.preview ? result.preview.activeLayerId : null;
   if (!result.ok) {
     editor.data.generationMeta = { ...(editor.data.generationMeta ?? {}), status: "Error" };
   }
   renderAll();
   if (!silent) {
-    showNotification(elements.toast, result.ok ? `Đã tạo bản xem trước ${result.generatedItems.length} vật phẩm.` : `Sinh lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+    const fallbackText = result.preview ? "Đã tạo best candidate cần review" : "Sinh lỗi";
+    showNotification(elements.toast, result.ok ? `Đã tạo bản xem trước ${result.generatedItems.length} vật phẩm.` : `${fallbackText}: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
   }
   return result;
 }
@@ -10456,7 +11003,7 @@ function renderGenerateWorkspace() {
   renderGenerateControls(elements.generateControls, editor.data);
   renderGenerateResults(elements.generateResultCard, editor.data, generateLastResult);
   const hasPreview = Boolean(generatePreviewState);
-  elements.generateApplyBtn.disabled = !hasPreview;
+  elements.generateApplyBtn.disabled = !hasPreview || !generateLastResult?.ok;
   elements.generateResetBtn.disabled = !generateLastAppliedBackup;
 }
 

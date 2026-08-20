@@ -4,8 +4,11 @@ import { createFruit } from "../objects/fruit-object.js";
 import { pathConnectionsAt } from "../objects/element-placement-rules.js";
 import { cellKey, indexToPosition } from "../utils/grid-utils.js";
 import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_KEYS, GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
-import { analyzeAdaptiveLevel, createTuningState, estimateDerivedGenerateParameters, updateTuningState } from "./adaptive-parameters.js";
+import { analyzeAdaptiveLevel, estimateDerivedGenerateParameters } from "./adaptive-parameters.js";
+import { buildAutoGenerateProfile } from "./auto-generate-profile.js";
+import { autoRepairStatusRows, createRebalanceState, rebalanceAfterFailure } from "./auto-rebalance-controller.js";
 import { buildStraightClusterContext, placeLayerClusters, summarizeSpatialDistribution } from "./cluster-distribution.js";
+import { classifyGeneratorIssues, scoreGeneratorCandidate } from "./error-analyzer.js";
 import { analyzeGenerateSource, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
 import { isItemLayerLocked } from "./item-layer-locks.js";
 
@@ -377,6 +380,10 @@ function generatedMetrics(generatedItems, settings, source) {
   const loopRiskScore = generatedItems.length
     ? generatedItems.filter((item) => item.connectionCount <= 1).length / generatedItems.length
     : 0;
+  const spatialSummaries = Object.values(source.spatialDistribution ?? {});
+  const spatialDistributionScore = spatialSummaries.length
+    ? spatialSummaries.reduce((sum, entry) => sum + (Number(entry.coverageRatio) || 0) + (1 - Number(entry.largestRegionShare || 0)), 0) / (spatialSummaries.length * 2)
+    : 0;
   return {
     status: "Generated",
     generatedAt: Date.now(),
@@ -407,6 +414,13 @@ function generatedMetrics(generatedItems, settings, source) {
     derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
     autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
     autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null),
+    autoGenerateProfile: structuredClone(settings.autoGenerateProfile ?? null),
+    autoRepairStatus: autoRepairStatusRows(settings.autoTuningProfile ?? null),
+    settings: {
+      maxUnreleasedItems: settings.maxUnreleasedItems,
+      tailLengthCap: settings.tailLengthCap
+    },
+    spatialDistributionScore: Number(spatialDistributionScore.toFixed(3)),
     spatialDistribution: structuredClone(source.spatialDistribution ?? null)
   };
 }
@@ -440,8 +454,9 @@ function validateDifficultyMetrics(meta, settings) {
 function generatePreviewAttempt(state, source, settings) {
   const random = createRandom(settings.seed);
   const next = structuredClone(state);
+  source.spatialDistribution = {};
   const layerPlan = buildAdaptiveLayerRequirements(state, source, settings, random);
-  const maxLayerIndex = Math.max(0, layerPlan.layerCount - 1);
+  const maxLayerIndex = Math.max(0, ...(layerPlan.layerIndexes ?? []));
   ensureLayers(next, maxLayerIndex);
   clearGeneratedLayerItems(next);
 
@@ -454,37 +469,57 @@ function generatePreviewAttempt(state, source, settings) {
   });
   const generatedLayerIndexes = new Map();
 
+  const invalidCandidate = (issues, meta = null) => {
+    const classifiedIssues = classifyGeneratorIssues(issues);
+    const candidateMeta = meta ?? (generatedItems.length ? generatedMetrics(generatedItems, settings, source) : {
+      status: "Need Review",
+      generatedAt: Date.now(),
+      generatorVersion: GENERATOR_VERSION,
+      totalRequired: source.stats.totalRequired,
+      totalGenerated: generatedItems.length,
+      missing: Math.max(0, source.stats.totalRequired - generatedItems.length),
+      derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
+      autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
+      autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null),
+      autoGenerateProfile: structuredClone(settings.autoGenerateProfile ?? null),
+      autoRepairStatus: autoRepairStatusRows(settings.autoTuningProfile ?? null)
+    });
+    candidateMeta.status = "Need Review";
+    candidateMeta.invalid = true;
+    candidateMeta.issues = structuredClone(classifiedIssues);
+    next.generateSettings = settings;
+    next.generatedItems = generatedItems;
+    next.generationMeta = candidateMeta;
+    return {
+      ok: false,
+      preview: generatedItems.length ? next : null,
+      source,
+      settings,
+      issues: classifiedIssues,
+      generatedItems,
+      meta: candidateMeta
+    };
+  };
+
   for (const [layerIndex, requirements] of [...sourceByLayer.entries()].sort(([a], [b]) => a - b)) {
     const validCells = source.validByLayer.get(layerIndex) ?? [];
     const requiredInGeneratedLayer = requirements.reduce((sum, entry) => sum + entry.amount, 0);
     if (requiredInGeneratedLayer > validCells.length) {
-      return {
-        ok: false,
-        preview: null,
-        source,
-        settings,
-        issues: [createGeneratorIssue({
+      return invalidCandidate([createGeneratorIssue({
           code: "NOT_ENOUGH_VALID_CELLS",
           message: `Layer sinh ${layerIndex + 1} cần ${requiredInGeneratedLayer} vật phẩm nhưng chỉ có ${validCells.length} ô hợp lệ.`,
           layerIndex,
           suggestion: "Tăng số item layer hoặc mở thêm path hợp lệ để giảm mật độ mỗi layer."
-        })]
-      };
+        })]);
     }
     const context = buildStraightClusterContext(state, validCells, requiredInGeneratedLayer, settings.maxClusterSizePerBranch);
     if (context.straightRuns.length === 0 && requirements.some((entry) => entry.amount > 0)) {
-      return {
-        ok: false,
-        preview: null,
-        source,
-        settings,
-        issues: [createGeneratorIssue({
+      return invalidCandidate([createGeneratorIssue({
           code: "BRANCH_DISTRIBUTION_FAILED",
           message: `Lớp ${layerIndex + 1} không có nhánh hợp lệ để sinh vật phẩm.`,
           layerIndex,
           suggestion: "Thêm path có thể đi được hoặc bỏ vùng chặn trên layer này."
-        })]
-      };
+        })]);
     }
     const previousLayerIndexes = generatedLayerIndexes.get(layerIndex - 1) ?? new Set();
     const placed = placeLayerClusters({
@@ -497,18 +532,12 @@ function generatePreviewAttempt(state, source, settings) {
       scoreCell: (requirement, index) => scoreCellForRequirement(state, source, settings, requirement, index, random)
     });
     if (!placed.ok) {
-      return {
-        ok: false,
-        preview: null,
-        source,
-        settings,
-        issues: [createGeneratorIssue({
+      return invalidCandidate([createGeneratorIssue({
           code: "ITEM_DISTRIBUTION_REPAIR_FAILED",
           message: `Lớp ${layerIndex + 1} không tìm được cụm thẳng hợp lệ cho ${placed.missing.reduce((sum, entry) => sum + entry.amount, 0)} vật phẩm còn lại.`,
           layerIndex,
           suggestion: "Sinh lại với seed khác, giảm mật độ item hoặc thêm đoạn path thẳng hợp lệ."
-        })]
-      };
+        })]);
     }
     const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
     placed.placedCells.forEach((cell, order) => {
@@ -546,19 +575,13 @@ function generatePreviewAttempt(state, source, settings) {
 
   const quotaIssues = validateGeneratedQuotas(generatedItems, source);
   if (quotaIssues.length > 0) {
-    return {
-      ok: false,
-      preview: null,
-      source,
-      settings,
-      issues: quotaIssues
-    };
+    return invalidCandidate(quotaIssues);
   }
 
   const meta = generatedMetrics(generatedItems, settings, source);
   const metricIssues = validateDifficultyMetrics(meta, settings);
   if (metricIssues.length > 0) {
-    return { ok: false, preview: null, source, settings, issues: metricIssues, generatedItems, meta };
+    return invalidCandidate(metricIssues, meta);
   }
   next.generateSettings = settings;
   next.generatedItems = generatedItems;
@@ -574,6 +597,8 @@ function canRetryGeneration(result) {
     "TAIL_PRESSURE_EXCEEDED",
     "RELEASE_PRESSURE_EXCEEDED",
     "NEXT_LAYER_SPAWN_TRAP",
+    "NOT_ENOUGH_VALID_CELLS",
+    "BRANCH_DISTRIBUTION_FAILED",
     "ITEM_DISTRIBUTION_REPAIR_FAILED"
   ]);
   return result?.issues?.some((issue) => retryableCodes.has(issue.code));
@@ -625,34 +650,61 @@ export function generatePreview(state, rawSettings = {}) {
   const analysis = analyzeAdaptiveLevel(state, source);
   const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
   if (errors.length > 0) {
-    return { ok: false, preview: null, source, analysis, settings: baseSettings, issues: errors };
+    return { ok: false, preview: null, source, analysis, settings: baseSettings, issues: classifyGeneratorIssues(errors) };
   }
 
   let lastResult = null;
-  let tuning = createTuningState();
-  for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
+  let bestResult = null;
+  let bestScore = Number.NEGATIVE_INFINITY;
+  const initialDerived = estimateDerivedGenerateParameters(source, analysis, baseSettings);
+  const initialProfile = buildAutoGenerateProfile(state, source, analysis, initialDerived.derivedParameters);
+  let tuning = createRebalanceState(initialProfile, baseSettings.maxRetries);
+  for (let attempt = 0; attempt < Math.min(baseSettings.maxRetries, tuning.hardMax); attempt += 1) {
     const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
     const overrideSettings = Object.fromEntries((baseSettings.derivedOverrideKeys ?? [])
       .filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key))
       .map((key) => [key, baseSettings[key]]));
     const autoDerivedParameters = applyOverrideDerivedParameters(derived.derivedParameters, overrideSettings);
+    const autoGenerateProfile = buildAutoGenerateProfile(state, source, analysis, autoDerivedParameters, tuning);
     const settings = normalizeGenerateSettings({
       ...baseSettings,
       ...derived.settings,
       ...overrideSettings,
       seed: createRandomGenerateSeed(),
       autoDerivedParameters,
+      autoGenerateProfile,
       autoTuningAttempt: attempt + 1,
       autoTuningProfile: tuning
     });
     const result = generatePreviewAttempt(state, source, settings);
     result.analysis = analysis;
+    result.profile = autoGenerateProfile;
+    result.issues = classifyGeneratorIssues(result.issues ?? []);
     if (result.ok) return result;
     lastResult = result;
-    if (!canRetryGeneration(result)) return result;
-    tuning = updateTuningState(tuning, result);
+    const candidateScore = scoreGeneratorCandidate(result);
+    if (candidateScore > bestScore) {
+      bestScore = candidateScore;
+      bestResult = result;
+    }
+    if (!canRetryGeneration(result)) {
+      const fallback = bestResult?.preview ? bestResult : result;
+      if (fallback?.meta) {
+        fallback.meta.bestCandidateScore = Number(bestScore.toFixed(2));
+        fallback.meta.finalStatus = fallback.preview ? "INVALID / NEED REVIEW" : "INVALID";
+      }
+      return fallback;
+    }
+    const feedback = rebalanceAfterFailure(tuning, result);
+    if (!feedback.canContinue) break;
+    tuning = feedback.rebalance;
   }
-  return lastResult ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
+  const fallback = bestResult?.preview ? bestResult : lastResult;
+  if (fallback?.meta) {
+    fallback.meta.bestCandidateScore = Number(bestScore.toFixed(2));
+    fallback.meta.finalStatus = fallback.preview ? "INVALID / NEED REVIEW" : "INVALID";
+  }
+  return fallback ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
 }
 
 export function applyGeneratedPreview(targetState, previewState) {

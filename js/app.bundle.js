@@ -3685,23 +3685,56 @@ function markSpatialUse(state, spread, index) {
   spread.usedByRegion.set(key, (spread.usedByRegion.get(key) ?? 0) + 1);
 }
 
-function bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread) {
+function adjacentOverlapRatio(validCellCount, targetAmount) {
+  const roomRatio = validCellCount / Math.max(1, targetAmount);
+  if (roomRatio >= 3) return 0.1;
+  if (roomRatio >= 2) return 0.15;
+  if (roomRatio >= 1.4) return 0.2;
+  return 0.25;
+}
+
+function createAdjacentOverlapState(validCells, targetAmount, previousIndexes) {
+  const previous = previousIndexes ?? new Set();
+  const nonOverlapCapacity = validCells.filter((index) => !previous.has(index)).length;
+  const ratio = adjacentOverlapRatio(validCells.length, targetAmount);
+  const baseBudget = Math.floor(targetAmount * ratio);
+  return {
+    previous,
+    budget: Math.max(baseBudget, Math.max(0, targetAmount - nonOverlapCapacity)),
+    used: 0
+  };
+}
+
+function adjacentOverlapPenalty(overlap, settings, index) {
+  if (!overlap.previous.has(index)) return 0;
+  if (overlap.used >= overlap.budget) return Number.POSITIVE_INFINITY;
+  return 34 + settings.branchDistributionBalance * 24;
+}
+
+function markAdjacentOverlapUse(overlap, index) {
+  if (overlap.previous.has(index)) overlap.used += 1;
+}
+
+function bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread, overlap) {
   let best = null;
   branch.indexes.forEach((index) => {
     if (usedIndexes.has(index)) return;
+    const overlapPenalty = adjacentOverlapPenalty(overlap, settings, index);
+    if (!Number.isFinite(overlapPenalty)) return;
     const score = scoreCellForRequirement(state, source, settings, requirement, index, random)
-      + spatialSpreadPenalty(state, spread, settings, index);
+      + spatialSpreadPenalty(state, spread, settings, index)
+      + overlapPenalty;
     if (!best || score < best.score) best = { index, score };
   });
   return best;
 }
 
-function takeCellsFromBranches(state, source, branches, requirement, settings, random, usedIndexes, spread) {
+function takeCellsFromBranches(state, source, branches, requirement, settings, random, usedIndexes, spread, overlap) {
   const picked = [];
   let guard = 0;
   while (picked.length < requirement.amount && guard < requirement.amount * Math.max(1, branches.length) * 5) {
     const rankedBranches = branches
-      .map((branch) => ({ branch, candidate: bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread) }))
+      .map((branch) => ({ branch, candidate: bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread, overlap) }))
       .filter((entry) => entry.candidate)
       .sort((a, b) => a.candidate.score - b.candidate.score);
     if (rankedBranches.length === 0) break;
@@ -3709,13 +3742,14 @@ function takeCellsFromBranches(state, source, branches, requirement, settings, r
     const chunkSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, requirement.amount - picked.length));
     const actualChunk = Math.max(1, Math.round(chunkSize * Math.max(0.15, settings.clusterRatio)));
     for (let i = 0; i < actualChunk && picked.length < requirement.amount && branch.indexes.length > 0; i += 1) {
-      const candidate = bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread);
+      const candidate = bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread, overlap);
       if (!candidate) break;
       const index = candidate.index;
       branch.indexes = branch.indexes.filter((entry) => entry !== index);
       if (usedIndexes.has(index)) continue;
       usedIndexes.add(index);
       markSpatialUse(state, spread, index);
+      markAdjacentOverlapUse(overlap, index);
       picked.push({ index, branchId: branch.branchId });
     }
     guard += 1;
@@ -3933,7 +3967,13 @@ function estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClus
 function generatedMetrics(generatedItems, settings, source) {
   const byBranch = new Set(generatedItems.map((item) => item.branchId).filter(Boolean));
   const byLayer = new Map();
+  const indexesByLayer = new Map();
   generatedItems.forEach((item) => byLayer.set(item.layerIndex, (byLayer.get(item.layerIndex) ?? 0) + 1));
+  generatedItems.forEach((item) => {
+    const indexes = indexesByLayer.get(item.layerIndex) ?? new Set();
+    indexes.add(item.pathIndex);
+    indexesByLayer.set(item.layerIndex, indexes);
+  });
   let sameAdjacent = 0;
   let comparable = 0;
   [...byLayer.keys()].forEach((layerIndex) => {
@@ -3961,6 +4001,17 @@ function generatedMetrics(generatedItems, settings, source) {
   const maxUnreleasedItems = estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClusterRatio, settings });
   const spawnTrapCount = generatedItems.filter((item) => item.spawnRisk).length;
   const carryOverCount = generatedItems.filter((item) => Number(item.sourceTrayLayerIndex) > Number(item.layerIndex) + 1).length;
+  let adjacentOverlapCount = 0;
+  let adjacentLayerItemCount = 0;
+  [...indexesByLayer.keys()].sort((a, b) => a - b).forEach((layerIndex) => {
+    const previous = indexesByLayer.get(layerIndex - 1);
+    const current = indexesByLayer.get(layerIndex);
+    if (!previous || !current) return;
+    current.forEach((index) => {
+      if (previous.has(index)) adjacentOverlapCount += 1;
+    });
+    adjacentLayerItemCount += current.size;
+  });
   const decisionPointFrequency = source.pathIndexes?.length ? (source.stats.priorityPoints ?? 0) / source.pathIndexes.length : 0;
   const loopRiskScore = generatedItems.length
     ? generatedItems.filter((item) => item.connectionCount <= 1).length / generatedItems.length
@@ -3984,6 +4035,8 @@ function generatedMetrics(generatedItems, settings, source) {
     maxUnreleasedItems,
     carryOverCount,
     carryOverActualRatio: generatedItems.length ? Number((carryOverCount / generatedItems.length).toFixed(3)) : 0,
+    adjacentOverlapCount,
+    adjacentOverlapRatio: adjacentLayerItemCount ? Number((adjacentOverlapCount / adjacentLayerItemCount).toFixed(3)) : 0,
     generatedMapLayerCount: byLayer.size,
     spawnTrapCount,
     decisionPointFrequency: Number(decisionPointFrequency.toFixed(3)),
@@ -4037,8 +4090,9 @@ function generatePreviewAttempt(state, source, settings) {
     list.push(requirement);
     sourceByLayer.set(requirement.layerIndex, list);
   });
+  const generatedLayerIndexes = new Map();
 
-  for (const [layerIndex, requirements] of sourceByLayer.entries()) {
+  for (const [layerIndex, requirements] of [...sourceByLayer.entries()].sort(([a], [b]) => a - b)) {
     const validCells = source.validByLayer.get(layerIndex) ?? [];
     const requiredInGeneratedLayer = requirements.reduce((sum, entry) => sum + entry.amount, 0);
     if (requiredInGeneratedLayer > validCells.length) {
@@ -4073,8 +4127,9 @@ function generatePreviewAttempt(state, source, settings) {
     const branchCopies = branches.map((branch) => ({ ...branch, indexes: branch.indexes.slice() }));
     const usedLayerIndexes = new Set();
     const spatialSpread = createSpatialSpreadState(state, validCells, requiredInGeneratedLayer);
+    const adjacentOverlap = createAdjacentOverlapState(validCells, requiredInGeneratedLayer, generatedLayerIndexes.get(layerIndex - 1));
     requirementChunks(requirements, settings, random).forEach((requirement) => {
-      const cells = takeCellsFromBranches(state, source, branchCopies, requirement, settings, random, usedLayerIndexes, spatialSpread);
+      const cells = takeCellsFromBranches(state, source, branchCopies, requirement, settings, random, usedLayerIndexes, spatialSpread, adjacentOverlap);
       if (cells.length < requirement.amount) return;
       const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
       cells.forEach((cell, order) => {
@@ -4098,6 +4153,7 @@ function generatePreviewAttempt(state, source, settings) {
         });
       });
     });
+    generatedLayerIndexes.set(layerIndex, new Set(usedLayerIndexes));
   }
 
   const quotaIssues = validateGeneratedQuotas(generatedItems, source);
@@ -6191,7 +6247,7 @@ function renderGenerateResults(container, state, result = null) {
           <div><span>Độ trễ xả TB</span><strong>${meta.avgReleaseDelay ?? "-"}</strong></div>
           <div><span>Tồn kho tối đa</span><strong>${meta.maxUnreleasedItems ?? "-"}</strong></div>
           <div><span>Mật độ vật phẩm</span><strong>${Number.isFinite(meta.itemDensity) ? formatPercent(meta.itemDensity) : "-"}</strong></div>
-          <div><span>Carry-over</span><strong>${Number.isFinite(meta.carryOverActualRatio) ? formatPercent(meta.carryOverActualRatio) : "-"}</strong></div>
+          <div><span>Trùng layer kề</span><strong>${Number.isFinite(meta.adjacentOverlapRatio) ? formatPercent(meta.adjacentOverlapRatio) : "-"}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">

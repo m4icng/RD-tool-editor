@@ -157,7 +157,7 @@ function buildClusterCandidates(state, runs, maxClusterSize) {
 }
 
 export function buildStraightClusterContext(state, validCells, targetAmount, maxClusterSize) {
-  const maxSize = clamp(Number(maxClusterSize) || 6, 1, 6);
+  const maxSize = clamp(Number(maxClusterSize) || 6, 1, 20);
   const branch = createBranchStats(state, validCells, targetAmount);
   const regionStats = createRegionStats(state, validCells, targetAmount);
   const straightRuns = buildStraightRuns(state, validCells, branch.branchByIndex);
@@ -180,13 +180,16 @@ export function buildStraightClusterContext(state, validCells, targetAmount, max
 }
 
 function preferredClusterSize(requirement, settings, random) {
-  const maxSize = clamp(Number(settings.maxClusterSizePerBranch) || 6, 1, 6);
   const derived = settings.autoDerivedParameters?.clusterSizeDistribution ?? {};
-  const preferred = clamp(Number(derived.preferred) || Math.round(maxSize * Math.max(0.35, settings.clusterRatio)), 2, maxSize);
+  const maxSize = clamp(Number(settings.maxClusterSizePerBranch) || Number(derived.max) || 6, 1, 20);
+  const minSize = clamp(Number(settings.minClusterSizePerBranch) || Number(derived.min) || 1, 1, maxSize);
+  const preferred = clamp(Number(derived.preferred) || Math.round(maxSize * Math.max(0.35, settings.clusterRatio)), minSize, maxSize);
   const variance = random() < 0.35 ? (random() < 0.5 ? -1 : 1) : 0;
-  let size = clamp(Math.round(preferred + variance), 2, maxSize);
+  let size = clamp(Math.round(preferred + variance), minSize, maxSize);
   size = Math.min(size, requirement.remaining);
-  if (requirement.remaining - size === 1 && size > 2) size -= 1;
+  if (requirement.remaining - size > 0 && requirement.remaining - size < minSize && requirement.remaining <= maxSize) {
+    size = requirement.remaining;
+  }
   return Math.max(1, size);
 }
 

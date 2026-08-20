@@ -45,7 +45,8 @@ export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
   { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
   { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
-  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
+  { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
+  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
@@ -60,6 +61,7 @@ export const DERIVED_GENERATE_PARAMETER_ALIASES = Object.freeze({
   tailLengthCap: "safeTailLimit",
   unreleasedInventoryTarget: "highPressureRatio",
   clusterRatio: "clusterAdjacencyRatio",
+  minClusterSizePerBranch: "clusterSizeDistribution.min",
   maxClusterSizePerBranch: "clusterSizeDistribution.max",
   branchDistributionBalance: "branchDistribution"
 });
@@ -70,6 +72,7 @@ export const GENERATE_SETTING_FIELDS = Object.freeze([
 
 const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   clusterRatio: 0.88,
+  minClusterSizePerBranch: 1,
   maxClusterSizePerBranch: 5,
   branchDistributionBalance: 0.84,
   routeChoicePressure: 0.34,
@@ -142,6 +145,9 @@ export function normalizeGenerateSettings(value = {}) {
     const numeric = Number(settings[field.key]);
     settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
+  if (settings.minClusterSizePerBranch > settings.maxClusterSizePerBranch) {
+    settings.maxClusterSizePerBranch = settings.minClusterSizePerBranch;
+  }
   settings.autoDerived = settings.autoDerived !== false;
   settings.derivedOverrideKeys = Array.isArray(settings.derivedOverrideKeys)
     ? [...new Set(settings.derivedOverrideKeys.filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key)))]

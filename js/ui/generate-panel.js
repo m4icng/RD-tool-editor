@@ -93,6 +93,17 @@ function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys)
     }
     const alias = DERIVED_GENERATE_PARAMETER_ALIASES[key];
     if (!alias) return;
+    if (alias === "clusterSizeDistribution.min") {
+      const min = Number(settings[key]);
+      const max = Math.max(Number(next.clusterSizeDistribution.max ?? min), min);
+      next.clusterSizeDistribution = {
+        ...next.clusterSizeDistribution,
+        min,
+        preferred: Math.min(Math.max(Number(next.clusterSizeDistribution.preferred ?? min), min), max),
+        max
+      };
+      return;
+    }
     if (alias === "clusterSizeDistribution.max") {
       const max = Number(settings[key]);
       const min = Math.min(Number(next.clusterSizeDistribution.min ?? 1), max);
@@ -115,6 +126,7 @@ const DERIVED_SUMMARY_CARDS = Object.freeze([
   { key: "tailLengthCap", label: "Safe Tail", value: (derived) => derived.safeTailLimit },
   { key: "noiseRatio", label: "Noise", value: (derived) => derived.noiseRatio },
   { key: "clusterRatio", label: "Cluster", value: (derived) => derived.clusterAdjacencyRatio },
+  { key: "minClusterSizePerBranch", label: "Min cụm", value: (derived) => derived.clusterSizeDistribution.min },
   { key: "maxClusterSizePerBranch", label: "Max cụm", value: (derived) => derived.clusterSizeDistribution.max },
   { key: "releaseAmountTarget", label: "Release", value: (derived) => derived.releaseAmountTarget },
   { key: "beamWidth", label: "Beam", value: (derived) => derived.beamWidth }

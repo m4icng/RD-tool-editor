@@ -136,7 +136,8 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
   const safeTailLimit = clampAdaptiveValue(Math.round(targetPeakTail + 2 + topologyPressure * 4 + demandScale), targetPeakTail + 1, 60);
   const noiseRatio = clampAdaptiveValue(0.24 + difficultyScore * 0.34 + density * 0.1 + analysis.demand.colorDiversityRatio * 0.08 - tuning.releaseRelief * 0.02, 0.18, 0.68);
   const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.32, 0.82);
-  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 3.5 + demandScale * 0.5 - tuning.quotaRelief * 0.25), 2, 6);
+  const clusterMin = 1;
+  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 6 + demandScale * 1.4 - tuning.quotaRelief * 0.25), clusterMin, 20);
   const clusterAdjacencyRatio = clampAdaptiveValue(0.96 - difficultyScore * 0.16 + density * 0.04 + tuning.releaseRelief * 0.025, 0.72, 0.96);
   const highPressureRatio = clampAdaptiveValue(0.16 + difficultyScore * 0.28 + density * 0.14 + topologyPressure * 0.1 - tuning.releaseRelief * 0.02, 0.1, 0.58);
   const releaseDelayTarget = clampAdaptiveValue(Math.round(releaseDistance * (0.18 + difficultyScore * 0.18) + 2 + topologyPressure * 3 - tuning.releaseRelief), 2, 80);
@@ -168,6 +169,7 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     maxImmediateChainCount: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 - tuning.spawnRelief * 0.2), 1, 12),
     nextLayerTrapPressure: clampAdaptiveValue(0.08 + difficultyScore * 0.46 - tuning.spawnRelief * 0.06, 0.02, 0.7),
     clusterRatio: clusterAdjacencyRatio,
+    minClusterSizePerBranch: clusterMin,
     maxClusterSizePerBranch: clusterMax,
     branchDistributionBalance: branchDistribution,
     routeChoicePressure: clampAdaptiveValue(0.12 + difficultyScore * 0.68 + analysis.topology.junctionRatio * 0.3, 0.08, 0.92),
@@ -183,7 +185,7 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     noiseRatio: roundAdaptiveValue(noiseRatio, 3),
     requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
     carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08, 0.18, 0.72), 3),
-    clusterSizeDistribution: { min: 2, preferred: clampAdaptiveValue(Math.round((2 + clusterMax) / 2), 2, clusterMax), max: clusterMax },
+    clusterSizeDistribution: { min: clusterMin, preferred: clampAdaptiveValue(Math.round((clusterMin + clusterMax) / 2), clusterMin, clusterMax), max: clusterMax },
     clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
     highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),
     continuousGrowthTarget,

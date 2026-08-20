@@ -591,6 +591,17 @@ function applyOverrideDerivedParameters(derivedParameters, overrideSettings) {
     }
     const alias = DERIVED_GENERATE_PARAMETER_ALIASES[key];
     if (!alias) return;
+    if (alias === "clusterSizeDistribution.min") {
+      const min = Number(value);
+      const max = Math.max(Number(next.clusterSizeDistribution.max ?? min), min);
+      next.clusterSizeDistribution = {
+        ...next.clusterSizeDistribution,
+        min,
+        preferred: Math.min(Math.max(Number(next.clusterSizeDistribution.preferred ?? min), min), max),
+        max
+      };
+      return;
+    }
     if (alias === "clusterSizeDistribution.max") {
       const max = Number(value);
       const min = Math.min(Number(next.clusterSizeDistribution.min ?? 1), max);

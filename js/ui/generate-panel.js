@@ -15,10 +15,6 @@ function formatPercent(value) {
   return `${Math.round(Number(value) * 100)}%`;
 }
 
-function formatNumber(value) {
-  return Number.isFinite(Number(value)) ? String(value) : "-";
-}
-
 function statusOf(state) {
   const meta = state.generationMeta;
   if (meta?.status === "Error") return "Lỗi";
@@ -65,35 +61,6 @@ function intentFieldsHtml(settings) {
   `;
 }
 
-function derivedFieldGroupsHtml(settings, estimatedSettings) {
-  const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
-  const groups = [...new Set(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.group))];
-  return groups.map((group) => {
-    const fields = DERIVED_GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
-    return `
-      <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
-        <summary>${escapeHtml(group)}</summary>
-        <div class="generate-field-grid">
-          ${fields.map((field) => {
-            const overridden = overrideKeys.has(field.key);
-            const rawValue = overridden ? settings[field.key] : estimatedSettings[field.key];
-            const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
-            const min = field.type === "percent" ? field.min * 100 : field.min;
-            const max = field.type === "percent" ? field.max * 100 : field.max;
-            const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
-            return `
-              <label class="generate-field ${overridden ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
-                <span>${escapeHtml(field.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
-                <input type="number" data-generate-derived-setting="${escapeHtml(field.key)}" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
-              </label>
-            `;
-          }).join("")}
-        </div>
-      </details>
-    `;
-  }).join("");
-}
-
 function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys) {
   const next = {
     ...derivedParameters,
@@ -122,6 +89,35 @@ function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys)
   return next;
 }
 
+const DERIVED_SUMMARY_CARDS = Object.freeze([
+  { key: "avgTailLengthTarget", label: "Avg Tail", value: (derived) => derived.targetAverageTail },
+  { key: "targetPeakTail", label: "Peak Tail", value: (derived) => derived.targetPeakTail },
+  { key: "tailLengthCap", label: "Safe Tail", value: (derived) => derived.safeTailLimit },
+  { key: "noiseRatio", label: "Noise", value: (derived) => derived.noiseRatio },
+  { key: "clusterRatio", label: "Cluster", value: (derived) => derived.clusterAdjacencyRatio },
+  { key: "maxClusterSizePerBranch", label: "Max cụm", value: (derived) => derived.clusterSizeDistribution.max },
+  { key: "releaseAmountTarget", label: "Release", value: (derived) => derived.releaseAmountTarget },
+  { key: "beamWidth", label: "Beam", value: (derived) => derived.beamWidth }
+]);
+
+function derivedSummaryCardsHtml(settings, derived, overrideKeys) {
+  return DERIVED_SUMMARY_CARDS.map((card) => {
+    const field = DERIVED_GENERATE_SETTING_FIELDS.find((entry) => entry.key === card.key);
+    if (!field) return "";
+    const rawValue = overrideKeys.has(card.key) ? settings[card.key] : card.value(derived);
+    const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
+    const min = field.type === "percent" ? field.min * 100 : field.min;
+    const max = field.type === "percent" ? field.max * 100 : field.max;
+    const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+    return `
+      <label class="generate-derived-card ${overrideKeys.has(card.key) ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
+        <span>${escapeHtml(card.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
+        <input type="number" data-generate-derived-setting="${escapeHtml(card.key)}" data-generate-setting="${escapeHtml(card.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+      </label>
+    `;
+  }).join("");
+}
+
 export function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
@@ -129,7 +125,6 @@ export function renderGenerateControls(container, state) {
   const derivedEstimate = estimateDerivedGenerateParameters(source, analysis, settings);
   const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
   const derived = applyDerivedDisplayOverrides(derivedEstimate.derivedParameters, settings, overrideKeys);
-  const estimatedSettings = { ...derivedEstimate.settings, ...derivedEstimate.derivedParameters };
   const overrideCount = settings.derivedOverrideKeys?.length ?? 0;
 
   container.innerHTML = `
@@ -167,16 +162,8 @@ export function renderGenerateControls(container, state) {
     <section class="control-section">
       <div class="section-heading"><h2>Auto Derived</h2><span>${overrideCount ? `${overrideCount} chỉnh tay` : "Level riêng"}</span></div>
       <div class="generate-derived-grid">
-        <div><span>Avg Tail</span><strong>${formatNumber(derived.targetAverageTail)}</strong></div>
-        <div><span>Peak Tail</span><strong>${formatNumber(derived.targetPeakTail)}</strong></div>
-        <div><span>Safe Tail</span><strong>${formatNumber(derived.safeTailLimit)}</strong></div>
-        <div><span>Noise</span><strong>${formatPercent(derived.noiseRatio)}</strong></div>
-        <div><span>Cluster</span><strong>${formatPercent(derived.clusterAdjacencyRatio)}</strong></div>
-        <div><span>Max cụm</span><strong>${derived.clusterSizeDistribution.max}</strong></div>
-        <div><span>Release</span><strong>${formatNumber(derived.releaseAmountTarget)}</strong></div>
-        <div><span>Beam</span><strong>${formatNumber(derived.beamWidth)}</strong></div>
+        ${derivedSummaryCardsHtml(settings, derived, overrideKeys)}
       </div>
-      ${derivedFieldGroupsHtml(settings, estimatedSettings)}
       <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
   `;

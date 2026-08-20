@@ -30,12 +30,14 @@ export const TAIL_CURVE_LABELS = Object.freeze({
 
 export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
+  { key: "targetPeakTail", label: "Đuôi đỉnh mục tiêu", type: "number", min: 2, max: 60, step: 1, group: "Áp lực đuôi", tip: "Đỉnh áp lực đuôi dự kiến cho level; dùng để designer khóa cảm giác peak mong muốn." },
   { key: "tailLengthCap", label: "Giới hạn đuôi", type: "number", min: 1, max: 60, step: 1, group: "Áp lực đuôi", tip: "Nếu ước tính đuôi vượt ngưỡng này, bộ sinh sẽ báo lỗi." },
   { key: "tailLengthVariance", label: "Dao động đuôi", type: "number", min: 0, max: 12, step: 1, group: "Áp lực đuôi", tip: "Mức dao động độ dài đuôi giữa các đoạn khó/dễ." },
   { key: "releaseDelayTarget", label: "Độ trễ xả", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Khoảng cách đường đi mục tiêu từ lúc ăn vật phẩm tới khay phù hợp." },
   { key: "unreleasedInventoryTarget", label: "Tồn kho mục tiêu", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Tỷ lệ vật phẩm dự kiến chưa xả được tại các đoạn áp lực." },
   { key: "maxUnreleasedItems", label: "Tồn kho tối đa", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Số vật phẩm chưa xả tối đa cho phép theo mô phỏng nhanh." },
   { key: "releaseDistanceWeight", label: "Trọng số xả", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Mức ưu tiên khoảng cách vật phẩm tới khay phù hợp khi chọn vị trí." },
+  { key: "releaseAmountTarget", label: "Lượng xả mục tiêu", type: "number", min: 1, max: 12, step: 1, group: "Áp lực xả", tip: "Số item mục tiêu trong một nhịp xả/relief để kiểm soát độ nghẹt khi mở khay." },
   { key: "layerDistributionBalance", label: "Cân bằng lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Ưu tiên mềm để giữ phân bổ giữa các lớp theo đúng khay nguồn." },
   { key: "spawnSafetyDistance", label: "Khoảng cách xuất hiện an toàn", type: "number", min: 0, max: 30, step: 1, group: "Lớp và xuất hiện", tip: "Khoảng cách tối thiểu từ điểm bắt đầu tới vật phẩm lớp mới để tránh bẫy xuất hiện." },
   { key: "maxImmediateChainCount", label: "Chuỗi gần đầu tối đa", type: "number", min: 0, max: 12, step: 1, group: "Lớp và xuất hiện", tip: "Số vật phẩm lớp mới liên tiếp được phép xuất hiện quá gần đầu tàu." },
@@ -47,7 +49,8 @@ export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
-  { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
+  { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." },
+  { key: "beamWidth", label: "Beam Width", type: "number", min: 1, max: 64, step: 1, group: "Tìm kiếm", tip: "Độ rộng beam cho bước thử/repair; cao hơn tốn thời gian hơn nhưng có thêm lựa chọn cân bằng." }
 ]);
 
 export const DERIVED_GENERATE_SETTING_KEYS = Object.freeze(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.key));
@@ -77,6 +80,7 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   maxImmediateChainCount: 2,
   nextLayerTrapPressure: 0.24,
   avgTailLengthTarget: 4,
+  targetPeakTail: 9,
   tailLengthCap: 8,
   tailLengthGrowthCurve: "linear",
   tailLengthVariance: 2,
@@ -84,8 +88,10 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   unreleasedInventoryTarget: 0.28,
   maxUnreleasedItems: 7,
   releaseDistanceWeight: 0.42,
+  releaseAmountTarget: 4,
   noiseRatio: 0.42,
-  carryOverRatio: 0.34
+  carryOverRatio: 0.34,
+  beamWidth: 11
 });
 
 function clamp(value, min, max) {

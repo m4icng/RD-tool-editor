@@ -321,10 +321,13 @@
 .generate-source-grid strong { margin-top: 3px; color: var(--text); font-size: 15px; font-weight: 900; }
 .generate-source-note { margin-top: 8px; text-align: left; }
 .generate-derived-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
-.generate-derived-grid > div { min-width: 0; padding: 8px; border: 1px solid #cfe1d6; border-radius: 9px; background: #f7fcf9; }
-.generate-derived-grid span,.generate-derived-grid strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.generate-derived-grid span { color: #52715f; font-size: 8px; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
-.generate-derived-grid strong { margin-top: 3px; color: #254e36; font-size: 14px; font-weight: 900; }
+.generate-derived-card { display: grid; gap: 3px; min-width: 0; padding: 8px; border: 1px solid #cfe1d6; border-radius: 9px; background: #f7fcf9; color: #52715f; }
+.generate-derived-card.overridden { border-color: #9fd1b4; background: #f1fbf5; color: #24583b; }
+.generate-derived-card span { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: inherit; font-size: 8px; font-weight: 850; letter-spacing: .04em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.generate-derived-card span i { display: inline-grid; width: 13px; height: 13px; flex: 0 0 auto; place-items: center; border: 1px solid #c8d4e4; border-radius: 999px; background: #fff; color: #647087; cursor: help; font-size: 8px; font-style: normal; font-weight: 900; letter-spacing: 0; text-transform: none; }
+.generate-derived-card.overridden span i { border-color: #9fd1b4; color: #24774e; }
+.generate-derived-card input { width: 100%; min-width: 0; height: 22px; padding: 0; border: 0; background: transparent; color: #254e36; font-size: 15px; font-weight: 900; outline: none; appearance: textfield; }
+.generate-derived-card input::-webkit-inner-spin-button { appearance: none; }
 .generate-field-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
 .generate-field { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 9px; font-weight: 850; text-transform: uppercase; }
 .generate-field.overridden { color: #24583b; }

@@ -189,3 +189,4 @@ Level chỉ được xem là hợp lệ khi:
 - 2026-08-20: Hạn chế index item trùng giữa hai map layer liền kề, target overlap 10-25% tùy độ rộng map.
 - 2026-08-20: Chia đều tổng item theo số layer path hợp lệ, không cố định khoảng 27-30 item mỗi layer.
 - 2026-08-20: Auto Derived parameter cho phép designer override từng field và có tooltip mô tả tác dụng.
+- 2026-08-20: Auto Derived chỉnh trực tiếp trên bảng chỉ số thay vì mở nhóm input riêng.

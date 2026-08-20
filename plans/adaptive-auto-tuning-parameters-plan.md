@@ -124,6 +124,7 @@ Level Data
 - Số item mỗi map/path layer được chia đều theo số layer hợp lệ; không dùng heuristic cố định khoảng 27-30 item/layer.
 - Auto Derived mặc định tự tính theo level nhưng designer có thể override từng thông số; field đã chỉnh được khóa theo giá trị designer nhập cho lần generate.
 - Mỗi field Auto Derived có tooltip giải thích thông số đó dùng để kiểm soát phần nào của generator.
+- Các chỉ số chính của Auto Derived được chỉnh trực tiếp ngay trên summary grid, không tách thành nhóm input riêng bên dưới.
 - Không thay đổi Path, Tray, Element, schema export JSON hoặc hard rule quota hiện có.
 
 ## Change History
@@ -139,3 +140,4 @@ Level Data
 - 2026-08-20: Thêm adjacent layer overlap budget 10-25% để hạn chế item layer sau trùng index layer trước.
 - 2026-08-20: Bỏ heuristic `totalItem / 32`; layer budget chia đều theo số layer path hợp lệ.
 - 2026-08-20: Cho designer chỉnh từng Auto Derived parameter, lưu override key và thêm tooltip mô tả ý nghĩa field.
+- 2026-08-20: Chuyển Auto Derived sang chỉnh trực tiếp trên summary grid.

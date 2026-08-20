@@ -3000,12 +3000,14 @@ const TAIL_CURVE_LABELS = Object.freeze({
 
 const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
+  { key: "targetPeakTail", label: "Đuôi đỉnh mục tiêu", type: "number", min: 2, max: 60, step: 1, group: "Áp lực đuôi", tip: "Đỉnh áp lực đuôi dự kiến cho level; dùng để designer khóa cảm giác peak mong muốn." },
   { key: "tailLengthCap", label: "Giới hạn đuôi", type: "number", min: 1, max: 60, step: 1, group: "Áp lực đuôi", tip: "Nếu ước tính đuôi vượt ngưỡng này, bộ sinh sẽ báo lỗi." },
   { key: "tailLengthVariance", label: "Dao động đuôi", type: "number", min: 0, max: 12, step: 1, group: "Áp lực đuôi", tip: "Mức dao động độ dài đuôi giữa các đoạn khó/dễ." },
   { key: "releaseDelayTarget", label: "Độ trễ xả", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Khoảng cách đường đi mục tiêu từ lúc ăn vật phẩm tới khay phù hợp." },
   { key: "unreleasedInventoryTarget", label: "Tồn kho mục tiêu", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Tỷ lệ vật phẩm dự kiến chưa xả được tại các đoạn áp lực." },
   { key: "maxUnreleasedItems", label: "Tồn kho tối đa", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Số vật phẩm chưa xả tối đa cho phép theo mô phỏng nhanh." },
   { key: "releaseDistanceWeight", label: "Trọng số xả", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Mức ưu tiên khoảng cách vật phẩm tới khay phù hợp khi chọn vị trí." },
+  { key: "releaseAmountTarget", label: "Lượng xả mục tiêu", type: "number", min: 1, max: 12, step: 1, group: "Áp lực xả", tip: "Số item mục tiêu trong một nhịp xả/relief để kiểm soát độ nghẹt khi mở khay." },
   { key: "layerDistributionBalance", label: "Cân bằng lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Ưu tiên mềm để giữ phân bổ giữa các lớp theo đúng khay nguồn." },
   { key: "spawnSafetyDistance", label: "Khoảng cách xuất hiện an toàn", type: "number", min: 0, max: 30, step: 1, group: "Lớp và xuất hiện", tip: "Khoảng cách tối thiểu từ điểm bắt đầu tới vật phẩm lớp mới để tránh bẫy xuất hiện." },
   { key: "maxImmediateChainCount", label: "Chuỗi gần đầu tối đa", type: "number", min: 0, max: 12, step: 1, group: "Lớp và xuất hiện", tip: "Số vật phẩm lớp mới liên tiếp được phép xuất hiện quá gần đầu tàu." },
@@ -3017,7 +3019,8 @@ const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
-  { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
+  { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." },
+  { key: "beamWidth", label: "Beam Width", type: "number", min: 1, max: 64, step: 1, group: "Tìm kiếm", tip: "Độ rộng beam cho bước thử/repair; cao hơn tốn thời gian hơn nhưng có thêm lựa chọn cân bằng." }
 ]);
 
 const DERIVED_GENERATE_SETTING_KEYS = Object.freeze(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.key));
@@ -3047,6 +3050,7 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   maxImmediateChainCount: 2,
   nextLayerTrapPressure: 0.24,
   avgTailLengthTarget: 4,
+  targetPeakTail: 9,
   tailLengthCap: 8,
   tailLengthGrowthCurve: "linear",
   tailLengthVariance: 2,
@@ -3054,8 +3058,10 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   unreleasedInventoryTarget: 0.28,
   maxUnreleasedItems: 7,
   releaseDistanceWeight: 0.42,
+  releaseAmountTarget: 4,
   noiseRatio: 0.42,
-  carryOverRatio: 0.34
+  carryOverRatio: 0.34,
+  beamWidth: 11
 });
 
 function clamp(value, min, max) {
@@ -6168,10 +6174,6 @@ function formatPercent(value) {
   return `${Math.round(Number(value) * 100)}%`;
 }
 
-function formatNumber(value) {
-  return Number.isFinite(Number(value)) ? String(value) : "-";
-}
-
 function statusOf(state) {
   const meta = state.generationMeta;
   if (meta?.status === "Error") return "Lỗi";
@@ -6218,35 +6220,6 @@ function intentFieldsHtml(settings) {
   `;
 }
 
-function derivedFieldGroupsHtml(settings, estimatedSettings) {
-  const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
-  const groups = [...new Set(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.group))];
-  return groups.map((group) => {
-    const fields = DERIVED_GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
-    return `
-      <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
-        <summary>${escapeHtml(group)}</summary>
-        <div class="generate-field-grid">
-          ${fields.map((field) => {
-            const overridden = overrideKeys.has(field.key);
-            const rawValue = overridden ? settings[field.key] : estimatedSettings[field.key];
-            const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
-            const min = field.type === "percent" ? field.min * 100 : field.min;
-            const max = field.type === "percent" ? field.max * 100 : field.max;
-            const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
-            return `
-              <label class="generate-field ${overridden ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
-                <span>${escapeHtml(field.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
-                <input type="number" data-generate-derived-setting="${escapeHtml(field.key)}" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
-              </label>
-            `;
-          }).join("")}
-        </div>
-      </details>
-    `;
-  }).join("");
-}
-
 function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys) {
   const next = {
     ...derivedParameters,
@@ -6275,6 +6248,35 @@ function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys)
   return next;
 }
 
+const DERIVED_SUMMARY_CARDS = Object.freeze([
+  { key: "avgTailLengthTarget", label: "Avg Tail", value: (derived) => derived.targetAverageTail },
+  { key: "targetPeakTail", label: "Peak Tail", value: (derived) => derived.targetPeakTail },
+  { key: "tailLengthCap", label: "Safe Tail", value: (derived) => derived.safeTailLimit },
+  { key: "noiseRatio", label: "Noise", value: (derived) => derived.noiseRatio },
+  { key: "clusterRatio", label: "Cluster", value: (derived) => derived.clusterAdjacencyRatio },
+  { key: "maxClusterSizePerBranch", label: "Max cụm", value: (derived) => derived.clusterSizeDistribution.max },
+  { key: "releaseAmountTarget", label: "Release", value: (derived) => derived.releaseAmountTarget },
+  { key: "beamWidth", label: "Beam", value: (derived) => derived.beamWidth }
+]);
+
+function derivedSummaryCardsHtml(settings, derived, overrideKeys) {
+  return DERIVED_SUMMARY_CARDS.map((card) => {
+    const field = DERIVED_GENERATE_SETTING_FIELDS.find((entry) => entry.key === card.key);
+    if (!field) return "";
+    const rawValue = overrideKeys.has(card.key) ? settings[card.key] : card.value(derived);
+    const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
+    const min = field.type === "percent" ? field.min * 100 : field.min;
+    const max = field.type === "percent" ? field.max * 100 : field.max;
+    const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+    return `
+      <label class="generate-derived-card ${overrideKeys.has(card.key) ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
+        <span>${escapeHtml(card.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
+        <input type="number" data-generate-derived-setting="${escapeHtml(card.key)}" data-generate-setting="${escapeHtml(card.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+      </label>
+    `;
+  }).join("");
+}
+
 function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
@@ -6282,7 +6284,6 @@ function renderGenerateControls(container, state) {
   const derivedEstimate = estimateDerivedGenerateParameters(source, analysis, settings);
   const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
   const derived = applyDerivedDisplayOverrides(derivedEstimate.derivedParameters, settings, overrideKeys);
-  const estimatedSettings = { ...derivedEstimate.settings, ...derivedEstimate.derivedParameters };
   const overrideCount = settings.derivedOverrideKeys?.length ?? 0;
 
   container.innerHTML = `
@@ -6320,16 +6321,8 @@ function renderGenerateControls(container, state) {
     <section class="control-section">
       <div class="section-heading"><h2>Auto Derived</h2><span>${overrideCount ? `${overrideCount} chỉnh tay` : "Level riêng"}</span></div>
       <div class="generate-derived-grid">
-        <div><span>Avg Tail</span><strong>${formatNumber(derived.targetAverageTail)}</strong></div>
-        <div><span>Peak Tail</span><strong>${formatNumber(derived.targetPeakTail)}</strong></div>
-        <div><span>Safe Tail</span><strong>${formatNumber(derived.safeTailLimit)}</strong></div>
-        <div><span>Noise</span><strong>${formatPercent(derived.noiseRatio)}</strong></div>
-        <div><span>Cluster</span><strong>${formatPercent(derived.clusterAdjacencyRatio)}</strong></div>
-        <div><span>Max cụm</span><strong>${derived.clusterSizeDistribution.max}</strong></div>
-        <div><span>Release</span><strong>${formatNumber(derived.releaseAmountTarget)}</strong></div>
-        <div><span>Beam</span><strong>${formatNumber(derived.beamWidth)}</strong></div>
+        ${derivedSummaryCardsHtml(settings, derived, overrideKeys)}
       </div>
-      ${derivedFieldGroupsHtml(settings, estimatedSettings)}
       <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
   `;

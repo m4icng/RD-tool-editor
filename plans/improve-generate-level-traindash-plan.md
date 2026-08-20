@@ -180,3 +180,4 @@ Level chỉ được xem là hợp lệ khi:
 - 2026-08-20: Bổ sung metric item density, release delay, tail pressure, unreleased inventory, spawn trap và loop risk.
 - 2026-08-20: Đổi toàn bộ label/nút/thông báo hiển thị trong tab Generate sang tiếng Việt.
 - 2026-08-20: Sửa pool ô hợp lệ theo layer để không tái dùng path cell khi chia requirement thành cụm.
+- 2026-08-20: Mỗi lần tạo preview mới tự sinh `Mã ngẫu nhiên` mới và dùng seed đó để sinh màn.

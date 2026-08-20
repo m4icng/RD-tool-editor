@@ -3012,6 +3012,15 @@ function createDefaultGenerateSettings() {
   };
 }
 
+function createRandomGenerateSeed() {
+  if (globalThis.crypto?.getRandomValues) {
+    const values = new Uint32Array(1);
+    globalThis.crypto.getRandomValues(values);
+    return values[0];
+  }
+  return Math.floor((Date.now() + Math.random() * 4294967296) % 4294967296);
+}
+
 function normalizeGenerateSettings(value = {}) {
   const defaults = createDefaultGenerateSettings();
   const settings = { ...defaults, ...(value ?? {}) };
@@ -8916,6 +8925,10 @@ function validateGenerateSourceOnly() {
 }
 
 function createGeneratePreviewResult({ silent = false } = {}) {
+  editor.data.generateSettings = normalizeGenerateSettings({
+    ...editor.data.generateSettings,
+    seed: createRandomGenerateSeed()
+  });
   const result = generatePreview(editor.data, editor.data.generateSettings);
   generateLastResult = result;
   generatePreviewState = result.ok ? result.preview : null;

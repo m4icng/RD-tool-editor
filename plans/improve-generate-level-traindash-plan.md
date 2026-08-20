@@ -182,3 +182,4 @@ Level chỉ được xem là hợp lệ khi:
 - 2026-08-20: Sửa pool ô hợp lệ theo layer để không tái dùng path cell khi chia requirement thành cụm.
 - 2026-08-20: Mỗi lần tạo preview mới tự sinh `Mã ngẫu nhiên` mới và dùng seed đó để sinh màn.
 - 2026-08-20: Cân lại release pressure: `maxUnreleasedItems` ước tính đỉnh tồn kho theo cụm/mật độ/delay thay vì lấy toàn bộ item bị trễ.
+- 2026-08-20: Chuyển Tail/Release/Cluster/Spawn settings sang Auto Derived Parameters theo từng level; Designer chỉ chỉnh preset/score.

@@ -1,4 +1,5 @@
-import { GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, TAIL_CURVE_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
+import { GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
+import { analyzeAdaptiveLevel, estimateDerivedGenerateParameters } from "../generate/adaptive-parameters.js";
 import { analyzeGenerateSource } from "../generate/generate-source.js";
 
 function escapeHtml(value) {
@@ -12,6 +13,10 @@ function escapeHtml(value) {
 
 function formatPercent(value) {
   return `${Math.round(Number(value) * 100)}%`;
+}
+
+function formatNumber(value) {
+  return Number.isFinite(Number(value)) ? String(value) : "-";
 }
 
 function statusOf(state) {
@@ -43,32 +48,28 @@ function issueRows(issues) {
   `).join("");
 }
 
-function settingsGroupHtml(settings, group) {
-  const fields = GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
+function intentFieldsHtml(settings) {
   return `
-    <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
-      <summary>${escapeHtml(group)}</summary>
-      <div class="generate-field-grid">
-        ${fields.map((field) => {
-          const value = field.type === "percent" ? Math.round(Number(settings[field.key]) * 100) : settings[field.key];
-          const min = field.type === "percent" ? field.min * 100 : field.min;
-          const max = field.type === "percent" ? field.max * 100 : field.max;
-          const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
-          return `
-            <label class="generate-field" title="${escapeHtml(field.tip)}">
-              <span>${escapeHtml(field.label)}</span>
-              <input type="number" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
-            </label>
-          `;
-        }).join("")}
-      </div>
-    </details>
+    ${GENERATE_SETTING_FIELDS.map((field) => {
+      const value = field.type === "percent" ? Math.round(Number(settings[field.key]) * 100) : settings[field.key];
+      const min = field.type === "percent" ? field.min * 100 : field.min;
+      const max = field.type === "percent" ? field.max * 100 : field.max;
+      const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+      return `
+        <label class="generate-field wide" title="${escapeHtml(field.tip)}">
+          <span>${escapeHtml(field.label)}</span>
+          <input type="number" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+        </label>
+      `;
+    }).join("")}
   `;
 }
 
 export function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
+  const analysis = analyzeAdaptiveLevel(state, source);
+  const derived = estimateDerivedGenerateParameters(source, analysis, settings).derivedParameters;
 
   container.innerHTML = `
     <section class="control-section">
@@ -95,15 +96,24 @@ export function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Độ khó</h2><span>Mẫu nhanh</span></div>
+      <div class="section-heading"><h2>Độ khó</h2><span>Intent</span></div>
       <div class="generate-preset-list">
         ${Object.keys(GENERATE_PRESETS).map((preset) => `<button class="generate-preset ${settings.difficultyPreset === preset ? "active" : ""}" type="button" data-generate-preset="${preset}">${PRESET_LABELS[preset]}</button>`).join("")}
       </div>
-      ${["Áp lực đuôi", "Áp lực xả", "Lớp và xuất hiện", "Cụm và đường đi"].map((group) => settingsGroupHtml(settings, group)).join("")}
-      <div class="generate-field-grid">
-        <label class="generate-field wide"><span>Đường cong tăng đuôi</span>
-          <select data-generate-setting="tailLengthGrowthCurve">${Object.entries(TAIL_CURVE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.tailLengthGrowthCurve === value ? "selected" : ""}>${label}</option>`).join("")}</select>
-        </label>
+      <div class="generate-field-grid">${intentFieldsHtml(settings)}</div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Auto Derived</h2><span>Level riêng</span></div>
+      <div class="generate-derived-grid">
+        <div><span>Avg Tail</span><strong>${formatNumber(derived.targetAverageTail)}</strong></div>
+        <div><span>Peak Tail</span><strong>${formatNumber(derived.targetPeakTail)}</strong></div>
+        <div><span>Safe Tail</span><strong>${formatNumber(derived.safeTailLimit)}</strong></div>
+        <div><span>Noise</span><strong>${formatPercent(derived.noiseRatio)}</strong></div>
+        <div><span>Cluster</span><strong>${formatPercent(derived.clusterAdjacencyRatio)}</strong></div>
+        <div><span>Max cụm</span><strong>${derived.clusterSizeDistribution.max}</strong></div>
+        <div><span>Release</span><strong>${formatNumber(derived.releaseAmountTarget)}</strong></div>
+        <div><span>Beam</span><strong>${formatNumber(derived.beamWidth)}</strong></div>
       </div>
     </section>
   `;
@@ -112,6 +122,7 @@ export function renderGenerateControls(container, state) {
 export function renderGenerateResults(container, state, result = null) {
   const source = result?.source ?? analyzeGenerateSource(state);
   const meta = result?.meta ?? state.generationMeta ?? {};
+  const derived = meta.derivedParameters ?? result?.settings?.autoDerivedParameters ?? null;
   const issues = result?.issues?.length ? result.issues : source.issues;
   const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
@@ -141,6 +152,19 @@ export function renderGenerateResults(container, state, result = null) {
           <div><span>Tồn kho tối đa</span><strong>${meta.maxUnreleasedItems ?? "-"}</strong></div>
           <div><span>Mật độ vật phẩm</span><strong>${Number.isFinite(meta.itemDensity) ? formatPercent(meta.itemDensity) : "-"}</strong></div>
           <div><span>Bẫy xuất hiện</span><strong>${meta.spawnTrapCount ?? "-"}</strong></div>
+        </div>
+      </section>
+      <section class="generate-result-card">
+        <header><h3>Tham số dẫn xuất</h3><span>${derived ? `Tune ${meta.autoTuningAttempt ?? 1}` : "-"}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Điểm khó</span><strong>${derived ? formatPercent(derived.difficultyScore) : "-"}</strong></div>
+          <div><span>Safe Tail</span><strong>${derived?.safeTailLimit ?? "-"}</strong></div>
+          <div><span>Noise</span><strong>${derived ? formatPercent(derived.noiseRatio) : "-"}</strong></div>
+          <div><span>Carry-over</span><strong>${derived ? formatPercent(derived.carryOverRatio) : "-"}</strong></div>
+          <div><span>High Pressure</span><strong>${derived ? formatPercent(derived.highPressureRatio) : "-"}</strong></div>
+          <div><span>Release Cycle</span><strong>${derived?.releaseCycleCount ?? "-"}</strong></div>
+          <div><span>Repair</span><strong>${derived?.repairIntensity ?? "-"}</strong></div>
+          <div><span>Search/Beam</span><strong>${derived ? `${derived.searchDepth}/${derived.beamWidth}` : "-"}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">

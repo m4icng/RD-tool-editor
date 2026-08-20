@@ -1,86 +1,10 @@
-export const GENERATOR_VERSION = "1.2.0";
+export const GENERATOR_VERSION = "1.3.0";
 
 export const GENERATE_PRESETS = Object.freeze({
-  De: {
-    clusterRatio: 0.92,
-    maxClusterSizePerBranch: 4,
-    branchDistributionBalance: 0.94,
-    routeChoicePressure: 0.12,
-    narrowPathUsage: 0.12,
-    loopRiskPressure: 0.1,
-    layerDistributionBalance: 0.94,
-    spawnSafetyDistance: 7,
-    maxImmediateChainCount: 1,
-    nextLayerTrapPressure: 0.08,
-    avgTailLengthTarget: 3,
-    tailLengthCap: 5,
-    tailLengthGrowthCurve: "flat",
-    tailLengthVariance: 1,
-    releaseDelayTarget: 4,
-    unreleasedInventoryTarget: 0.18,
-    maxUnreleasedItems: 5,
-    releaseDistanceWeight: 0.28
-  },
-  Thuong: {
-    clusterRatio: 0.9,
-    maxClusterSizePerBranch: 5,
-    branchDistributionBalance: 0.86,
-    routeChoicePressure: 0.32,
-    narrowPathUsage: 0.24,
-    loopRiskPressure: 0.22,
-    layerDistributionBalance: 0.88,
-    spawnSafetyDistance: 5,
-    maxImmediateChainCount: 2,
-    nextLayerTrapPressure: 0.24,
-    avgTailLengthTarget: 4,
-    tailLengthCap: 6,
-    tailLengthGrowthCurve: "linear",
-    tailLengthVariance: 2,
-    releaseDelayTarget: 6,
-    unreleasedInventoryTarget: 0.28,
-    maxUnreleasedItems: 6,
-    releaseDistanceWeight: 0.42
-  },
-  Kho: {
-    clusterRatio: 0.9,
-    maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.76,
-    routeChoicePressure: 0.52,
-    narrowPathUsage: 0.38,
-    loopRiskPressure: 0.36,
-    layerDistributionBalance: 0.84,
-    spawnSafetyDistance: 4,
-    maxImmediateChainCount: 3,
-    nextLayerTrapPressure: 0.34,
-    avgTailLengthTarget: 5,
-    tailLengthCap: 10,
-    tailLengthGrowthCurve: "sawtooth",
-    tailLengthVariance: 2,
-    releaseDelayTarget: 7,
-    unreleasedInventoryTarget: 0.32,
-    maxUnreleasedItems: 8,
-    releaseDistanceWeight: 0.5
-  },
-  ChuyenGia: {
-    clusterRatio: 0.82,
-    maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.66,
-    routeChoicePressure: 0.76,
-    narrowPathUsage: 0.58,
-    loopRiskPressure: 0.56,
-    layerDistributionBalance: 0.78,
-    spawnSafetyDistance: 3,
-    maxImmediateChainCount: 4,
-    nextLayerTrapPressure: 0.54,
-    avgTailLengthTarget: 6,
-    tailLengthCap: 8,
-    tailLengthGrowthCurve: "peak-late",
-    tailLengthVariance: 4,
-    releaseDelayTarget: 10,
-    unreleasedInventoryTarget: 0.44,
-    maxUnreleasedItems: 8,
-    releaseDistanceWeight: 0.72
-  }
+  De: { difficultyScore: 0.25 },
+  Thuong: { difficultyScore: 0.45 },
+  Kho: { difficultyScore: 0.65 },
+  ChuyenGia: { difficultyScore: 0.85 }
 });
 
 export const PRESET_LABELS = Object.freeze({
@@ -104,7 +28,7 @@ export const TAIL_CURVE_LABELS = Object.freeze({
   "peak-late": "Khó cuối màn"
 });
 
-export const GENERATE_SETTING_FIELDS = Object.freeze([
+export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
   { key: "tailLengthCap", label: "Giới hạn đuôi", type: "number", min: 1, max: 60, step: 1, group: "Áp lực đuôi", tip: "Nếu ước tính đuôi vượt ngưỡng này, bộ sinh sẽ báo lỗi." },
   { key: "tailLengthVariance", label: "Dao động đuôi", type: "number", min: 0, max: 12, step: 1, group: "Áp lực đuôi", tip: "Mức dao động độ dài đuôi giữa các đoạn khó/dễ." },
@@ -124,14 +48,44 @@ export const GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
 ]);
 
+export const GENERATE_SETTING_FIELDS = Object.freeze([
+  { key: "difficultyScore", label: "Điểm độ khó", type: "percent", min: 0, max: 1, step: 0.01, group: "Designer Intent", tip: "Mục tiêu tổng quát; các thông số sinh chi tiết sẽ được tự tính theo level." }
+]);
+
+const FALLBACK_DERIVED_SETTINGS = Object.freeze({
+  clusterRatio: 0.88,
+  maxClusterSizePerBranch: 5,
+  branchDistributionBalance: 0.84,
+  routeChoicePressure: 0.34,
+  narrowPathUsage: 0.26,
+  loopRiskPressure: 0.24,
+  layerDistributionBalance: 0.88,
+  spawnSafetyDistance: 5,
+  maxImmediateChainCount: 2,
+  nextLayerTrapPressure: 0.24,
+  avgTailLengthTarget: 4,
+  tailLengthCap: 8,
+  tailLengthGrowthCurve: "linear",
+  tailLengthVariance: 2,
+  releaseDelayTarget: 6,
+  unreleasedInventoryTarget: 0.28,
+  maxUnreleasedItems: 7,
+  releaseDistanceWeight: 0.42
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 export function createDefaultGenerateSettings() {
   return {
     seed: createRandomGenerateSeed(),
     maxRetries: 50,
     difficultyPreset: "Thuong",
+    difficultyScore: GENERATE_PRESETS.Thuong.difficultyScore,
     multiBranchMode: "balanced",
-    tailLengthGrowthCurve: "linear",
-    ...GENERATE_PRESETS.Thuong
+    autoDerived: true,
+    ...FALLBACK_DERIVED_SETTINGS
   };
 }
 
@@ -152,6 +106,9 @@ export function normalizeGenerateSettings(value = {}) {
   if (settings.difficultyPreset === "Hard") settings.difficultyPreset = "Kho";
   if (settings.difficultyPreset === "Expert") settings.difficultyPreset = "ChuyenGia";
   settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Thuong";
+  const presetScore = GENERATE_PRESETS[settings.difficultyPreset].difficultyScore;
+  const difficultyScore = Number(settings.difficultyScore);
+  settings.difficultyScore = clamp(Number.isFinite(difficultyScore) ? difficultyScore : presetScore, 0, 1);
   const numericSeed = Number(settings.seed);
   settings.seed = Number.isFinite(numericSeed) && numericSeed > 0
     ? Math.floor(numericSeed)
@@ -159,16 +116,17 @@ export function normalizeGenerateSettings(value = {}) {
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
   settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
   settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
-  GENERATE_SETTING_FIELDS.forEach((field) => {
+  DERIVED_GENERATE_SETTING_FIELDS.forEach((field) => {
     const numeric = Number(settings[field.key]);
-    settings[field.key] = Number.isFinite(numeric) ? numeric : defaults[field.key];
+    settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
+  settings.autoDerived = settings.autoDerived !== false;
   return settings;
 }
 
 export function applyGeneratePreset(settings, presetName) {
   const preset = GENERATE_PRESETS[presetName] ? presetName : "Thuong";
-  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, ...GENERATE_PRESETS[preset] });
+  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, difficultyScore: GENERATE_PRESETS[preset].difficultyScore, autoDerived: true });
 }
 
 export function validateGenerateSettings(settings) {

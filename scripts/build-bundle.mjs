@@ -39,6 +39,7 @@ const sourceFiles = [
   "js/data/file-manager.js",
   "js/generate/generate-settings.js",
   "js/generate/generate-source.js",
+  "js/generate/adaptive-parameters.js",
   "js/generate/generator-engine.js",
   "js/editor/delete-resolver.js",
   "js/editor/object-placement.js",

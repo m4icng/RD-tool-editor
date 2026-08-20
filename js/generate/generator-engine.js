@@ -4,6 +4,7 @@ import { createFruit } from "../objects/fruit-object.js";
 import { pathConnectionsAt } from "../objects/element-placement-rules.js";
 import { cellKey, indexToPosition } from "../utils/grid-utils.js";
 import { GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
+import { analyzeAdaptiveLevel, createTuningState, estimateDerivedGenerateParameters, updateTuningState } from "./adaptive-parameters.js";
 import { analyzeGenerateSource, branchCellsForIndexes, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
 
 function createRandom(seed) {
@@ -275,7 +276,11 @@ function generatedMetrics(generatedItems, settings, source) {
     spawnTrapCount,
     decisionPointFrequency: Number(decisionPointFrequency.toFixed(3)),
     loopRiskScore: Number(loopRiskScore.toFixed(3)),
-    quotaValidated: true
+    quotaValidated: true,
+    difficultyScore: Number(settings.difficultyScore),
+    derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
+    autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
+    autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null)
   };
 }
 
@@ -403,18 +408,30 @@ export function generatePreview(state, rawSettings = {}) {
   const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
   const baseSettings = normalizeGenerateSettings(settingsResult.settings);
   const source = analyzeGenerateSource(state);
+  const analysis = analyzeAdaptiveLevel(state, source);
   const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
   if (errors.length > 0) {
-    return { ok: false, preview: null, source, settings: baseSettings, issues: errors };
+    return { ok: false, preview: null, source, analysis, settings: baseSettings, issues: errors };
   }
 
   let lastResult = null;
+  let tuning = createTuningState();
   for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
-    const settings = normalizeGenerateSettings({ ...baseSettings, seed: createRandomGenerateSeed() });
+    const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
+    const settings = normalizeGenerateSettings({
+      ...baseSettings,
+      ...derived.settings,
+      seed: createRandomGenerateSeed(),
+      autoDerivedParameters: derived.derivedParameters,
+      autoTuningAttempt: attempt + 1,
+      autoTuningProfile: tuning
+    });
     const result = generatePreviewAttempt(state, source, settings);
+    result.analysis = analysis;
     if (result.ok) return result;
     lastResult = result;
     if (!canRetryGeneration(result)) return result;
+    tuning = updateTuningState(tuning, result);
   }
   return lastResult ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
 }

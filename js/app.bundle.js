@@ -2968,89 +2968,13 @@ class LevelFileManager {
 
 
 // ---- js/generate/generate-settings.js ----
-const GENERATOR_VERSION = "1.2.0";
+const GENERATOR_VERSION = "1.3.0";
 
 const GENERATE_PRESETS = Object.freeze({
-  De: {
-    clusterRatio: 0.92,
-    maxClusterSizePerBranch: 4,
-    branchDistributionBalance: 0.94,
-    routeChoicePressure: 0.12,
-    narrowPathUsage: 0.12,
-    loopRiskPressure: 0.1,
-    layerDistributionBalance: 0.94,
-    spawnSafetyDistance: 7,
-    maxImmediateChainCount: 1,
-    nextLayerTrapPressure: 0.08,
-    avgTailLengthTarget: 3,
-    tailLengthCap: 5,
-    tailLengthGrowthCurve: "flat",
-    tailLengthVariance: 1,
-    releaseDelayTarget: 4,
-    unreleasedInventoryTarget: 0.18,
-    maxUnreleasedItems: 5,
-    releaseDistanceWeight: 0.28
-  },
-  Thuong: {
-    clusterRatio: 0.9,
-    maxClusterSizePerBranch: 5,
-    branchDistributionBalance: 0.86,
-    routeChoicePressure: 0.32,
-    narrowPathUsage: 0.24,
-    loopRiskPressure: 0.22,
-    layerDistributionBalance: 0.88,
-    spawnSafetyDistance: 5,
-    maxImmediateChainCount: 2,
-    nextLayerTrapPressure: 0.24,
-    avgTailLengthTarget: 4,
-    tailLengthCap: 6,
-    tailLengthGrowthCurve: "linear",
-    tailLengthVariance: 2,
-    releaseDelayTarget: 6,
-    unreleasedInventoryTarget: 0.28,
-    maxUnreleasedItems: 6,
-    releaseDistanceWeight: 0.42
-  },
-  Kho: {
-    clusterRatio: 0.9,
-    maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.76,
-    routeChoicePressure: 0.52,
-    narrowPathUsage: 0.38,
-    loopRiskPressure: 0.36,
-    layerDistributionBalance: 0.84,
-    spawnSafetyDistance: 4,
-    maxImmediateChainCount: 3,
-    nextLayerTrapPressure: 0.34,
-    avgTailLengthTarget: 5,
-    tailLengthCap: 10,
-    tailLengthGrowthCurve: "sawtooth",
-    tailLengthVariance: 2,
-    releaseDelayTarget: 7,
-    unreleasedInventoryTarget: 0.32,
-    maxUnreleasedItems: 8,
-    releaseDistanceWeight: 0.5
-  },
-  ChuyenGia: {
-    clusterRatio: 0.82,
-    maxClusterSizePerBranch: 6,
-    branchDistributionBalance: 0.66,
-    routeChoicePressure: 0.76,
-    narrowPathUsage: 0.58,
-    loopRiskPressure: 0.56,
-    layerDistributionBalance: 0.78,
-    spawnSafetyDistance: 3,
-    maxImmediateChainCount: 4,
-    nextLayerTrapPressure: 0.54,
-    avgTailLengthTarget: 6,
-    tailLengthCap: 8,
-    tailLengthGrowthCurve: "peak-late",
-    tailLengthVariance: 4,
-    releaseDelayTarget: 10,
-    unreleasedInventoryTarget: 0.44,
-    maxUnreleasedItems: 8,
-    releaseDistanceWeight: 0.72
-  }
+  De: { difficultyScore: 0.25 },
+  Thuong: { difficultyScore: 0.45 },
+  Kho: { difficultyScore: 0.65 },
+  ChuyenGia: { difficultyScore: 0.85 }
 });
 
 const PRESET_LABELS = Object.freeze({
@@ -3074,7 +2998,7 @@ const TAIL_CURVE_LABELS = Object.freeze({
   "peak-late": "Khó cuối màn"
 });
 
-const GENERATE_SETTING_FIELDS = Object.freeze([
+const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
   { key: "tailLengthCap", label: "Giới hạn đuôi", type: "number", min: 1, max: 60, step: 1, group: "Áp lực đuôi", tip: "Nếu ước tính đuôi vượt ngưỡng này, bộ sinh sẽ báo lỗi." },
   { key: "tailLengthVariance", label: "Dao động đuôi", type: "number", min: 0, max: 12, step: 1, group: "Áp lực đuôi", tip: "Mức dao động độ dài đuôi giữa các đoạn khó/dễ." },
@@ -3094,14 +3018,44 @@ const GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
 ]);
 
+const GENERATE_SETTING_FIELDS = Object.freeze([
+  { key: "difficultyScore", label: "Điểm độ khó", type: "percent", min: 0, max: 1, step: 0.01, group: "Designer Intent", tip: "Mục tiêu tổng quát; các thông số sinh chi tiết sẽ được tự tính theo level." }
+]);
+
+const FALLBACK_DERIVED_SETTINGS = Object.freeze({
+  clusterRatio: 0.88,
+  maxClusterSizePerBranch: 5,
+  branchDistributionBalance: 0.84,
+  routeChoicePressure: 0.34,
+  narrowPathUsage: 0.26,
+  loopRiskPressure: 0.24,
+  layerDistributionBalance: 0.88,
+  spawnSafetyDistance: 5,
+  maxImmediateChainCount: 2,
+  nextLayerTrapPressure: 0.24,
+  avgTailLengthTarget: 4,
+  tailLengthCap: 8,
+  tailLengthGrowthCurve: "linear",
+  tailLengthVariance: 2,
+  releaseDelayTarget: 6,
+  unreleasedInventoryTarget: 0.28,
+  maxUnreleasedItems: 7,
+  releaseDistanceWeight: 0.42
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function createDefaultGenerateSettings() {
   return {
     seed: createRandomGenerateSeed(),
     maxRetries: 50,
     difficultyPreset: "Thuong",
+    difficultyScore: GENERATE_PRESETS.Thuong.difficultyScore,
     multiBranchMode: "balanced",
-    tailLengthGrowthCurve: "linear",
-    ...GENERATE_PRESETS.Thuong
+    autoDerived: true,
+    ...FALLBACK_DERIVED_SETTINGS
   };
 }
 
@@ -3122,6 +3076,9 @@ function normalizeGenerateSettings(value = {}) {
   if (settings.difficultyPreset === "Hard") settings.difficultyPreset = "Kho";
   if (settings.difficultyPreset === "Expert") settings.difficultyPreset = "ChuyenGia";
   settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Thuong";
+  const presetScore = GENERATE_PRESETS[settings.difficultyPreset].difficultyScore;
+  const difficultyScore = Number(settings.difficultyScore);
+  settings.difficultyScore = clamp(Number.isFinite(difficultyScore) ? difficultyScore : presetScore, 0, 1);
   const numericSeed = Number(settings.seed);
   settings.seed = Number.isFinite(numericSeed) && numericSeed > 0
     ? Math.floor(numericSeed)
@@ -3129,16 +3086,17 @@ function normalizeGenerateSettings(value = {}) {
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
   settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
   settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
-  GENERATE_SETTING_FIELDS.forEach((field) => {
+  DERIVED_GENERATE_SETTING_FIELDS.forEach((field) => {
     const numeric = Number(settings[field.key]);
-    settings[field.key] = Number.isFinite(numeric) ? numeric : defaults[field.key];
+    settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
+  settings.autoDerived = settings.autoDerived !== false;
   return settings;
 }
 
 function applyGeneratePreset(settings, presetName) {
   const preset = GENERATE_PRESETS[presetName] ? presetName : "Thuong";
-  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, ...GENERATE_PRESETS[preset] });
+  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, difficultyScore: GENERATE_PRESETS[preset].difficultyScore, autoDerived: true });
 }
 
 function validateGenerateSettings(settings) {
@@ -3395,7 +3353,217 @@ function analyzeGenerateSource(state) {
 }
 
 
+// ---- js/generate/adaptive-parameters.js ----
+
+
+const clampAdaptiveValue = (value, min, max) => Math.max(min, Math.min(max, value));
+const roundAdaptiveValue = (value, digits = 0) => Number(value.toFixed(digits));
+
+function average(values) {
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function distance(a, b, columns) {
+  const pa = indexToPosition(a, columns);
+  const pb = indexToPosition(b, columns);
+  return Math.abs(pa.x - pb.x) + Math.abs(pa.y - pb.y);
+}
+
+function collectPathTopology(state, source) {
+  const pathIndexes = source.pathIndexes ?? [];
+  const degrees = pathIndexes.map((index) => pathConnectionsAt(state, index).length);
+  const narrowCount = degrees.filter((degree) => degree <= 1).length;
+  const corridorCount = degrees.filter((degree) => degree === 2).length;
+  const junctionCount = degrees.filter((degree) => degree >= 3).length;
+  return {
+    pathCellCount: pathIndexes.length,
+    deadEndCount: narrowCount,
+    corridorCount,
+    junctionCount,
+    narrowPathRatio: pathIndexes.length ? narrowCount / pathIndexes.length : 0,
+    junctionRatio: pathIndexes.length ? junctionCount / pathIndexes.length : 0
+  };
+}
+
+function collectDemandMetrics(source) {
+  const byLayer = new Map();
+  const byItem = new Map();
+  const trayIds = new Set();
+  source.requirements.forEach((entry) => {
+    byLayer.set(entry.layerIndex, (byLayer.get(entry.layerIndex) ?? 0) + entry.amount);
+    byItem.set(entry.itemId, (byItem.get(entry.itemId) ?? 0) + entry.amount);
+    trayIds.add(entry.trayId);
+  });
+  const layerDemands = [...byLayer.values()];
+  const maxLayerDemand = Math.max(0, ...layerDemands);
+  const minLayerDemand = Math.min(...layerDemands, maxLayerDemand);
+  return {
+    totalRequired: source.stats.totalRequired,
+    trayCount: trayIds.size,
+    demandLayerCount: byLayer.size,
+    itemColorCount: byItem.size,
+    maxLayerDemand,
+    averageLayerDemand: average(layerDemands),
+    layerImbalance: maxLayerDemand ? (maxLayerDemand - minLayerDemand) / maxLayerDemand : 0,
+    colorDiversityRatio: clampAdaptiveValue(byItem.size / 7, 0, 1)
+  };
+}
+
+function collectReleaseOpportunityMetrics(state, source) {
+  const columns = state.grid.columns;
+  const distances = [];
+  source.requirements.forEach((requirement) => {
+    const cells = source.validByLayer.get(requirement.layerIndex) ?? [];
+    cells.forEach((index) => distances.push(distance(index, requirement.deliverIndex, columns)));
+  });
+  const deliverIndexes = new Set(source.requirements.map((entry) => entry.deliverIndex));
+  return {
+    deliverPointCount: deliverIndexes.size,
+    releaseCycleCount: Math.max(1, deliverIndexes.size + (source.stats.priorityPoints ?? 0)),
+    averageReleaseDistance: average(distances),
+    maxReleaseDistance: Math.max(0, ...distances),
+    firstTraySafety: distances.length ? Math.min(...distances) : 0
+  };
+}
+
+function analyzeAdaptiveLevel(state, source) {
+  const topology = collectPathTopology(state, source);
+  const demand = collectDemandMetrics(source);
+  const release = collectReleaseOpportunityMetrics(state, source);
+  const branchCounts = [...(source.validByLayer?.values?.() ?? [])].map((cells) => cells.length);
+  const averageLayerCapacity = average(branchCounts);
+  const density = source.stats.itemDensity ?? 0;
+  const topologyPressure = clampAdaptiveValue(
+    topology.narrowPathRatio * 0.35
+      + topology.junctionRatio * 0.25
+      + density * 0.3
+      + demand.layerImbalance * 0.1,
+    0,
+    1
+  );
+  return {
+    topology,
+    demand,
+    release,
+    capacity: {
+      averageLayerCapacity,
+      totalValidSlots: source.stats.totalValidSlots,
+      itemDensity: density
+    },
+    topologyPressure
+  };
+}
+
+function createTuningState() {
+  return {
+    iteration: 0,
+    repairIntensity: 0,
+    tailRelief: 0,
+    releaseRelief: 0,
+    spawnRelief: 0,
+    quotaRelief: 0
+  };
+}
+
+function updateTuningState(tuning, result) {
+  const next = { ...tuning, iteration: tuning.iteration + 1 };
+  (result?.issues ?? []).forEach((issue) => {
+    if (issue.code === "TAIL_PRESSURE_EXCEEDED") next.tailRelief += 1;
+    else if (issue.code === "RELEASE_PRESSURE_EXCEEDED") next.releaseRelief += 1;
+    else if (issue.code === "NEXT_LAYER_SPAWN_TRAP") next.spawnRelief += 1;
+    else if (issue.code?.includes("QUOTA")) next.quotaRelief += 1;
+  });
+  next.repairIntensity = clampAdaptiveValue(next.tailRelief + next.releaseRelief + next.spawnRelief + next.quotaRelief, 0, 12);
+  return next;
+}
+
+function estimateDerivedGenerateParameters(source, analysis, intent, tuning = createTuningState()) {
+  const intentScore = Number(intent.difficultyScore);
+  const difficultyScore = clampAdaptiveValue(Number.isFinite(intentScore) ? intentScore : 0.45, 0, 1);
+  const density = clampAdaptiveValue(analysis.capacity.itemDensity, 0, 1.5);
+  const demandScale = clampAdaptiveValue(Math.sqrt(Math.max(0, analysis.demand.totalRequired)) / 12, 0, 2);
+  const topologyPressure = analysis.topologyPressure;
+  const releaseDistance = analysis.release.averageReleaseDistance || Math.max(3, source.pathIndexes.length / 4);
+  const repair = tuning.repairIntensity * 0.025;
+
+  const targetAverageTail = clampAdaptiveValue(Math.round(2 + difficultyScore * 4.5 + density * 3 + topologyPressure * 2 - tuning.tailRelief * 0.45), 2, 18);
+  const targetPeakTail = clampAdaptiveValue(Math.round(targetAverageTail + 2 + difficultyScore * 3 + demandScale + density * 2 - tuning.tailRelief * 0.25), targetAverageTail + 1, 32);
+  const safeTailLimit = clampAdaptiveValue(Math.round(targetPeakTail + 2 + topologyPressure * 4 + demandScale), targetPeakTail + 1, 60);
+  const noiseRatio = clampAdaptiveValue(0.14 + difficultyScore * 0.28 + density * 0.08 + analysis.demand.colorDiversityRatio * 0.06 - tuning.releaseRelief * 0.025, 0.08, 0.48);
+  const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.52, 0.92);
+  const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 3.5 + demandScale * 0.5 - tuning.quotaRelief * 0.25), 2, 6);
+  const clusterAdjacencyRatio = clampAdaptiveValue(0.96 - difficultyScore * 0.16 + density * 0.04 + tuning.releaseRelief * 0.025, 0.72, 0.96);
+  const highPressureRatio = clampAdaptiveValue(0.16 + difficultyScore * 0.28 + density * 0.14 + topologyPressure * 0.1 - tuning.releaseRelief * 0.02, 0.1, 0.58);
+  const releaseDelayTarget = clampAdaptiveValue(Math.round(releaseDistance * (0.18 + difficultyScore * 0.18) + 2 + topologyPressure * 3 - tuning.releaseRelief), 2, 80);
+  const maxUnreleasedItems = clampAdaptiveValue(Math.round(targetPeakTail + clusterMax * 0.5 + highPressureRatio * 5), 3, 80);
+  const spawnSafetyDistance = clampAdaptiveValue(Math.round(8 - difficultyScore * 4 + density * 2 + topologyPressure * 3), 1, 30);
+  const branchDistribution = clampAdaptiveValue(0.96 - difficultyScore * 0.28 + Math.min(0.08, analysis.topology.junctionRatio) - repair, 0.55, 0.98);
+  const releaseCycleCount = analysis.release.releaseCycleCount;
+  const reliefDuration = clampAdaptiveValue(Math.round(2 + (1 - difficultyScore) * 3 + tuning.releaseRelief), 1, 10);
+  const continuousGrowthTarget = clampAdaptiveValue(Math.round(targetAverageTail + difficultyScore * 3 + density * 2 - tuning.tailRelief * 0.4), 2, 18);
+  const releaseAmountTarget = clampAdaptiveValue(Math.round(clusterMax * requiredColorRatio + reliefDuration * 0.35), 1, 9);
+  const layerDensity = source.validByLayer
+    ? [...source.validByLayer.entries()].map(([layerIndex, cells]) => ({
+      layerIndex,
+      density: roundAdaptiveValue((source.requirements.filter((entry) => entry.layerIndex === layerIndex).reduce((sum, entry) => sum + entry.amount, 0)) / Math.max(1, cells.length), 3)
+    }))
+    : [];
+
+  const engineSettings = {
+    avgTailLengthTarget: targetAverageTail,
+    tailLengthCap: safeTailLimit,
+    tailLengthGrowthCurve: difficultyScore >= 0.8 ? "peak-late" : difficultyScore >= 0.58 ? "sawtooth" : difficultyScore <= 0.3 ? "flat" : "linear",
+    tailLengthVariance: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 + topologyPressure * 2 - tuning.tailRelief * 0.35), 1, 12),
+    releaseDelayTarget,
+    unreleasedInventoryTarget: highPressureRatio,
+    maxUnreleasedItems,
+    releaseDistanceWeight: clampAdaptiveValue(0.24 + difficultyScore * 0.38 + topologyPressure * 0.14 - tuning.releaseRelief * 0.025, 0.15, 0.9),
+    layerDistributionBalance: clampAdaptiveValue(0.96 - difficultyScore * 0.18 - analysis.demand.layerImbalance * 0.08, 0.62, 0.98),
+    spawnSafetyDistance,
+    maxImmediateChainCount: clampAdaptiveValue(Math.round(1 + difficultyScore * 3 - tuning.spawnRelief * 0.2), 1, 12),
+    nextLayerTrapPressure: clampAdaptiveValue(0.08 + difficultyScore * 0.46 - tuning.spawnRelief * 0.06, 0.02, 0.7),
+    clusterRatio: clusterAdjacencyRatio,
+    maxClusterSizePerBranch: clusterMax,
+    branchDistributionBalance: branchDistribution,
+    routeChoicePressure: clampAdaptiveValue(0.12 + difficultyScore * 0.68 + analysis.topology.junctionRatio * 0.3, 0.08, 0.92),
+    narrowPathUsage: clampAdaptiveValue(0.08 + difficultyScore * 0.48 + analysis.topology.narrowPathRatio * 0.25 - tuning.tailRelief * 0.02, 0.04, 0.85),
+    loopRiskPressure: clampAdaptiveValue(0.07 + difficultyScore * 0.5 + analysis.topology.narrowPathRatio * 0.22 - tuning.tailRelief * 0.02, 0.04, 0.85)
+  };
+
+  const derivedParameters = {
+    difficultyScore,
+    targetAverageTail,
+    targetPeakTail,
+    safeTailLimit,
+    noiseRatio: roundAdaptiveValue(noiseRatio, 3),
+    requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
+    carryOverRatio: roundAdaptiveValue(noiseRatio * 0.65, 3),
+    clusterSizeDistribution: { min: 2, preferred: clampAdaptiveValue(Math.round((2 + clusterMax) / 2), 2, clusterMax), max: clusterMax },
+    clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
+    highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),
+    continuousGrowthTarget,
+    releaseAmountTarget,
+    releaseCycleCount,
+    reliefDuration,
+    layerDensity,
+    branchDistribution: roundAdaptiveValue(branchDistribution, 3),
+    firstTraySafety: Math.round(analysis.release.firstTraySafety),
+    repairIntensity: roundAdaptiveValue(tuning.repairIntensity, 2),
+    searchDepth: clampAdaptiveValue(Math.round(8 + difficultyScore * 8 + demandScale * 2 + tuning.repairIntensity), 8, 40),
+    beamWidth: clampAdaptiveValue(Math.round(6 + difficultyScore * 10 + topologyPressure * 8 + tuning.repairIntensity), 6, 48)
+  };
+
+  return {
+    settings: engineSettings,
+    derivedParameters,
+    analysis,
+    tuning
+  };
+}
+
+
 // ---- js/generate/generator-engine.js ----
+
 
 
 
@@ -3672,7 +3840,11 @@ function generatedMetrics(generatedItems, settings, source) {
     spawnTrapCount,
     decisionPointFrequency: Number(decisionPointFrequency.toFixed(3)),
     loopRiskScore: Number(loopRiskScore.toFixed(3)),
-    quotaValidated: true
+    quotaValidated: true,
+    difficultyScore: Number(settings.difficultyScore),
+    derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
+    autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
+    autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null)
   };
 }
 
@@ -3800,18 +3972,30 @@ function generatePreview(state, rawSettings = {}) {
   const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
   const baseSettings = normalizeGenerateSettings(settingsResult.settings);
   const source = analyzeGenerateSource(state);
+  const analysis = analyzeAdaptiveLevel(state, source);
   const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
   if (errors.length > 0) {
-    return { ok: false, preview: null, source, settings: baseSettings, issues: errors };
+    return { ok: false, preview: null, source, analysis, settings: baseSettings, issues: errors };
   }
 
   let lastResult = null;
+  let tuning = createTuningState();
   for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
-    const settings = normalizeGenerateSettings({ ...baseSettings, seed: createRandomGenerateSeed() });
+    const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
+    const settings = normalizeGenerateSettings({
+      ...baseSettings,
+      ...derived.settings,
+      seed: createRandomGenerateSeed(),
+      autoDerivedParameters: derived.derivedParameters,
+      autoTuningAttempt: attempt + 1,
+      autoTuningProfile: tuning
+    });
     const result = generatePreviewAttempt(state, source, settings);
+    result.analysis = analysis;
     if (result.ok) return result;
     lastResult = result;
     if (!canRetryGeneration(result)) return result;
+    tuning = updateTuningState(tuning, result);
   }
   return lastResult ?? { ok: false, preview: null, source, settings: baseSettings, issues: [] };
 }
@@ -5691,6 +5875,7 @@ function createGridIndexTooltip({ grid, getGrid, isEnabled }) {
 // ---- js/ui/generate-panel.js ----
 
 
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -5702,6 +5887,10 @@ function escapeHtml(value) {
 
 function formatPercent(value) {
   return `${Math.round(Number(value) * 100)}%`;
+}
+
+function formatNumber(value) {
+  return Number.isFinite(Number(value)) ? String(value) : "-";
 }
 
 function statusOf(state) {
@@ -5733,32 +5922,28 @@ function issueRows(issues) {
   `).join("");
 }
 
-function settingsGroupHtml(settings, group) {
-  const fields = GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
+function intentFieldsHtml(settings) {
   return `
-    <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
-      <summary>${escapeHtml(group)}</summary>
-      <div class="generate-field-grid">
-        ${fields.map((field) => {
-          const value = field.type === "percent" ? Math.round(Number(settings[field.key]) * 100) : settings[field.key];
-          const min = field.type === "percent" ? field.min * 100 : field.min;
-          const max = field.type === "percent" ? field.max * 100 : field.max;
-          const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
-          return `
-            <label class="generate-field" title="${escapeHtml(field.tip)}">
-              <span>${escapeHtml(field.label)}</span>
-              <input type="number" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
-            </label>
-          `;
-        }).join("")}
-      </div>
-    </details>
+    ${GENERATE_SETTING_FIELDS.map((field) => {
+      const value = field.type === "percent" ? Math.round(Number(settings[field.key]) * 100) : settings[field.key];
+      const min = field.type === "percent" ? field.min * 100 : field.min;
+      const max = field.type === "percent" ? field.max * 100 : field.max;
+      const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+      return `
+        <label class="generate-field wide" title="${escapeHtml(field.tip)}">
+          <span>${escapeHtml(field.label)}</span>
+          <input type="number" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+        </label>
+      `;
+    }).join("")}
   `;
 }
 
 function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
+  const analysis = analyzeAdaptiveLevel(state, source);
+  const derived = estimateDerivedGenerateParameters(source, analysis, settings).derivedParameters;
 
   container.innerHTML = `
     <section class="control-section">
@@ -5785,15 +5970,24 @@ function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Độ khó</h2><span>Mẫu nhanh</span></div>
+      <div class="section-heading"><h2>Độ khó</h2><span>Intent</span></div>
       <div class="generate-preset-list">
         ${Object.keys(GENERATE_PRESETS).map((preset) => `<button class="generate-preset ${settings.difficultyPreset === preset ? "active" : ""}" type="button" data-generate-preset="${preset}">${PRESET_LABELS[preset]}</button>`).join("")}
       </div>
-      ${["Áp lực đuôi", "Áp lực xả", "Lớp và xuất hiện", "Cụm và đường đi"].map((group) => settingsGroupHtml(settings, group)).join("")}
-      <div class="generate-field-grid">
-        <label class="generate-field wide"><span>Đường cong tăng đuôi</span>
-          <select data-generate-setting="tailLengthGrowthCurve">${Object.entries(TAIL_CURVE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.tailLengthGrowthCurve === value ? "selected" : ""}>${label}</option>`).join("")}</select>
-        </label>
+      <div class="generate-field-grid">${intentFieldsHtml(settings)}</div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Auto Derived</h2><span>Level riêng</span></div>
+      <div class="generate-derived-grid">
+        <div><span>Avg Tail</span><strong>${formatNumber(derived.targetAverageTail)}</strong></div>
+        <div><span>Peak Tail</span><strong>${formatNumber(derived.targetPeakTail)}</strong></div>
+        <div><span>Safe Tail</span><strong>${formatNumber(derived.safeTailLimit)}</strong></div>
+        <div><span>Noise</span><strong>${formatPercent(derived.noiseRatio)}</strong></div>
+        <div><span>Cluster</span><strong>${formatPercent(derived.clusterAdjacencyRatio)}</strong></div>
+        <div><span>Max cụm</span><strong>${derived.clusterSizeDistribution.max}</strong></div>
+        <div><span>Release</span><strong>${formatNumber(derived.releaseAmountTarget)}</strong></div>
+        <div><span>Beam</span><strong>${formatNumber(derived.beamWidth)}</strong></div>
       </div>
     </section>
   `;
@@ -5802,6 +5996,7 @@ function renderGenerateControls(container, state) {
 function renderGenerateResults(container, state, result = null) {
   const source = result?.source ?? analyzeGenerateSource(state);
   const meta = result?.meta ?? state.generationMeta ?? {};
+  const derived = meta.derivedParameters ?? result?.settings?.autoDerivedParameters ?? null;
   const issues = result?.issues?.length ? result.issues : source.issues;
   const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
@@ -5831,6 +6026,19 @@ function renderGenerateResults(container, state, result = null) {
           <div><span>Tồn kho tối đa</span><strong>${meta.maxUnreleasedItems ?? "-"}</strong></div>
           <div><span>Mật độ vật phẩm</span><strong>${Number.isFinite(meta.itemDensity) ? formatPercent(meta.itemDensity) : "-"}</strong></div>
           <div><span>Bẫy xuất hiện</span><strong>${meta.spawnTrapCount ?? "-"}</strong></div>
+        </div>
+      </section>
+      <section class="generate-result-card">
+        <header><h3>Tham số dẫn xuất</h3><span>${derived ? `Tune ${meta.autoTuningAttempt ?? 1}` : "-"}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Điểm khó</span><strong>${derived ? formatPercent(derived.difficultyScore) : "-"}</strong></div>
+          <div><span>Safe Tail</span><strong>${derived?.safeTailLimit ?? "-"}</strong></div>
+          <div><span>Noise</span><strong>${derived ? formatPercent(derived.noiseRatio) : "-"}</strong></div>
+          <div><span>Carry-over</span><strong>${derived ? formatPercent(derived.carryOverRatio) : "-"}</strong></div>
+          <div><span>High Pressure</span><strong>${derived ? formatPercent(derived.highPressureRatio) : "-"}</strong></div>
+          <div><span>Release Cycle</span><strong>${derived?.releaseCycleCount ?? "-"}</strong></div>
+          <div><span>Repair</span><strong>${derived?.repairIntensity ?? "-"}</strong></div>
+          <div><span>Search/Beam</span><strong>${derived ? `${derived.searchDepth}/${derived.beamWidth}` : "-"}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">

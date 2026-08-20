@@ -56,50 +56,11 @@ function settingsGroupHtml(settings, group) {
   `;
 }
 
-export function renderGenerateControls(container, state, uiState = {}) {
+export function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
-  const status = statusOf(state);
-  const search = uiState.search ?? "";
-  const filter = uiState.filter ?? "all";
-  const sort = uiState.sort ?? "name";
-  const files = (uiState.folderFiles ?? []).filter((file) => file.status === "valid");
-  const visibleFiles = files
-    .filter((file) => {
-      const nameMatch = file.name.toLowerCase().includes(search.toLowerCase());
-      const statusMatch = filter === "all" || status === filter;
-      return nameMatch && statusMatch;
-    })
-    .sort((a, b) => sort === "id" ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.name.localeCompare(b.name));
 
   container.innerHTML = `
-    <section class="control-section">
-      <div class="section-heading"><h2>Generate Levels</h2><span>${escapeHtml(status)}</span></div>
-      <div class="generate-level-tools">
-        <input id="generateLevelSearch" type="search" placeholder="Search level" value="${escapeHtml(search)}">
-        <select id="generateStatusFilter">
-          ${["all", "Not Generated", "Generated", "Modified", "Error"].map((value) => `<option value="${escapeHtml(value)}" ${filter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
-        </select>
-        <select id="generateSortSelect">
-          <option value="name" ${sort === "name" ? "selected" : ""}>Sort by name</option>
-          <option value="id" ${sort === "id" ? "selected" : ""}>Sort by level ID</option>
-        </select>
-      </div>
-      <div class="generate-level-list">
-        <button class="generate-level-row active" type="button" data-generate-current-level>
-          <strong>${escapeHtml(state.fileName ?? "untitled-level.json")}</strong>
-          <span>${escapeHtml(status)} · current</span>
-        </button>
-        ${visibleFiles.map((file) => `
-          <button class="generate-level-row" type="button" data-generate-open-file="${escapeHtml(file.name)}">
-            <strong>${escapeHtml(file.name)}</strong>
-            <span>Loaded from folder</span>
-          </button>
-        `).join("")}
-        ${files.length === 0 ? `<div class="generate-empty">Open a folder in DataJson to list more levels.</div>` : ""}
-      </div>
-    </section>
-
     <section class="control-section">
       <div class="section-heading"><h2>Source Data</h2><span>Read only</span></div>
       <div class="generate-source-grid">

@@ -303,3 +303,4 @@ Nếu schema hiện tại không cho phép thêm top-level field, lưu settings/
 - 2026-08-20: Tách module `generate-settings`, `generate-source`, `generator-engine`, `generate-panel`.
 - 2026-08-20: Implement validate source, generate preview trong memory, apply generated items qua history hiện có và reset về backup trước lần apply gần nhất.
 - 2026-08-20: Generator giữ nguyên path/tray/element, sinh item theo tray requirement trên valid path cells và không thay đổi schema export JSON.
+- 2026-08-20: Bỏ section `Generate Levels`; quản lý level/folder/file chỉ còn thuộc tab `DataJson`.

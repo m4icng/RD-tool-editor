@@ -105,7 +105,6 @@ let activePaletteCategory = "item";
 let generatePreviewState = null;
 let generateLastResult = null;
 let generateLastAppliedBackup = null;
-const generateUiState = { search: "", filter: "all", sort: "name" };
 const playable = createPlayableController({
   getLevel: () => editor.data,
   elements,
@@ -793,26 +792,7 @@ function applyGeneratePreviewResult() {
   return true;
 }
 
-elements.generateControls.addEventListener("input", (event) => {
-  const search = event.target.closest("#generateLevelSearch");
-  if (!search) return;
-  generateUiState.search = search.value;
-  renderAll();
-});
-
 elements.generateControls.addEventListener("change", (event) => {
-  const filter = event.target.closest("#generateStatusFilter");
-  if (filter) {
-    generateUiState.filter = filter.value;
-    renderAll();
-    return;
-  }
-  const sort = event.target.closest("#generateSortSelect");
-  if (sort) {
-    generateUiState.sort = sort.value;
-    renderAll();
-    return;
-  }
   const setting = event.target.closest("[data-generate-setting]");
   if (setting) setGenerateSetting(setting.dataset.generateSetting, setting.value, setting.dataset.settingType);
 });
@@ -824,14 +804,6 @@ elements.generateControls.addEventListener("click", async (event) => {
     clearGeneratePreview();
     editor.notify();
     return;
-  }
-  const fileButton = event.target.closest("[data-generate-open-file]");
-  if (fileButton) {
-    const name = fileButton.dataset.generateOpenFile;
-    const entry = folderFiles.find((file) => file.name === name);
-    if (!entry) return;
-    if (!canReplaceCurrentLevel()) return;
-    openFolderDataEntry(entry);
   }
 });
 
@@ -1082,7 +1054,7 @@ function placeInspectorElement(assetId) {
 
 function renderGenerateWorkspace() {
   if (!elements.generateControls || !elements.generateResultCard) return;
-  renderGenerateControls(elements.generateControls, editor.data, { ...generateUiState, folderFiles });
+  renderGenerateControls(elements.generateControls, editor.data);
   renderGenerateResults(elements.generateResultCard, editor.data, generateLastResult);
   const hasPreview = Boolean(generatePreviewState);
   elements.generateApplyBtn.disabled = !hasPreview;

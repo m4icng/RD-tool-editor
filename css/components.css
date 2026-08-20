@@ -311,16 +311,8 @@
 .tray-requirement-strip.complete { grid-template-columns: 1fr; color: #26734d; font-size: 12px; font-weight: 900; }
 .tray-requirement-strip .tray-requirement-slot { width: 14px; }
 
-.generate-level-tools { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
-.generate-level-tools input,.generate-level-tools select,.generate-field input,.generate-field select { width: 100%; min-width: 0; min-height: 32px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); font-size: 10px; font-weight: 760; }
-.generate-level-list { display: grid; gap: 7px; margin-top: 9px; }
-.generate-level-row { display: grid; gap: 3px; min-width: 0; min-height: 46px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: #4d596c; cursor: pointer; text-align: left; }
-.generate-level-row:hover { border-color: #b9c8ed; background: #f8fafc; }
-.generate-level-row.active { border-color: #8fb0ff; background: var(--primary-soft); color: var(--primary); }
-.generate-level-row strong,.generate-level-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.generate-level-row strong { font-size: 11px; }
-.generate-level-row span { color: var(--muted); font-size: 9px; font-weight: 760; }
-.generate-empty,.generate-source-note { padding: 9px; border: 1px dashed #cbd5e2; border-radius: 9px; background: #fafbfd; color: var(--muted); font-size: 10px; line-height: 1.45; text-align: center; }
+.generate-field input,.generate-field select { width: 100%; min-width: 0; min-height: 32px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); font-size: 10px; font-weight: 760; }
+.generate-source-note { padding: 9px; border: 1px dashed #cbd5e2; border-radius: 9px; background: #fafbfd; color: var(--muted); font-size: 10px; line-height: 1.45; text-align: center; }
 .generate-source-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 7px; }
 .generate-source-grid.compact { grid-template-columns: repeat(4,minmax(0,1fr)); }
 .generate-source-grid > div { min-width: 0; padding: 8px; border: 1px solid #d8e2ef; border-radius: 9px; background: #fff; }

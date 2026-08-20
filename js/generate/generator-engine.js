@@ -6,6 +6,7 @@ import { cellKey, indexToPosition } from "../utils/grid-utils.js";
 import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_KEYS, GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
 import { analyzeAdaptiveLevel, createTuningState, estimateDerivedGenerateParameters, updateTuningState } from "./adaptive-parameters.js";
 import { analyzeGenerateSource, branchCellsForIndexes, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
+import { isItemLayerLocked } from "./item-layer-locks.js";
 
 function createRandom(seed) {
   let state = (Number(seed) || 1) >>> 0;
@@ -46,10 +47,12 @@ function ensureLayers(state, maxLayerIndex) {
 }
 
 function clearGeneratedLayerItems(state) {
-  (state.layers ?? []).forEach((layer) => {
+  (state.layers ?? []).forEach((layer, order) => {
+    const layerIndex = Number.isInteger(layer.layer) ? layer.layer : order;
+    if (isItemLayerLocked(state, layerIndex)) return;
     layer.cells = {};
   });
-  state.mysteryFruitElement = [];
+  state.mysteryFruitElement = (state.mysteryFruitElement ?? []).filter((entry) => isItemLayerLocked(state, entry.layer));
 }
 
 function createItemFromRequirement(requirement) {
@@ -219,17 +222,16 @@ function quotaKey(layerIndex, itemId) {
   return `${layerIndex}:${itemId}`;
 }
 
-function deriveGeneratedMapLayerCount(state, source) {
-  const pathLayerCount = Math.max(1, source.validByLayer?.size ?? state.layers?.length ?? 1);
-  const totalRequired = Math.max(1, source.stats.totalRequired || 1);
-  return Math.max(1, Math.min(totalRequired, pathLayerCount));
+function autoLayerIndexesForSource(source) {
+  return (source.autoLayerIndexes?.length ? source.autoLayerIndexes : [...(source.validByLayer?.keys() ?? [])]).sort((a, b) => a - b);
 }
 
-function generatedLayerBudgets(total, layerCount, source) {
-  if (layerCount <= 1) return [total];
-  const capacities = Array.from({ length: layerCount }, (_, index) => source.validByLayer.get(index)?.length ?? 0);
+function generatedLayerBudgets(total, layerIndexes, source) {
+  if (layerIndexes.length <= 1) return [total];
+  const capacities = layerIndexes.map((layerIndex) => source.validByLayer.get(layerIndex)?.length ?? 0);
   const totalCapacity = capacities.reduce((sum, value) => sum + value, 0);
   if (totalCapacity > 0 && total > totalCapacity) return capacities;
+  const layerCount = layerIndexes.length;
   const budgets = Array.from({ length: layerCount }, () => Math.floor(total / layerCount));
   let remainder = total - budgets.reduce((sum, value) => sum + value, 0);
   let cursor = 0;
@@ -278,8 +280,9 @@ function demandSpan(source) {
 }
 
 function buildAdaptiveLayerRequirements(state, source, settings, random) {
-  const layerCount = deriveGeneratedMapLayerCount(state, source);
-  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount, source);
+  const autoLayerIndexes = autoLayerIndexesForSource(source);
+  if (autoLayerIndexes.length === 0) return { layerCount: 0, layerIndexes: [], requirements: [] };
+  const budgets = generatedLayerBudgets(source.stats.totalRequired, autoLayerIndexes, source);
   const span = demandSpan(source);
   const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
   const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);
@@ -288,16 +291,19 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
     .map((entry) => ({ ...entry, sourceTrayLayerIndex: entry.layerIndex, remaining: entry.amount }))
     .sort((a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId);
   const planned = [];
-  budgets.forEach((budget, mapLayerIndex) => {
+  budgets.forEach((budget, mapLayerOrder) => {
+    const mapLayerIndex = autoLayerIndexes[mapLayerOrder];
+    if (!Number.isInteger(mapLayerIndex)) return;
     const remainingTotal = pool.reduce((sum, entry) => sum + entry.remaining, 0);
-    const target = mapLayerIndex === budgets.length - 1 ? remainingTotal : Math.min(budget, remainingTotal);
+    const isLastAutoLayer = mapLayerOrder === budgets.length - 1;
+    const target = isLastAutoLayer ? remainingTotal : Math.min(budget, remainingTotal);
     if (target <= 0) return;
-    const futureStart = Math.min(span.max, mapLayerIndex + 2);
+    const futureStart = Math.min(span.max, mapLayerOrder + 2);
     const futureFocus = Math.min(span.max, futureStart + 1 + Math.round(random() * Math.max(1, span.max - futureStart)));
-    const futureTarget = mapLayerIndex === budgets.length - 1
+    const futureTarget = isLastAutoLayer
       ? 0
       : Math.min(target, Math.round(target * futureRatio));
-    const nearTarget = mapLayerIndex === budgets.length - 1
+    const nearTarget = isLastAutoLayer
       ? 0
       : Math.min(target - futureTarget, Math.round(target * 0.18));
     const anchorTarget = Math.max(0, target - futureTarget - nearTarget);
@@ -311,15 +317,15 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
     const near = takeDemandFromPool(
       pool,
       nearTarget,
-      (entry) => entry.sourceTrayLayerIndex >= mapLayerIndex && entry.sourceTrayLayerIndex < futureStart,
-      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - (mapLayerIndex + 1)),
+      (entry) => entry.sourceTrayLayerIndex >= mapLayerOrder && entry.sourceTrayLayerIndex < futureStart,
+      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - (mapLayerOrder + 1)),
       random
     );
     const anchor = takeDemandFromPool(
       pool,
       anchorTarget,
       () => true,
-      (entry) => 4 - Math.abs(entry.sourceTrayLayerIndex - mapLayerIndex) * 0.6,
+      (entry) => 4 - Math.abs(entry.sourceTrayLayerIndex - mapLayerOrder) * 0.6,
       random
     );
     const missing = future.missing + near.missing + anchor.missing;
@@ -336,16 +342,17 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
       planned.push({
         ...entry,
         layerIndex: mapLayerIndex,
+        mapLayerOrder,
         sourceTrayLayerIndex: entry.sourceTrayLayerIndex,
         amount: entry.amount
       });
     });
   });
   pool.filter((entry) => entry.remaining > 0).forEach((entry) => {
-    planned.push({ ...entry, layerIndex: layerCount - 1, amount: entry.remaining });
+    planned.push({ ...entry, layerIndex: autoLayerIndexes[autoLayerIndexes.length - 1], mapLayerOrder: autoLayerIndexes.length - 1, amount: entry.remaining });
     entry.remaining = 0;
   });
-  return { layerCount, requirements: planned };
+  return { layerCount: autoLayerIndexes.length, layerIndexes: autoLayerIndexes, requirements: planned };
 }
 
 function quotaCountsFromRequirements(requirements) {

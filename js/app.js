@@ -55,6 +55,7 @@ import { createGridIndexTooltip } from "./ui/grid-index-tooltip.js";
 import { DERIVED_GENERATE_SETTING_KEYS, applyGeneratePreset, normalizeGenerateSettings } from "./generate/generate-settings.js";
 import { analyzeGenerateSource } from "./generate/generate-source.js";
 import { applyGeneratedPreview, generatePreview, resetGeneratedItems } from "./generate/generator-engine.js";
+import { isItemLayerLocked, removeItemLayerLockAndShift, setItemLayerLock } from "./generate/item-layer-locks.js";
 import { renderGenerateControls, renderGenerateResults } from "./ui/generate-panel.js";
 import {
   addTrayLayer,
@@ -770,6 +771,14 @@ function resetDerivedGenerateSettings() {
   editor.notify();
 }
 
+function toggleGenerateLayerLock(layerIndex) {
+  const numericLayer = Number(layerIndex);
+  if (!Number.isInteger(numericLayer)) return;
+  setItemLayerLock(editor.data, numericLayer, !isItemLayerLocked(editor.data, numericLayer));
+  clearGeneratePreview();
+  editor.notify();
+}
+
 function validateGenerateSourceOnly() {
   const source = analyzeGenerateSource(editor.data);
   generateLastResult = { ok: source.valid, source, settings: normalizeGenerateSettings(editor.data.generateSettings), issues: source.issues };
@@ -815,6 +824,11 @@ elements.generateControls.addEventListener("change", (event) => {
 });
 
 elements.generateControls.addEventListener("click", async (event) => {
+  const layerLock = event.target.closest("[data-generate-layer-lock]");
+  if (layerLock) {
+    toggleGenerateLayerLock(layerLock.dataset.generateLayerLock);
+    return;
+  }
   if (event.target.closest("[data-reset-derived-settings]")) {
     resetDerivedGenerateSettings();
     return;
@@ -1030,6 +1044,7 @@ function deleteActiveLayer() {
       return [{ ...entry, layer: entry.layer > deletedLayerNumber ? entry.layer - 1 : entry.layer }];
     });
     state.layers = state.layers.filter((layer) => layer.id !== deletedId);
+    removeItemLayerLockAndShift(state, deletedLayerNumber);
     reindexLayers(state.layers);
     const nextIndex = Math.min(deletedIndex, state.layers.length - 1);
     state.activeLayerId = state.layers[Math.max(0, nextIndex)].id;

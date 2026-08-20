@@ -1846,6 +1846,7 @@ function createInitialState() {
     activeOneWayId: null,
     nextOneWayId: 0,
     oneWayDraft: null,
+    itemLayerLocks: {},
     layers: [firstLayer],
     activeLayerId: firstLayer.id,
     selectedCell: null,
@@ -2294,6 +2295,7 @@ function deserializeLevel(rawData, { fileName = "untitled-level.json" } = {}) {
     oneWayElement: normalizeOneWayElement(raw.oneWayElement ?? []),
     activeOneWayId: null,
     nextOneWayId: nextOneWaySequence(raw.oneWayElement ?? []),
+    itemLayerLocks: {},
     selectedCell: null, activeTrayCell: null, selectedAssetId: "snake-start", selectedBridgeAxis: 0, selectedGateDirection: 0, tool: "path", eraseMode: "smart", tab: "level",
     fileName: normalizeFileName(fileName), sourceFileName: normalizeFileName(fileName), fileDirty: false
   };
@@ -2426,7 +2428,9 @@ function serializeEditorState(editorData) { ensureTerrainState(editorData); retu
 function deserializeEditorState(rawData) {
   const raw = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
   if (raw?.editorStateVersion !== 1 || !raw.data?.grid || !Array.isArray(raw.data.layers)) throw new Error("Stored editor state không hợp lệ.");
-  return ensureTerrainState(structuredClone(raw.data));
+  const data = ensureTerrainState(structuredClone(raw.data));
+  data.itemLayerLocks = data.itemLayerLocks && typeof data.itemLayerLocks === "object" ? data.itemLayerLocks : {};
+  return data;
 }
 
 function normalizeFileName(value) {
@@ -3152,7 +3156,99 @@ function validateGenerateSettings(settings) {
 }
 
 
+// ---- js/generate/item-layer-locks.js ----
+
+const ITEM_LAYER_LOCKED = "LOCKED";
+const ITEM_LAYER_AUTO = "AUTO";
+
+function getLayerNumber(layer, order = 0) {
+  return Number.isInteger(layer?.layer) ? layer.layer : order;
+}
+
+function normalizeItemLayerLocks(state) {
+  const locks = state?.itemLayerLocks && typeof state.itemLayerLocks === "object"
+    ? state.itemLayerLocks
+    : {};
+  const validLayers = new Set((state?.layers ?? []).map((layer, order) => getLayerNumber(layer, order)));
+  return Object.fromEntries(Object.entries(locks)
+    .filter(([layerIndex, mode]) => validLayers.has(Number(layerIndex)) && mode === ITEM_LAYER_LOCKED));
+}
+
+function isItemLayerLocked(state, layerIndex) {
+  const locks = normalizeItemLayerLocks(state);
+  return locks[String(layerIndex)] === ITEM_LAYER_LOCKED;
+}
+
+function setItemLayerLock(state, layerIndex, locked) {
+  const locks = normalizeItemLayerLocks(state);
+  if (locked) locks[String(layerIndex)] = ITEM_LAYER_LOCKED;
+  else delete locks[String(layerIndex)];
+  state.itemLayerLocks = locks;
+  return locks;
+}
+
+function removeItemLayerLockAndShift(state, deletedLayerIndex) {
+  const next = {};
+  Object.entries(normalizeItemLayerLocks(state)).forEach(([key, mode]) => {
+    const layerIndex = Number(key);
+    if (layerIndex === deletedLayerIndex) return;
+    next[String(layerIndex > deletedLayerIndex ? layerIndex - 1 : layerIndex)] = mode;
+  });
+  state.itemLayerLocks = next;
+  return next;
+}
+
+function getItemIdFromLayerItem(item) {
+  if (!item || item.kind !== "fruit") return null;
+  const itemId = item.unknown ? Number(item.itemId ?? item.id) : Number(FRUIT_ITEM_IDS[item.fruitType] ?? item.itemId ?? item.id);
+  return Number.isInteger(itemId) && itemId > 0 ? itemId : null;
+}
+
+function getItemLayerItemStats(layer) {
+  const countByItemId = new Map();
+  let total = 0;
+  Object.values(layer?.cells ?? {}).forEach((cell) => {
+    const itemId = getItemIdFromLayerItem(cell?.item);
+    if (!itemId) return;
+    total += 1;
+    countByItemId.set(itemId, (countByItemId.get(itemId) ?? 0) + 1);
+  });
+  return { total, countByItemId };
+}
+
+function getItemLayerLockRows(state) {
+  const locks = normalizeItemLayerLocks(state);
+  return (state?.layers ?? []).map((layer, order) => {
+    const layerIndex = getLayerNumber(layer, order);
+    const stats = getItemLayerItemStats(layer);
+    return {
+      id: layer.id,
+      layerIndex,
+      name: layer.name ?? `Layer ${layerIndex + 1}`,
+      itemCount: stats.total,
+      mode: locks[String(layerIndex)] === ITEM_LAYER_LOCKED ? ITEM_LAYER_LOCKED : ITEM_LAYER_AUTO
+    };
+  });
+}
+
+function lockedItemLayerTotals(state) {
+  const totalByItemId = new Map();
+  let total = 0;
+  (state?.layers ?? []).forEach((layer, order) => {
+    const layerIndex = getLayerNumber(layer, order);
+    if (!isItemLayerLocked(state, layerIndex)) return;
+    const stats = getItemLayerItemStats(layer);
+    total += stats.total;
+    stats.countByItemId.forEach((amount, itemId) => {
+      totalByItemId.set(itemId, (totalByItemId.get(itemId) ?? 0) + amount);
+    });
+  });
+  return { total, totalByItemId };
+}
+
+
 // ---- js/generate/generate-source.js ----
+
 
 
 
@@ -3280,6 +3376,20 @@ function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   return validByLayer;
 }
 
+function applyLockedLayerInput(requirements, lockedTotals) {
+  const lockedRemainingByItemId = new Map(lockedTotals.totalByItemId);
+  const adjusted = [];
+  requirements.forEach((entry) => {
+    const lockedRemaining = lockedRemainingByItemId.get(entry.itemId) ?? 0;
+    const consumed = Math.min(entry.amount, lockedRemaining);
+    if (consumed > 0) lockedRemainingByItemId.set(entry.itemId, lockedRemaining - consumed);
+    const amount = entry.amount - consumed;
+    if (amount > 0) adjusted.push({ ...entry, amount });
+  });
+  const excessByItemId = new Map([...lockedRemainingByItemId.entries()].filter(([, amount]) => amount > 0));
+  return { requirements: adjusted, excessByItemId };
+}
+
 function branchCellsForIndexes(state, indexes) {
   const remaining = new Set(indexes);
   const branches = [];
@@ -3315,9 +3425,16 @@ function branchCellsForIndexes(state, indexes) {
 function analyzeGenerateSource(state) {
   const issues = [];
   const pathIndexes = collectPathIndexes(state);
-  const requirements = collectTrayRequirements(state);
-  const validByLayer = collectValidCellsByLayer(state, requirements.map((entry) => entry.layerIndex));
-  requirements.forEach((entry) => {
+  const rawRequirements = collectTrayRequirements(state);
+  const lockedTotals = lockedItemLayerTotals(state);
+  const lockedInput = applyLockedLayerInput(rawRequirements, lockedTotals);
+  const requirements = lockedInput.requirements;
+  const autoLayerIndexes = (state.layers ?? [])
+    .map((layer, order) => getLayerNumber(layer, order))
+    .filter((layerIndex) => !isItemLayerLocked(state, layerIndex));
+  const allValidByLayer = collectValidCellsByLayer(state, autoLayerIndexes);
+  const validByLayer = new Map(autoLayerIndexes.map((layerIndex) => [layerIndex, allValidByLayer.get(layerIndex) ?? []]));
+  rawRequirements.forEach((entry) => {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
       issues.push(createGeneratorIssue({
         code: "TRAY_INVALID",
@@ -3329,6 +3446,13 @@ function analyzeGenerateSource(state) {
       return;
     }
   });
+  lockedInput.excessByItemId.forEach((amount, itemId) => {
+    issues.push(createGeneratorIssue({
+      code: "LOCKED_ITEM_QUOTA_EXCEEDED",
+      message: `Layer khóa đang có dư ${amount} vật phẩm mã ${itemId} so với tổng yêu cầu khay.`,
+      suggestion: "Mở khóa layer để generator sửa hoặc giảm item khóa trước khi sinh."
+    }));
+  });
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
       code: "SOURCE_INVALID",
@@ -3336,17 +3460,25 @@ function analyzeGenerateSource(state) {
       suggestion: "Vẽ đường ray trong tab LevelDes trước khi sinh màn."
     }));
   }
-  if (requirements.length === 0) {
+  if (rawRequirements.length === 0) {
     issues.push(createGeneratorIssue({
       code: "TRAY_INVALID",
       message: "Không tìm thấy yêu cầu vật phẩm từ khay.",
       suggestion: "Thêm lớp khay và số lượng vật phẩm trong tab LevelDes."
     }));
   }
-  const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
+  if (requirements.length > 0 && autoLayerIndexes.length === 0) {
+    issues.push(createGeneratorIssue({
+      code: "ALL_ITEM_LAYERS_LOCKED",
+      message: "Tất cả Item Layer đang khóa nhưng vẫn còn item thiếu cần sinh.",
+      suggestion: "Mở khóa ít nhất một Item Layer hoặc bổ sung item thủ công vào layer khóa."
+    }));
+  }
+  const trayCount = new Set(rawRequirements.map((entry) => entry.trayId)).size;
   const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
   const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
   const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
+  const totalDemand = rawRequirements.reduce((sum, entry) => sum + entry.amount, 0);
   if (totalRequired > totalValidSlots) {
     issues.push(createGeneratorIssue({
       code: "NOT_ENOUGH_VALID_CELLS",
@@ -3359,13 +3491,20 @@ function analyzeGenerateSource(state) {
     issues,
     pathIndexes,
     requirements,
+    rawRequirements,
     validByLayer,
+    autoLayerIndexes,
+    lockedLayerTotals: lockedTotals,
     stats: {
       layers: validByLayer.size,
       editorLayers: state.layers?.length ?? 0,
+      autoLayers: autoLayerIndexes.length,
+      lockedLayers: (state.layers?.length ?? 0) - autoLayerIndexes.length,
       trays: trayCount,
       priorityPoints: priorityCount,
       totalRequired,
+      totalDemand,
+      lockedItems: lockedTotals.total,
       totalValidSlots,
       itemDensity: totalValidSlots > 0 ? totalRequired / totalValidSlots : 0
     }
@@ -3591,6 +3730,7 @@ function estimateDerivedGenerateParameters(source, analysis, intent, tuning = cr
 
 
 
+
 function createRandom(seed) {
   let state = (Number(seed) || 1) >>> 0;
   return () => {
@@ -3630,10 +3770,12 @@ function ensureLayers(state, maxLayerIndex) {
 }
 
 function clearGeneratedLayerItems(state) {
-  (state.layers ?? []).forEach((layer) => {
+  (state.layers ?? []).forEach((layer, order) => {
+    const layerIndex = Number.isInteger(layer.layer) ? layer.layer : order;
+    if (isItemLayerLocked(state, layerIndex)) return;
     layer.cells = {};
   });
-  state.mysteryFruitElement = [];
+  state.mysteryFruitElement = (state.mysteryFruitElement ?? []).filter((entry) => isItemLayerLocked(state, entry.layer));
 }
 
 function createItemFromRequirement(requirement) {
@@ -3803,17 +3945,16 @@ function quotaKey(layerIndex, itemId) {
   return `${layerIndex}:${itemId}`;
 }
 
-function deriveGeneratedMapLayerCount(state, source) {
-  const pathLayerCount = Math.max(1, source.validByLayer?.size ?? state.layers?.length ?? 1);
-  const totalRequired = Math.max(1, source.stats.totalRequired || 1);
-  return Math.max(1, Math.min(totalRequired, pathLayerCount));
+function autoLayerIndexesForSource(source) {
+  return (source.autoLayerIndexes?.length ? source.autoLayerIndexes : [...(source.validByLayer?.keys() ?? [])]).sort((a, b) => a - b);
 }
 
-function generatedLayerBudgets(total, layerCount, source) {
-  if (layerCount <= 1) return [total];
-  const capacities = Array.from({ length: layerCount }, (_, index) => source.validByLayer.get(index)?.length ?? 0);
+function generatedLayerBudgets(total, layerIndexes, source) {
+  if (layerIndexes.length <= 1) return [total];
+  const capacities = layerIndexes.map((layerIndex) => source.validByLayer.get(layerIndex)?.length ?? 0);
   const totalCapacity = capacities.reduce((sum, value) => sum + value, 0);
   if (totalCapacity > 0 && total > totalCapacity) return capacities;
+  const layerCount = layerIndexes.length;
   const budgets = Array.from({ length: layerCount }, () => Math.floor(total / layerCount));
   let remainder = total - budgets.reduce((sum, value) => sum + value, 0);
   let cursor = 0;
@@ -3862,8 +4003,9 @@ function demandSpan(source) {
 }
 
 function buildAdaptiveLayerRequirements(state, source, settings, random) {
-  const layerCount = deriveGeneratedMapLayerCount(state, source);
-  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount, source);
+  const autoLayerIndexes = autoLayerIndexesForSource(source);
+  if (autoLayerIndexes.length === 0) return { layerCount: 0, layerIndexes: [], requirements: [] };
+  const budgets = generatedLayerBudgets(source.stats.totalRequired, autoLayerIndexes, source);
   const span = demandSpan(source);
   const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
   const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);
@@ -3872,16 +4014,19 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
     .map((entry) => ({ ...entry, sourceTrayLayerIndex: entry.layerIndex, remaining: entry.amount }))
     .sort((a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId);
   const planned = [];
-  budgets.forEach((budget, mapLayerIndex) => {
+  budgets.forEach((budget, mapLayerOrder) => {
+    const mapLayerIndex = autoLayerIndexes[mapLayerOrder];
+    if (!Number.isInteger(mapLayerIndex)) return;
     const remainingTotal = pool.reduce((sum, entry) => sum + entry.remaining, 0);
-    const target = mapLayerIndex === budgets.length - 1 ? remainingTotal : Math.min(budget, remainingTotal);
+    const isLastAutoLayer = mapLayerOrder === budgets.length - 1;
+    const target = isLastAutoLayer ? remainingTotal : Math.min(budget, remainingTotal);
     if (target <= 0) return;
-    const futureStart = Math.min(span.max, mapLayerIndex + 2);
+    const futureStart = Math.min(span.max, mapLayerOrder + 2);
     const futureFocus = Math.min(span.max, futureStart + 1 + Math.round(random() * Math.max(1, span.max - futureStart)));
-    const futureTarget = mapLayerIndex === budgets.length - 1
+    const futureTarget = isLastAutoLayer
       ? 0
       : Math.min(target, Math.round(target * futureRatio));
-    const nearTarget = mapLayerIndex === budgets.length - 1
+    const nearTarget = isLastAutoLayer
       ? 0
       : Math.min(target - futureTarget, Math.round(target * 0.18));
     const anchorTarget = Math.max(0, target - futureTarget - nearTarget);
@@ -3895,15 +4040,15 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
     const near = takeDemandFromPool(
       pool,
       nearTarget,
-      (entry) => entry.sourceTrayLayerIndex >= mapLayerIndex && entry.sourceTrayLayerIndex < futureStart,
-      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - (mapLayerIndex + 1)),
+      (entry) => entry.sourceTrayLayerIndex >= mapLayerOrder && entry.sourceTrayLayerIndex < futureStart,
+      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - (mapLayerOrder + 1)),
       random
     );
     const anchor = takeDemandFromPool(
       pool,
       anchorTarget,
       () => true,
-      (entry) => 4 - Math.abs(entry.sourceTrayLayerIndex - mapLayerIndex) * 0.6,
+      (entry) => 4 - Math.abs(entry.sourceTrayLayerIndex - mapLayerOrder) * 0.6,
       random
     );
     const missing = future.missing + near.missing + anchor.missing;
@@ -3920,16 +4065,17 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
       planned.push({
         ...entry,
         layerIndex: mapLayerIndex,
+        mapLayerOrder,
         sourceTrayLayerIndex: entry.sourceTrayLayerIndex,
         amount: entry.amount
       });
     });
   });
   pool.filter((entry) => entry.remaining > 0).forEach((entry) => {
-    planned.push({ ...entry, layerIndex: layerCount - 1, amount: entry.remaining });
+    planned.push({ ...entry, layerIndex: autoLayerIndexes[autoLayerIndexes.length - 1], mapLayerOrder: autoLayerIndexes.length - 1, amount: entry.remaining });
     entry.remaining = 0;
   });
-  return { layerCount, requirements: planned };
+  return { layerCount: autoLayerIndexes.length, layerIndexes: autoLayerIndexes, requirements: planned };
 }
 
 function quotaCountsFromRequirements(requirements) {
@@ -6161,6 +6307,7 @@ function createGridIndexTooltip({ grid, getGrid, isEnabled }) {
 
 
 
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -6218,6 +6365,25 @@ function intentFieldsHtml(settings) {
       `;
     }).join("")}
   `;
+}
+
+function itemLayerLockRowsHtml(state) {
+  const rows = getItemLayerLockRows(state);
+  if (!rows.length) return `<div class="generate-layer-lock-empty">Chưa có Item Layer.</div>`;
+  return rows.map((row) => {
+    const locked = row.mode === ITEM_LAYER_LOCKED;
+    return `
+      <div class="generate-layer-lock-row ${locked ? "locked" : "auto"}">
+        <div>
+          <strong>Layer ${row.layerIndex}</strong>
+          <span>${row.itemCount} Items</span>
+        </div>
+        <button class="generate-layer-lock-toggle" type="button" data-generate-layer-lock="${row.layerIndex}" aria-pressed="${locked}">
+          ${locked ? "Locked" : "Auto"}
+        </button>
+      </div>
+    `;
+  }).join("");
 }
 
 function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys) {
@@ -6293,6 +6459,7 @@ function renderGenerateControls(container, state) {
         <div><span>Lớp</span><strong>${source.stats.layers}</strong></div>
         <div><span>Khay</span><strong>${source.stats.trays}</strong></div>
         <div><span>Cần sinh</span><strong>${source.stats.totalRequired}</strong></div>
+        <div><span>Đã khóa</span><strong>${source.stats.lockedItems}</strong></div>
         <div><span>Ô hợp lệ</span><strong>${source.stats.totalValidSlots}</strong></div>
       </div>
       <div class="generate-source-note">Đường ray, khay, điểm bắt đầu, điểm giao, điểm ưu tiên và đối tượng đặc biệt chỉ được đọc. Muốn sửa nguồn hãy mở tab LevelDes.</div>
@@ -6308,6 +6475,11 @@ function renderGenerateControls(container, state) {
           </select>
         </label>
       </div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Item Layers</h2><span>Lock</span></div>
+      <div class="generate-layer-lock-list">${itemLayerLockRowsHtml(state)}</div>
     </section>
 
     <section class="control-section">
@@ -8854,6 +9026,7 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
 
 
 
+
 const byId = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
@@ -9553,6 +9726,14 @@ function resetDerivedGenerateSettings() {
   editor.notify();
 }
 
+function toggleGenerateLayerLock(layerIndex) {
+  const numericLayer = Number(layerIndex);
+  if (!Number.isInteger(numericLayer)) return;
+  setItemLayerLock(editor.data, numericLayer, !isItemLayerLocked(editor.data, numericLayer));
+  clearGeneratePreview();
+  editor.notify();
+}
+
 function validateGenerateSourceOnly() {
   const source = analyzeGenerateSource(editor.data);
   generateLastResult = { ok: source.valid, source, settings: normalizeGenerateSettings(editor.data.generateSettings), issues: source.issues };
@@ -9598,6 +9779,11 @@ elements.generateControls.addEventListener("change", (event) => {
 });
 
 elements.generateControls.addEventListener("click", async (event) => {
+  const layerLock = event.target.closest("[data-generate-layer-lock]");
+  if (layerLock) {
+    toggleGenerateLayerLock(layerLock.dataset.generateLayerLock);
+    return;
+  }
   if (event.target.closest("[data-reset-derived-settings]")) {
     resetDerivedGenerateSettings();
     return;
@@ -9813,6 +9999,7 @@ function deleteActiveLayer() {
       return [{ ...entry, layer: entry.layer > deletedLayerNumber ? entry.layer - 1 : entry.layer }];
     });
     state.layers = state.layers.filter((layer) => layer.id !== deletedId);
+    removeItemLayerLockAndShift(state, deletedLayerNumber);
     reindexLayers(state.layers);
     const nextIndex = Math.min(deletedIndex, state.layers.length - 1);
     state.activeLayerId = state.layers[Math.max(0, nextIndex)].id;

@@ -47,6 +47,7 @@ export function createInitialState() {
     activeOneWayId: null,
     nextOneWayId: 0,
     oneWayDraft: null,
+    itemLayerLocks: {},
     layers: [firstLayer],
     activeLayerId: firstLayer.id,
     selectedCell: null,

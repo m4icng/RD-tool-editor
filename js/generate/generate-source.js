@@ -5,6 +5,7 @@ import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js
 import { normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { normalizeOneWayElement } from "../objects/one-way-object.js";
 import { cellKey, getTrayVisualCells, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
+import { getLayerNumber, isItemLayerLocked, lockedItemLayerTotals } from "./item-layer-locks.js";
 
 const FRUIT_TYPE_BY_ITEM_ID = Object.freeze(Object.fromEntries(
   Object.entries(FRUIT_ITEM_IDS).map(([type, itemId]) => [String(itemId), type])
@@ -126,6 +127,20 @@ export function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   return validByLayer;
 }
 
+function applyLockedLayerInput(requirements, lockedTotals) {
+  const lockedRemainingByItemId = new Map(lockedTotals.totalByItemId);
+  const adjusted = [];
+  requirements.forEach((entry) => {
+    const lockedRemaining = lockedRemainingByItemId.get(entry.itemId) ?? 0;
+    const consumed = Math.min(entry.amount, lockedRemaining);
+    if (consumed > 0) lockedRemainingByItemId.set(entry.itemId, lockedRemaining - consumed);
+    const amount = entry.amount - consumed;
+    if (amount > 0) adjusted.push({ ...entry, amount });
+  });
+  const excessByItemId = new Map([...lockedRemainingByItemId.entries()].filter(([, amount]) => amount > 0));
+  return { requirements: adjusted, excessByItemId };
+}
+
 export function branchCellsForIndexes(state, indexes) {
   const remaining = new Set(indexes);
   const branches = [];
@@ -161,9 +176,16 @@ export function branchCellsForIndexes(state, indexes) {
 export function analyzeGenerateSource(state) {
   const issues = [];
   const pathIndexes = collectPathIndexes(state);
-  const requirements = collectTrayRequirements(state);
-  const validByLayer = collectValidCellsByLayer(state, requirements.map((entry) => entry.layerIndex));
-  requirements.forEach((entry) => {
+  const rawRequirements = collectTrayRequirements(state);
+  const lockedTotals = lockedItemLayerTotals(state);
+  const lockedInput = applyLockedLayerInput(rawRequirements, lockedTotals);
+  const requirements = lockedInput.requirements;
+  const autoLayerIndexes = (state.layers ?? [])
+    .map((layer, order) => getLayerNumber(layer, order))
+    .filter((layerIndex) => !isItemLayerLocked(state, layerIndex));
+  const allValidByLayer = collectValidCellsByLayer(state, autoLayerIndexes);
+  const validByLayer = new Map(autoLayerIndexes.map((layerIndex) => [layerIndex, allValidByLayer.get(layerIndex) ?? []]));
+  rawRequirements.forEach((entry) => {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
       issues.push(createGeneratorIssue({
         code: "TRAY_INVALID",
@@ -175,6 +197,13 @@ export function analyzeGenerateSource(state) {
       return;
     }
   });
+  lockedInput.excessByItemId.forEach((amount, itemId) => {
+    issues.push(createGeneratorIssue({
+      code: "LOCKED_ITEM_QUOTA_EXCEEDED",
+      message: `Layer khóa đang có dư ${amount} vật phẩm mã ${itemId} so với tổng yêu cầu khay.`,
+      suggestion: "Mở khóa layer để generator sửa hoặc giảm item khóa trước khi sinh."
+    }));
+  });
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
       code: "SOURCE_INVALID",
@@ -182,17 +211,25 @@ export function analyzeGenerateSource(state) {
       suggestion: "Vẽ đường ray trong tab LevelDes trước khi sinh màn."
     }));
   }
-  if (requirements.length === 0) {
+  if (rawRequirements.length === 0) {
     issues.push(createGeneratorIssue({
       code: "TRAY_INVALID",
       message: "Không tìm thấy yêu cầu vật phẩm từ khay.",
       suggestion: "Thêm lớp khay và số lượng vật phẩm trong tab LevelDes."
     }));
   }
-  const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
+  if (requirements.length > 0 && autoLayerIndexes.length === 0) {
+    issues.push(createGeneratorIssue({
+      code: "ALL_ITEM_LAYERS_LOCKED",
+      message: "Tất cả Item Layer đang khóa nhưng vẫn còn item thiếu cần sinh.",
+      suggestion: "Mở khóa ít nhất một Item Layer hoặc bổ sung item thủ công vào layer khóa."
+    }));
+  }
+  const trayCount = new Set(rawRequirements.map((entry) => entry.trayId)).size;
   const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
   const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
   const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
+  const totalDemand = rawRequirements.reduce((sum, entry) => sum + entry.amount, 0);
   if (totalRequired > totalValidSlots) {
     issues.push(createGeneratorIssue({
       code: "NOT_ENOUGH_VALID_CELLS",
@@ -205,13 +242,20 @@ export function analyzeGenerateSource(state) {
     issues,
     pathIndexes,
     requirements,
+    rawRequirements,
     validByLayer,
+    autoLayerIndexes,
+    lockedLayerTotals: lockedTotals,
     stats: {
       layers: validByLayer.size,
       editorLayers: state.layers?.length ?? 0,
+      autoLayers: autoLayerIndexes.length,
+      lockedLayers: (state.layers?.length ?? 0) - autoLayerIndexes.length,
       trays: trayCount,
       priorityPoints: priorityCount,
       totalRequired,
+      totalDemand,
+      lockedItems: lockedTotals.total,
       totalValidSlots,
       itemDensity: totalValidSlots > 0 ? totalRequired / totalValidSlots : 0
     }

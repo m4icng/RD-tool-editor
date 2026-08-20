@@ -1,6 +1,7 @@
 import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_FIELDS, GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
 import { analyzeAdaptiveLevel, estimateDerivedGenerateParameters } from "../generate/adaptive-parameters.js";
 import { analyzeGenerateSource } from "../generate/generate-source.js";
+import { ITEM_LAYER_LOCKED, getItemLayerLockRows } from "../generate/item-layer-locks.js";
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -59,6 +60,25 @@ function intentFieldsHtml(settings) {
       `;
     }).join("")}
   `;
+}
+
+function itemLayerLockRowsHtml(state) {
+  const rows = getItemLayerLockRows(state);
+  if (!rows.length) return `<div class="generate-layer-lock-empty">Chưa có Item Layer.</div>`;
+  return rows.map((row) => {
+    const locked = row.mode === ITEM_LAYER_LOCKED;
+    return `
+      <div class="generate-layer-lock-row ${locked ? "locked" : "auto"}">
+        <div>
+          <strong>Layer ${row.layerIndex}</strong>
+          <span>${row.itemCount} Items</span>
+        </div>
+        <button class="generate-layer-lock-toggle" type="button" data-generate-layer-lock="${row.layerIndex}" aria-pressed="${locked}">
+          ${locked ? "Locked" : "Auto"}
+        </button>
+      </div>
+    `;
+  }).join("");
 }
 
 function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys) {
@@ -134,6 +154,7 @@ export function renderGenerateControls(container, state) {
         <div><span>Lớp</span><strong>${source.stats.layers}</strong></div>
         <div><span>Khay</span><strong>${source.stats.trays}</strong></div>
         <div><span>Cần sinh</span><strong>${source.stats.totalRequired}</strong></div>
+        <div><span>Đã khóa</span><strong>${source.stats.lockedItems}</strong></div>
         <div><span>Ô hợp lệ</span><strong>${source.stats.totalValidSlots}</strong></div>
       </div>
       <div class="generate-source-note">Đường ray, khay, điểm bắt đầu, điểm giao, điểm ưu tiên và đối tượng đặc biệt chỉ được đọc. Muốn sửa nguồn hãy mở tab LevelDes.</div>
@@ -149,6 +170,11 @@ export function renderGenerateControls(container, state) {
           </select>
         </label>
       </div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Item Layers</h2><span>Lock</span></div>
+      <div class="generate-layer-lock-list">${itemLayerLockRowsHtml(state)}</div>
     </section>
 
     <section class="control-section">

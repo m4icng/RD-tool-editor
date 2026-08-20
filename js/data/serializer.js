@@ -313,6 +313,7 @@ export function deserializeLevel(rawData, { fileName = "untitled-level.json" } =
     oneWayElement: normalizeOneWayElement(raw.oneWayElement ?? []),
     activeOneWayId: null,
     nextOneWayId: nextOneWaySequence(raw.oneWayElement ?? []),
+    itemLayerLocks: {},
     selectedCell: null, activeTrayCell: null, selectedAssetId: "snake-start", selectedBridgeAxis: 0, selectedGateDirection: 0, tool: "path", eraseMode: "smart", tab: "level",
     fileName: normalizeFileName(fileName), sourceFileName: normalizeFileName(fileName), fileDirty: false
   };
@@ -445,7 +446,9 @@ export function serializeEditorState(editorData) { ensureTerrainState(editorData
 export function deserializeEditorState(rawData) {
   const raw = typeof rawData === "string" ? JSON.parse(rawData) : rawData;
   if (raw?.editorStateVersion !== 1 || !raw.data?.grid || !Array.isArray(raw.data.layers)) throw new Error("Stored editor state không hợp lệ.");
-  return ensureTerrainState(structuredClone(raw.data));
+  const data = ensureTerrainState(structuredClone(raw.data));
+  data.itemLayerLocks = data.itemLayerLocks && typeof data.itemLayerLocks === "object" ? data.itemLayerLocks : {};
+  return data;
 }
 
 export function normalizeFileName(value) {

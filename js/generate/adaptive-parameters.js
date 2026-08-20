@@ -134,8 +134,8 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
   const targetAverageTail = clampAdaptiveValue(Math.round(2 + difficultyScore * 4.5 + density * 3 + topologyPressure * 2 - tuning.tailRelief * 0.45), 2, 18);
   const targetPeakTail = clampAdaptiveValue(Math.round(targetAverageTail + 2 + difficultyScore * 3 + demandScale + density * 2 - tuning.tailRelief * 0.25), targetAverageTail + 1, 32);
   const safeTailLimit = clampAdaptiveValue(Math.round(targetPeakTail + 2 + topologyPressure * 4 + demandScale), targetPeakTail + 1, 60);
-  const noiseRatio = clampAdaptiveValue(0.14 + difficultyScore * 0.28 + density * 0.08 + analysis.demand.colorDiversityRatio * 0.06 - tuning.releaseRelief * 0.025, 0.08, 0.48);
-  const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.52, 0.92);
+  const noiseRatio = clampAdaptiveValue(0.24 + difficultyScore * 0.34 + density * 0.1 + analysis.demand.colorDiversityRatio * 0.08 - tuning.releaseRelief * 0.02, 0.18, 0.68);
+  const requiredColorRatio = clampAdaptiveValue(1 - noiseRatio, 0.32, 0.82);
   const clusterMax = clampAdaptiveValue(Math.round(2 + difficultyScore * 3.5 + demandScale * 0.5 - tuning.quotaRelief * 0.25), 2, 6);
   const clusterAdjacencyRatio = clampAdaptiveValue(0.96 - difficultyScore * 0.16 + density * 0.04 + tuning.releaseRelief * 0.025, 0.72, 0.96);
   const highPressureRatio = clampAdaptiveValue(0.16 + difficultyScore * 0.28 + density * 0.14 + topologyPressure * 0.1 - tuning.releaseRelief * 0.02, 0.1, 0.58);
@@ -182,7 +182,7 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     safeTailLimit,
     noiseRatio: roundAdaptiveValue(noiseRatio, 3),
     requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
-    carryOverRatio: roundAdaptiveValue(noiseRatio * 0.65, 3),
+    carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08, 0.18, 0.72), 3),
     clusterSizeDistribution: { min: 2, preferred: clampAdaptiveValue(Math.round((2 + clusterMax) / 2), 2, clusterMax), max: clusterMax },
     clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
     highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),

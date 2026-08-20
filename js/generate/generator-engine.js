@@ -165,12 +165,14 @@ function generatedLayerBudgets(total, layerCount) {
   return budgets;
 }
 
-function takeDemandFromPool(pool, amount, predicate, sortEntries) {
+function takeDemandFromPool(pool, amount, predicate, scoreEntry, random) {
   const taken = [];
   let remaining = amount;
   const candidates = pool
     .filter((entry) => entry.remaining > 0 && predicate(entry))
-    .sort(sortEntries);
+    .map((entry) => ({ entry, score: scoreEntry(entry) + random() * 0.35 }))
+    .sort((a, b) => b.score - a.score)
+    .map((candidate) => candidate.entry);
   candidates.forEach((entry) => {
     if (remaining <= 0) return;
     const count = Math.min(entry.remaining, remaining);
@@ -181,10 +183,21 @@ function takeDemandFromPool(pool, amount, predicate, sortEntries) {
   return { taken, missing: remaining };
 }
 
-function buildAdaptiveLayerRequirements(state, source, settings) {
+function demandSpan(source) {
+  const layers = source.requirements.map((entry) => entry.layerIndex);
+  return {
+    min: Math.min(0, ...layers),
+    max: Math.max(0, ...layers)
+  };
+}
+
+function buildAdaptiveLayerRequirements(state, source, settings, random) {
   const layerCount = deriveGeneratedMapLayerCount(state, source);
   const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount);
-  const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.25);
+  const span = demandSpan(source);
+  const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
+  const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);
+  const futureRatio = Math.max(noiseRatio, carryOverRatio);
   const pool = source.requirements
     .map((entry) => ({ ...entry, sourceTrayLayerIndex: entry.layerIndex, remaining: entry.amount }))
     .sort((a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId);
@@ -193,32 +206,47 @@ function buildAdaptiveLayerRequirements(state, source, settings) {
     const remainingTotal = pool.reduce((sum, entry) => sum + entry.remaining, 0);
     const target = mapLayerIndex === budgets.length - 1 ? remainingTotal : Math.min(budget, remainingTotal);
     if (target <= 0) return;
-    const earliestTrayLayer = pool.find((entry) => entry.remaining > 0)?.sourceTrayLayerIndex ?? 0;
-    const noiseTarget = mapLayerIndex === budgets.length - 1
+    const futureStart = Math.min(span.max, mapLayerIndex + 2);
+    const futureFocus = Math.min(span.max, futureStart + 1 + Math.round(random() * Math.max(1, span.max - futureStart)));
+    const futureTarget = mapLayerIndex === budgets.length - 1
       ? 0
-      : Math.min(target, Math.round(target * noiseRatio));
-    const requiredTarget = target - noiseTarget;
-    const required = takeDemandFromPool(
-      pool,
-      requiredTarget,
-      () => true,
-      (a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId
-    );
+      : Math.min(target, Math.round(target * futureRatio));
+    const nearTarget = mapLayerIndex === budgets.length - 1
+      ? 0
+      : Math.min(target - futureTarget, Math.round(target * 0.18));
+    const anchorTarget = Math.max(0, target - futureTarget - nearTarget);
     const future = takeDemandFromPool(
       pool,
-      noiseTarget,
-      (entry) => entry.sourceTrayLayerIndex > earliestTrayLayer + 1,
-      (a, b) => b.sourceTrayLayerIndex - a.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId
+      futureTarget,
+      (entry) => entry.sourceTrayLayerIndex >= futureStart,
+      (entry) => 12 - Math.abs(entry.sourceTrayLayerIndex - futureFocus) * 1.7 + entry.sourceTrayLayerIndex * 0.08,
+      random
     );
-    const fallback = future.missing > 0
+    const near = takeDemandFromPool(
+      pool,
+      nearTarget,
+      (entry) => entry.sourceTrayLayerIndex >= mapLayerIndex && entry.sourceTrayLayerIndex < futureStart,
+      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - (mapLayerIndex + 1)),
+      random
+    );
+    const anchor = takeDemandFromPool(
+      pool,
+      anchorTarget,
+      () => true,
+      (entry) => 4 - Math.abs(entry.sourceTrayLayerIndex - mapLayerIndex) * 0.6,
+      random
+    );
+    const missing = future.missing + near.missing + anchor.missing;
+    const fallback = missing > 0
       ? takeDemandFromPool(
         pool,
-        future.missing,
+        missing,
         () => true,
-        (a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId
+        (entry) => 2 - entry.sourceTrayLayerIndex * 0.03,
+        random
       ).taken
       : [];
-    [...required.taken, ...future.taken, ...fallback].forEach((entry) => {
+    [...future.taken, ...near.taken, ...anchor.taken, ...fallback].forEach((entry) => {
       planned.push({
         ...entry,
         layerIndex: mapLayerIndex,
@@ -391,7 +419,7 @@ function validateDifficultyMetrics(meta, settings) {
 function generatePreviewAttempt(state, source, settings) {
   const random = createRandom(settings.seed);
   const next = structuredClone(state);
-  const layerPlan = buildAdaptiveLayerRequirements(state, source, settings);
+  const layerPlan = buildAdaptiveLayerRequirements(state, source, settings, random);
   const maxLayerIndex = Math.max(0, layerPlan.layerCount - 1);
   ensureLayers(next, maxLayerIndex);
   clearGeneratedLayerItems(next);

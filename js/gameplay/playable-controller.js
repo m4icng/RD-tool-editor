@@ -745,12 +745,15 @@ function statusText(status) {
 
 export function createPlayableController({ getLevel, elements, onExitEditor }) {
   let session = null;
-  let previewLevel = null;
   let validationErrors = [];
   let timer = null;
   let isActive = false;
   let swipeStart = null;
   let playableSettings = loadPlayableSettings();
+
+  function currentLevelState() {
+    return ensureTerrainState(getLevel());
+  }
 
   function updateSettingInputs() {
     if (!elements.playTrainSpeedInput || !elements.playTrayFillSpeedInput) return;
@@ -776,7 +779,7 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
   }
 
   function fitBoard() {
-    const grid = session?.grid ?? previewLevel?.grid;
+    const grid = session?.grid ?? currentLevelState()?.grid;
     if (!grid || !elements.playableCanvasArea.clientWidth || !elements.playableCanvasArea.clientHeight) return;
     const areaStyle = getComputedStyle(elements.playableCanvasArea);
     const wrapStyle = getComputedStyle(elements.playableBoardWrap);
@@ -789,11 +792,12 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
   }
 
   function renderBoard() {
-    const previewLayerIndex = previewLevel?.layers?.findIndex((layer) => layer.id === previewLevel.activeLayerId) ?? 0;
+    const levelState = currentLevelState();
+    const previewLayerIndex = levelState?.layers?.findIndex((layer) => layer.id === levelState.activeLayerId) ?? 0;
     const level = session
       ? { grid: session.grid, layer: session.layer, mysteryFruitElement: session.mysteryFruitElement, mysteryFruitDebug: session.mysteryFruitDebug, activeFruitLayerIndex: session.activeFruitLayerIndex, countBarriers: session.countBarriers, tunnels: session.tunnels, oneWays: session.oneWays }
-      : previewLevel
-        ? { grid: previewLevel.grid, layer: activeLayer(previewLevel), mysteryFruitElement: previewLevel.mysteryFruitElement, mysteryFruitDebug: previewLevel.mysteryFruitDebug, activeFruitLayerIndex: Math.max(0, previewLayerIndex), countBarriers: normalizeCountBarrierElement(previewLevel.countBarrierElement).map((barrier) => ({ ...barrier, remainingCount: barrier.count })), tunnels: normalizeTunnelElement(previewLevel.tunnelElement), oneWays: normalizeOneWayElement(previewLevel.oneWayElement) }
+      : levelState
+        ? { grid: levelState.grid, layer: activeLayer(levelState), mysteryFruitElement: levelState.mysteryFruitElement, mysteryFruitDebug: levelState.mysteryFruitDebug, activeFruitLayerIndex: Math.max(0, previewLayerIndex), countBarriers: normalizeCountBarrierElement(levelState.countBarrierElement).map((barrier) => ({ ...barrier, remainingCount: barrier.count })), tunnels: normalizeTunnelElement(levelState.tunnelElement), oneWays: normalizeOneWayElement(levelState.oneWayElement) }
         : null;
     elements.playableGridBoard.innerHTML = "";
     if (!level?.layer) return;
@@ -812,8 +816,8 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
       visualSlotIndex: visual.slotIndex
     }])));
     const traysByCheckpointKey = new Map(boardTrays.map((tray) => [tray.checkpointKey, tray]));
-    const grassCells = session?.grassCells ?? previewLevel?.grassCells ?? {};
-    const priorityPoints = session?.priorityPoints ?? previewLevel?.priorityPoints ?? {};
+    const grassCells = session?.grassCells ?? levelState?.grassCells ?? {};
+    const priorityPoints = session?.priorityPoints ?? levelState?.priorityPoints ?? {};
     const shovelTargetKeys = new Set(session?.status === PLAY_STATUS.SHOVEL_TARGETING ? session.shovel.targetKeys : []);
     const shovelTargeting = shovelTargetKeys.size > 0;
     for (let y = 0; y < level.grid.rows; y += 1) {
@@ -928,9 +932,8 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
         elements.playableGridBoard.appendChild(cell);
       }
     }
-    elements.playableGridMeta.textContent = `${level.grid.columns} × ${level.grid.rows} · snapshot độc lập`;
     const fruitLayerMeta = session ? ` · fruit layer ${session.activeFruitLayerIndex + 1}/${session.fruitLayers.length}` : "";
-    elements.playableGridMeta.textContent = `${level.grid.columns} × ${level.grid.rows}${fruitLayerMeta} · map/rắn/khay dùng chung`;
+    elements.playableGridMeta.textContent = `${level.grid.columns} × ${level.grid.rows}${fruitLayerMeta} · LevelState chung`;
     requestAnimationFrame(fitBoard);
   }
 
@@ -1142,11 +1145,11 @@ export function createPlayableController({ getLevel, elements, onExitEditor }) {
 
   function restart() {
     clearTimer();
-    previewLevel = structuredClone(getLevel());
-    const report = validatePlayableLevel(previewLevel);
+    const levelState = currentLevelState();
+    const report = validatePlayableLevel(levelState);
     validationErrors = report.errors;
     if (!report.valid) session = null;
-    else session = createPlayableSession(previewLevel, { mode: elements.playModeSelect.value, ...playableSettings });
+    else session = createPlayableSession(levelState, { mode: elements.playModeSelect.value, ...playableSettings });
     render();
   }
 

@@ -82,37 +82,79 @@ function scoreCellForRequirement(state, source, settings, requirement, index, ra
   return releaseScore - narrowBonus + spawnPenalty + random() * 0.25;
 }
 
-function takeCellsFromBranches(state, source, branches, requirement, settings, random, usedIndexes) {
-  const branchQueues = branches
-    .filter((branch) => branch.indexes.some((index) => !usedIndexes.has(index)));
-  branchQueues.forEach((branch) => {
-    const rankedIndexes = shuffle(branch.indexes.filter((index) => !usedIndexes.has(index)), random)
-      .map((index) => ({ index, score: scoreCellForRequirement(state, source, settings, requirement, index, random) }))
-      .sort((a, b) => a.score - b.score);
-    branch.score = rankedIndexes[0]?.score ?? Number.POSITIVE_INFINITY;
-    branch.indexes = rankedIndexes.map((entry) => entry.index);
+function spatialRegionKey(state, index) {
+  const { x, y } = indexToPosition(index, state.grid.columns);
+  const xBandSize = Math.max(1, Math.ceil(state.grid.columns / 3));
+  const yBandSize = Math.max(1, Math.ceil(state.grid.rows / 3));
+  const xBand = Math.min(2, Math.floor(x / xBandSize));
+  const yBand = Math.min(2, Math.floor(y / yBandSize));
+  return `${xBand}:${yBand}`;
+}
+
+function createSpatialSpreadState(state, validCells, targetAmount) {
+  const capacityByRegion = new Map();
+  validCells.forEach((index) => {
+    const key = spatialRegionKey(state, index);
+    capacityByRegion.set(key, (capacityByRegion.get(key) ?? 0) + 1);
   });
-  const activeQueues = branchQueues
-    .filter((branch) => branch.indexes.length > 0)
-    .sort((a, b) => a.score - b.score);
+  return {
+    totalCapacity: Math.max(1, validCells.length),
+    targetAmount: Math.max(1, targetAmount),
+    capacityByRegion,
+    usedByRegion: new Map()
+  };
+}
+
+function spatialSpreadPenalty(state, spread, settings, index) {
+  const key = spatialRegionKey(state, index);
+  const capacity = spread.capacityByRegion.get(key) ?? 1;
+  const capacityRatio = capacity / spread.totalCapacity;
+  const idealUse = Math.max(1, spread.targetAmount * capacityRatio);
+  const used = spread.usedByRegion.get(key) ?? 0;
+  const pressure = used / idealUse;
+  const spreadWeight = 12 + settings.branchDistributionBalance * 18;
+  return pressure * spreadWeight + Math.max(0, pressure - 1) * 38;
+}
+
+function markSpatialUse(state, spread, index) {
+  const key = spatialRegionKey(state, index);
+  spread.usedByRegion.set(key, (spread.usedByRegion.get(key) ?? 0) + 1);
+}
+
+function bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread) {
+  let best = null;
+  branch.indexes.forEach((index) => {
+    if (usedIndexes.has(index)) return;
+    const score = scoreCellForRequirement(state, source, settings, requirement, index, random)
+      + spatialSpreadPenalty(state, spread, settings, index);
+    if (!best || score < best.score) best = { index, score };
+  });
+  return best;
+}
+
+function takeCellsFromBranches(state, source, branches, requirement, settings, random, usedIndexes, spread) {
   const picked = [];
-  let cursor = 0;
   let guard = 0;
-  while (picked.length < requirement.amount && activeQueues.length > 0 && guard < requirement.amount * Math.max(1, activeQueues.length) * 3) {
-    const branch = activeQueues[cursor % activeQueues.length];
+  while (picked.length < requirement.amount && guard < requirement.amount * Math.max(1, branches.length) * 5) {
+    const rankedBranches = branches
+      .map((branch) => ({ branch, candidate: bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread) }))
+      .filter((entry) => entry.candidate)
+      .sort((a, b) => a.candidate.score - b.candidate.score);
+    if (rankedBranches.length === 0) break;
+    const branch = rankedBranches[0].branch;
     const chunkSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, requirement.amount - picked.length));
     const actualChunk = Math.max(1, Math.round(chunkSize * Math.max(0.15, settings.clusterRatio)));
     for (let i = 0; i < actualChunk && picked.length < requirement.amount && branch.indexes.length > 0; i += 1) {
-      const index = branch.indexes.shift();
+      const candidate = bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread);
+      if (!candidate) break;
+      const index = candidate.index;
+      branch.indexes = branch.indexes.filter((entry) => entry !== index);
       if (usedIndexes.has(index)) continue;
       usedIndexes.add(index);
+      markSpatialUse(state, spread, index);
       picked.push({ index, branchId: branch.branchId });
     }
-    cursor += settings.multiBranchMode === "clustered" ? (random() > settings.branchDistributionBalance ? 1 : 0) : 1;
     guard += 1;
-    for (let i = activeQueues.length - 1; i >= 0; i -= 1) {
-      if (activeQueues[i].indexes.length === 0) activeQueues.splice(i, 1);
-    }
   }
   return picked;
 }
@@ -466,8 +508,9 @@ function generatePreviewAttempt(state, source, settings) {
     }
     const branchCopies = branches.map((branch) => ({ ...branch, indexes: branch.indexes.slice() }));
     const usedLayerIndexes = new Set();
+    const spatialSpread = createSpatialSpreadState(state, validCells, requiredInGeneratedLayer);
     requirementChunks(requirements, settings, random).forEach((requirement) => {
-      const cells = takeCellsFromBranches(state, source, branchCopies, requirement, settings, random, usedLayerIndexes);
+      const cells = takeCellsFromBranches(state, source, branchCopies, requirement, settings, random, usedLayerIndexes, spatialSpread);
       if (cells.length < requirement.amount) return;
       const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
       cells.forEach((cell, order) => {

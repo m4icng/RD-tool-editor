@@ -119,6 +119,7 @@ Level Data
 - Noise/carry-over được tạo bằng cách đưa một phần demand của tray layer tương lai vào map layer sớm hơn, trong khi tổng itemId toàn map vẫn khớp tray.
 - Mỗi Map Item Layer không bắt buộc phải chứa đủ item để fill tray hiện tại; layer có thể chủ yếu phục vụ tray layer 3-4 hoặc xa hơn.
 - Demand planner chọn `future -> near-future -> anchor` từ toàn bộ tray queue, với future/carry-over ratio cao hơn để tạo thân dài.
+- Placement planner chia map thành vùng 3x3 và cộng penalty cho vùng đã dày item, giúp các cụm rải đều toàn map thay vì tập trung nhiều vào một phía.
 - Không thay đổi Path, Tray, Element, schema export JSON hoặc hard rule quota hiện có.
 
 ## Change History
@@ -130,3 +131,4 @@ Level Data
 - 2026-08-20: Sửa Generate preview layer picker đọc từ preview state để xem được toàn bộ layer đã sinh.
 - 2026-08-20: Sửa generator không còn sinh tuyến tính theo tray layer; thêm global demand partition với noise/carry-over từ future tray demand.
 - 2026-08-20: Tăng tỷ lệ noise/carry-over và đổi layer planner sang chọn future demand trước, không ép layer hiện tại đủ fill tray hiện tại.
+- 2026-08-20: Thêm spatial spread penalty theo vùng 3x3 để cụm item phân bổ đều hơn trên toàn map.

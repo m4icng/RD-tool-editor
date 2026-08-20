@@ -185,3 +185,4 @@ Level chỉ được xem là hợp lệ khi:
 - 2026-08-20: Chuyển Tail/Release/Cluster/Spawn settings sang Auto Derived Parameters theo từng level; Designer chỉ chỉnh preset/score.
 - 2026-08-20: Bỏ ràng buộc generate 1:1 theo tray layer; validate quota theo tổng itemId toàn map để cho phép noise/carry-over.
 - 2026-08-20: Planner ưu tiên future tray demand trong từng map layer để layer đầu có thể chứa item phục vụ tray layer 3-4.
+- 2026-08-20: Thêm spatial spread theo vùng map để tránh dồn nhiều cụm vào một phía và bỏ trống vùng còn lại.

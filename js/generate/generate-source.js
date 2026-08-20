@@ -107,6 +107,15 @@ function indexesAfterStart(state, pathIndexes, amount = 2) {
   return new Set(pathIndexes.slice(startOffset + 1, startOffset + 1 + amount));
 }
 
+function isPathDirectionTurnpoint(state, index) {
+  const connections = pathConnectionsAt(state, index);
+  if (connections.length >= 3) return true;
+  if (connections.length !== 2) return false;
+  const [first, second] = connections;
+  const oppositePairs = new Set(["0:1", "1:0", "2:3", "3:2"]);
+  return !oppositePairs.has(`${first}:${second}`);
+}
+
 export function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   const pathIndexes = collectPathIndexes(state);
   const blocked = sharedBlockedIndexes(state);
@@ -119,7 +128,7 @@ export function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   layerIndexes.forEach((layerIndex) => {
     const valid = pathIndexes.filter((index) => {
       if (blocked.has(index)) return false;
-      if (pathConnectionsAt(state, index).length >= 3) return false;
+      if (isPathDirectionTurnpoint(state, index)) return false;
       if (layerIndex === 0 && layerOneStartBuffer.has(index)) return false;
       return true;
     });

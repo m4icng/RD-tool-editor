@@ -3356,6 +3356,15 @@ function indexesAfterStart(state, pathIndexes, amount = 2) {
   return new Set(pathIndexes.slice(startOffset + 1, startOffset + 1 + amount));
 }
 
+function isPathDirectionTurnpoint(state, index) {
+  const connections = pathConnectionsAt(state, index);
+  if (connections.length >= 3) return true;
+  if (connections.length !== 2) return false;
+  const [first, second] = connections;
+  const oppositePairs = new Set(["0:1", "1:0", "2:3", "3:2"]);
+  return !oppositePairs.has(`${first}:${second}`);
+}
+
 function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   const pathIndexes = collectPathIndexes(state);
   const blocked = sharedBlockedIndexes(state);
@@ -3368,7 +3377,7 @@ function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   layerIndexes.forEach((layerIndex) => {
     const valid = pathIndexes.filter((index) => {
       if (blocked.has(index)) return false;
-      if (pathConnectionsAt(state, index).length >= 3) return false;
+      if (isPathDirectionTurnpoint(state, index)) return false;
       if (layerIndex === 0 && layerOneStartBuffer.has(index)) return false;
       return true;
     });
@@ -4232,31 +4241,79 @@ function autoLayerIndexesForSource(source) {
   return (source.autoLayerIndexes?.length ? source.autoLayerIndexes : [...(source.validByLayer?.keys() ?? [])]).sort((a, b) => a - b);
 }
 
-function generatedLayerBudgets(total, layerIndexes, source) {
+function nudgeEqualBudgets(budgets, capacities, random) {
+  const values = new Set(budgets);
+  if (values.size > 1 || budgets.length <= 1) return budgets;
+  const donors = budgets
+    .map((budget, index) => ({ budget, index }))
+    .filter((entry) => entry.budget > 1);
+  const receivers = budgets
+    .map((budget, index) => ({ budget, index }))
+    .filter((entry) => entry.budget < capacities[entry.index]);
+  if (donors.length === 0 || receivers.length === 0) return budgets;
+  const donor = donors[Math.floor(random() * donors.length)];
+  const receiverPool = receivers.filter((entry) => entry.index !== donor.index);
+  const receiver = receiverPool[Math.floor(random() * receiverPool.length)] ?? receivers[0];
+  if (!receiver || receiver.index === donor.index) return budgets;
+  const next = budgets.slice();
+  next[donor.index] -= 1;
+  next[receiver.index] += 1;
+  return next;
+}
+
+function allocateWeightedBudgets(total, capacities, weights, random) {
+  const budgets = Array.from({ length: capacities.length }, () => 0);
+  const available = capacities
+    .map((capacity, index) => ({ capacity, index }))
+    .filter((entry) => entry.capacity > 0);
+  if (available.length === 0) return budgets;
+  let remaining = total;
+  if (total >= available.length) {
+    available.forEach(({ index }) => {
+      budgets[index] = 1;
+      remaining -= 1;
+    });
+  }
+  const remainingCapacities = capacities.map((capacity, index) => Math.max(0, capacity - budgets[index]));
+  const totalWeight = weights.reduce((sum, weight, index) => sum + (remainingCapacities[index] > 0 ? weight : 0), 0);
+  if (totalWeight <= 0) return budgets;
+  const quotas = weights.map((weight, index) => remaining * (remainingCapacities[index] > 0 ? weight : 0) / totalWeight);
+  quotas.forEach((quota, index) => {
+    const amount = Math.min(remainingCapacities[index], Math.floor(quota));
+    budgets[index] += amount;
+  });
+  remaining = total - budgets.reduce((sum, value) => sum + value, 0);
+  let ranked = quotas
+    .map((quota, index) => ({ index, score: quota - Math.floor(quota) + random() * 0.01 }))
+    .sort((a, b) => b.score - a.score);
+  let cursor = 0;
+  while (remaining > 0 && ranked.some((entry) => budgets[entry.index] < capacities[entry.index])) {
+    const entry = ranked[cursor % ranked.length];
+    if (budgets[entry.index] < capacities[entry.index]) {
+      budgets[entry.index] += 1;
+      remaining -= 1;
+    }
+    cursor += 1;
+    if (cursor > ranked.length * Math.max(1, total)) {
+      ranked = ranked.filter((entry) => budgets[entry.index] < capacities[entry.index]);
+      cursor = 0;
+    }
+  }
+  return budgets;
+}
+
+function generatedLayerBudgets(total, layerIndexes, source, random) {
   if (layerIndexes.length <= 1) return [total];
   const capacities = layerIndexes.map((layerIndex) => source.validByLayer.get(layerIndex)?.length ?? 0);
   const totalCapacity = capacities.reduce((sum, value) => sum + value, 0);
   if (totalCapacity > 0 && total > totalCapacity) return capacities;
   const layerCount = layerIndexes.length;
-  const budgets = Array.from({ length: layerCount }, () => Math.floor(total / layerCount));
-  let remainder = total - budgets.reduce((sum, value) => sum + value, 0);
-  let cursor = 0;
-  while (remainder > 0 && cursor < layerCount * 3) {
-    const index = cursor % layerCount;
-    if (budgets[index] < (capacities[index] || Number.POSITIVE_INFINITY)) {
-      budgets[index] += 1;
-      remainder -= 1;
-    }
-    cursor += 1;
-  }
-  cursor = 0;
-  while (remainder > 0) {
-    const index = cursor % layerCount;
-    budgets[index] += 1;
-    remainder -= 1;
-    cursor += 1;
-  }
-  return budgets;
+  const jitter = layerCount > 2 ? 0.22 : 0.14;
+  const weights = capacities.map((capacity) => {
+    if (capacity <= 0) return 0;
+    return 1 + (random() - 0.5) * jitter * 2;
+  });
+  return nudgeEqualBudgets(allocateWeightedBudgets(total, capacities, weights, random), capacities, random);
 }
 
 function takeDemandFromPool(pool, amount, predicate, scoreEntry, random) {
@@ -4288,7 +4345,7 @@ function demandSpan(source) {
 function buildAdaptiveLayerRequirements(state, source, settings, random) {
   const autoLayerIndexes = autoLayerIndexesForSource(source);
   if (autoLayerIndexes.length === 0) return { layerCount: 0, layerIndexes: [], requirements: [] };
-  const budgets = generatedLayerBudgets(source.stats.totalRequired, autoLayerIndexes, source);
+  const budgets = generatedLayerBudgets(source.stats.totalRequired, autoLayerIndexes, source, random);
   const span = demandSpan(source);
   const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
   const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);

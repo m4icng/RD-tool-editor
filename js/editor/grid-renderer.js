@@ -1,4 +1,5 @@
 import { applyBlockItemVisual } from "../core/block-visuals.js";
+import { createTrayRequirementSlot, trayLayerForDisplay, trayLayerSlotDescriptors } from "../core/tray-slot-visual.js";
 import { applyVisualScaleConfig } from "../core/visual-scale.js";
 import { isBridgeElement } from "../objects/bridge-object.js";
 import { gateDirectionClass, isGateElement } from "../objects/gate-object.js";
@@ -14,6 +15,9 @@ export function renderGrid(container, editorData) {
   ensureTerrainState(editorData);
   applyVisualScaleConfig(container);
   const activeLayer = editorData.layers.find((candidate) => candidate.id === editorData.activeLayerId) ?? editorData.layers[0];
+  const activeLayerNumber = Number.isInteger(activeLayer?.layer)
+    ? activeLayer.layer
+    : Math.max(0, editorData.layers.findIndex((candidate) => candidate.id === activeLayer?.id));
   const layer = createMergedLayer(editorData);
   if (activeLayer?.visible === false) {
     Object.values(layer.cells).forEach((cell) => {
@@ -37,7 +41,14 @@ export function renderGrid(container, editorData) {
     const [trayX, trayY] = key.split(",").map(Number);
     trayCheckpoints.set(key, { x: trayX, y: trayY, item: cell.item });
     getTrayVisualCells(cell.item, { x: trayX, y: trayY }).forEach((visual) => {
-      trayVisuals.set(cellKey(visual.x, visual.y), { x: trayX, y: trayY, item: cell.item, role: visual.role, center: visual.center });
+      trayVisuals.set(cellKey(visual.x, visual.y), {
+        x: trayX,
+        y: trayY,
+        item: cell.item,
+        role: visual.role,
+        center: visual.center,
+        slotIndex: visual.slotIndex
+      });
     });
   });
 
@@ -158,8 +169,14 @@ export function renderGrid(container, editorData) {
       if (visualTray) {
         const icon = document.createElement("span");
         icon.className = `tray-footprint ${visualTray.role}${visualTray.center ? " center" : ""}`;
-        icon.textContent = visualTray.center ? (visualTray.item.icon ?? "🧺") : "";
-        icon.title = visualTray.role === "conveyor" ? "Tray Conveyor / trayPosition" : "Tray Main 3x3";
+        if (visualTray.role === "main") {
+          const displayLayer = trayLayerForDisplay(visualTray.item, activeLayerNumber);
+          const slot = trayLayerSlotDescriptors(displayLayer)[visualTray.slotIndex];
+          if (slot) icon.appendChild(createTrayRequirementSlot(slot));
+        }
+        icon.title = visualTray.role === "conveyor"
+          ? "Tray Conveyor / trayPosition"
+          : `Tray Main 3x3 · Layer ${activeLayerNumber + 1}`;
         cell.appendChild(icon);
       }
       if (checkpointTray) {

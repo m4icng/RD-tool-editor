@@ -39,7 +39,7 @@ import {
 } from "./shovel-booster.js";
 import { LOSE_REASON, markLose, reviveSession } from "./lose-revive.js";
 import { activeTrayLayer, fillFruitIntoTray, nextDeliverableCargoIndex } from "./tray-fill-system.js";
-import { createTrayRequirementSlot, renderTraySlotGrid, trayLayerNeedTitle, trayLayerSlotDescriptors } from "./tray-slot-visual.js";
+import { createTrayRequirementSlot, renderTraySlotGrid, trayLayerNeedTitle, trayLayerSlotDescriptors } from "../core/tray-slot-visual.js";
 import {
   PLAYABLE_SETTING_LIMITS,
   changePlayableSetting,

@@ -654,6 +654,98 @@ function createBlockSwatch(itemOrType, className = "block-swatch") {
 }
 
 
+// ---- js/core/tray-slot-visual.js ----
+
+
+const TRAY_SLOT_COUNT = 9;
+
+function emptyRecipe() {
+  return Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0]));
+}
+
+function normalizedLayer(layer) {
+  if (!layer) return null;
+  return {
+    ...layer,
+    recipe: { ...emptyRecipe(), ...(layer.recipe ?? {}) },
+    delivered: { ...emptyRecipe(), ...(layer.delivered ?? {}) }
+  };
+}
+
+function trayLayerForDisplay(item, layerNumber = 0) {
+  if (!item) return null;
+  if (item.kind === "truck") {
+    const fruitType = FRUIT_TYPES.includes(item.fruitType) ? item.fruitType : null;
+    const recipe = emptyRecipe();
+    if (fruitType) recipe[fruitType] = Number(item.capacity) || 0;
+    return { id: `${item.id ?? "legacy-truck"}-display-layer`, layer: 0, recipe, delivered: emptyRecipe() };
+  }
+  const layers = item.trayLayers ?? [];
+  const exactLayer = layers.find((layer, index) => (Number.isInteger(layer.layer) ? layer.layer : index) === layerNumber);
+  return normalizedLayer(exactLayer);
+}
+
+function trayLayerSlotDescriptors(layer) {
+  if (!layer) return [];
+  const slots = [];
+  FRUIT_TYPES.forEach((type) => {
+    const required = Math.max(0, Number(layer.recipe?.[type]) || 0);
+    const delivered = Math.min(Math.max(0, Number(layer.delivered?.[type]) || 0), required);
+    for (let index = 0; index < required && slots.length < TRAY_SLOT_COUNT; index += 1) {
+      const meta = blockVisualMeta(type);
+      slots.push({
+        type,
+        itemId: blockItemIdFromFruitType(type),
+        color: meta.color,
+        label: meta.label,
+        filled: index < delivered
+      });
+    }
+  });
+  while (slots.length < TRAY_SLOT_COUNT) {
+    slots.push({ type: null, itemId: null, color: "#cbd5e1", label: "Chua setup requirement", filled: false, placeholder: true });
+  }
+  return slots;
+}
+
+function trayLayerNeedTitle(layer) {
+  if (!layer) return "Khay da hoan thanh";
+  const needs = trayLayerSlotDescriptors(layer)
+    .filter((slot) => !slot.placeholder)
+    .reduce((summary, slot) => {
+      summary[slot.type] ??= { label: slot.label, required: 0, delivered: 0 };
+      summary[slot.type].required += 1;
+      if (slot.filled) summary[slot.type].delivered += 1;
+      return summary;
+    }, {});
+  const text = Object.values(needs).map((need) => `${need.label} ${need.delivered}/${need.required}`);
+  return text.length > 0 ? `Khay can: ${text.join(", ")}` : "Layer khong co requirement";
+}
+
+function createTrayRequirementSlot(slot) {
+  const element = document.createElement("span");
+  element.className = `tray-requirement-slot${slot?.filled ? " filled" : " empty"}${slot?.placeholder ? " placeholder" : ""}`;
+  element.style.setProperty("--block-color", slot?.color ?? "#cbd5e1");
+  element.title = slot?.placeholder
+    ? "Chua setup requirement"
+    : slot?.filled ? `${slot.label} da dien` : `${slot.label} con thieu`;
+  return element;
+}
+
+function renderTraySlotGrid(container, layer) {
+  container.replaceChildren();
+  if (!layer) {
+    container.textContent = "✓";
+    container.classList.add("complete");
+    return;
+  }
+  container.classList.remove("complete");
+  trayLayerSlotDescriptors(layer).forEach((slot) => {
+    container.appendChild(createTrayRequirementSlot(slot));
+  });
+}
+
+
 // ---- js/objects/truck-object.js ----
 function createTruck(fruitType, label, icon, capacity = 3) {
   return { id: `truck-${fruitType}`, kind: "truck", fruitType, label, icon, capacity };
@@ -4339,10 +4431,14 @@ class CameraController {
 
 
 
+
 function renderGrid(container, editorData) {
   ensureTerrainState(editorData);
   applyVisualScaleConfig(container);
   const activeLayer = editorData.layers.find((candidate) => candidate.id === editorData.activeLayerId) ?? editorData.layers[0];
+  const activeLayerNumber = Number.isInteger(activeLayer?.layer)
+    ? activeLayer.layer
+    : Math.max(0, editorData.layers.findIndex((candidate) => candidate.id === activeLayer?.id));
   const layer = createMergedLayer(editorData);
   if (activeLayer?.visible === false) {
     Object.values(layer.cells).forEach((cell) => {
@@ -4366,7 +4462,14 @@ function renderGrid(container, editorData) {
     const [trayX, trayY] = key.split(",").map(Number);
     trayCheckpoints.set(key, { x: trayX, y: trayY, item: cell.item });
     getTrayVisualCells(cell.item, { x: trayX, y: trayY }).forEach((visual) => {
-      trayVisuals.set(cellKey(visual.x, visual.y), { x: trayX, y: trayY, item: cell.item, role: visual.role, center: visual.center });
+      trayVisuals.set(cellKey(visual.x, visual.y), {
+        x: trayX,
+        y: trayY,
+        item: cell.item,
+        role: visual.role,
+        center: visual.center,
+        slotIndex: visual.slotIndex
+      });
     });
   });
 
@@ -4487,8 +4590,14 @@ function renderGrid(container, editorData) {
       if (visualTray) {
         const icon = document.createElement("span");
         icon.className = `tray-footprint ${visualTray.role}${visualTray.center ? " center" : ""}`;
-        icon.textContent = visualTray.center ? (visualTray.item.icon ?? "🧺") : "";
-        icon.title = visualTray.role === "conveyor" ? "Tray Conveyor / trayPosition" : "Tray Main 3x3";
+        if (visualTray.role === "main") {
+          const displayLayer = trayLayerForDisplay(visualTray.item, activeLayerNumber);
+          const slot = trayLayerSlotDescriptors(displayLayer)[visualTray.slotIndex];
+          if (slot) icon.appendChild(createTrayRequirementSlot(slot));
+        }
+        icon.title = visualTray.role === "conveyor"
+          ? "Tray Conveyor / trayPosition"
+          : `Tray Main 3x3 · Layer ${activeLayerNumber + 1}`;
         cell.appendChild(icon);
       }
       if (checkpointTray) {
@@ -6710,71 +6819,6 @@ function nextDeliverableCargoIndex(session, tray) {
   return session.snake.body.findIndex((segment, index) => {
     if (index === 0 || !segment.fruitType) return false;
     return (layer.recipe[segment.fruitType] ?? 0) > (layer.delivered[segment.fruitType] ?? 0);
-  });
-}
-
-
-// ---- js/gameplay/tray-slot-visual.js ----
-
-
-const TRAY_SLOT_COUNT = 9;
-
-function trayLayerSlotDescriptors(layer) {
-  if (!layer) return [];
-  const slots = [];
-  FRUIT_TYPES.forEach((type) => {
-    const required = Math.max(0, Number(layer.recipe?.[type]) || 0);
-    const delivered = Math.min(Math.max(0, Number(layer.delivered?.[type]) || 0), required);
-    for (let index = 0; index < required && slots.length < TRAY_SLOT_COUNT; index += 1) {
-      const meta = blockVisualMeta(type);
-      slots.push({
-        type,
-        color: meta.color,
-        label: meta.label,
-        filled: index < delivered
-      });
-    }
-  });
-  while (slots.length < TRAY_SLOT_COUNT) {
-    slots.push({ type: null, color: "#cbd5e1", label: "Chua setup requirement", filled: false, placeholder: true });
-  }
-  return slots;
-}
-
-function trayLayerNeedTitle(layer) {
-  if (!layer) return "Khay da hoan thanh";
-  const needs = trayLayerSlotDescriptors(layer)
-    .filter((slot) => !slot.placeholder)
-    .reduce((summary, slot) => {
-      summary[slot.type] ??= { label: slot.label, required: 0, delivered: 0 };
-      summary[slot.type].required += 1;
-      if (slot.filled) summary[slot.type].delivered += 1;
-      return summary;
-    }, {});
-  const text = Object.values(needs).map((need) => `${need.label} ${need.delivered}/${need.required}`);
-  return text.length > 0 ? `Khay can: ${text.join(", ")}` : "Layer khong co requirement";
-}
-
-function createTrayRequirementSlot(slot) {
-  const element = document.createElement("span");
-  element.className = `tray-requirement-slot${slot?.filled ? " filled" : " empty"}${slot?.placeholder ? " placeholder" : ""}`;
-  element.style.setProperty("--block-color", slot?.color ?? "#cbd5e1");
-  element.title = slot?.placeholder
-    ? "Chua setup requirement"
-    : slot?.filled ? `${slot.label} da dien` : `${slot.label} con thieu`;
-  return element;
-}
-
-function renderTraySlotGrid(container, layer) {
-  container.replaceChildren();
-  if (!layer) {
-    container.textContent = "✓";
-    container.classList.add("complete");
-    return;
-  }
-  container.classList.remove("complete");
-  trayLayerSlotDescriptors(layer).forEach((slot) => {
-    container.appendChild(createTrayRequirementSlot(slot));
   });
 }
 

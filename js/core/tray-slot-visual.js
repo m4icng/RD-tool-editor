@@ -1,7 +1,33 @@
-import { FRUIT_TYPES } from "../core/constants.js";
-import { blockVisualMeta } from "../core/block-visuals.js";
+import { FRUIT_TYPES } from "./constants.js";
+import { blockItemIdFromFruitType, blockVisualMeta } from "./block-visuals.js";
 
 export const TRAY_SLOT_COUNT = 9;
+
+function emptyRecipe() {
+  return Object.fromEntries(FRUIT_TYPES.map((type) => [type, 0]));
+}
+
+function normalizedLayer(layer) {
+  if (!layer) return null;
+  return {
+    ...layer,
+    recipe: { ...emptyRecipe(), ...(layer.recipe ?? {}) },
+    delivered: { ...emptyRecipe(), ...(layer.delivered ?? {}) }
+  };
+}
+
+export function trayLayerForDisplay(item, layerNumber = 0) {
+  if (!item) return null;
+  if (item.kind === "truck") {
+    const fruitType = FRUIT_TYPES.includes(item.fruitType) ? item.fruitType : null;
+    const recipe = emptyRecipe();
+    if (fruitType) recipe[fruitType] = Number(item.capacity) || 0;
+    return { id: `${item.id ?? "legacy-truck"}-display-layer`, layer: 0, recipe, delivered: emptyRecipe() };
+  }
+  const layers = item.trayLayers ?? [];
+  const exactLayer = layers.find((layer, index) => (Number.isInteger(layer.layer) ? layer.layer : index) === layerNumber);
+  return normalizedLayer(exactLayer);
+}
 
 export function trayLayerSlotDescriptors(layer) {
   if (!layer) return [];
@@ -13,6 +39,7 @@ export function trayLayerSlotDescriptors(layer) {
       const meta = blockVisualMeta(type);
       slots.push({
         type,
+        itemId: blockItemIdFromFruitType(type),
         color: meta.color,
         label: meta.label,
         filled: index < delivered
@@ -20,7 +47,7 @@ export function trayLayerSlotDescriptors(layer) {
     }
   });
   while (slots.length < TRAY_SLOT_COUNT) {
-    slots.push({ type: null, color: "#cbd5e1", label: "Chua setup requirement", filled: false, placeholder: true });
+    slots.push({ type: null, itemId: null, color: "#cbd5e1", label: "Chua setup requirement", filled: false, placeholder: true });
   }
   return slots;
 }

@@ -8284,7 +8284,6 @@ function updateZoomUi() {
 function switchTab(tab) {
   if (tab === "playable") gridIndexTooltip.hide();
   if (editor.data.tab === "playable" && tab !== "playable") playable.leave();
-  if (fileDirty && editor.data.tab !== tab && ["level", "generate", "json"].includes(tab) && !confirm("Level hiện tại có thay đổi chưa lưu. Chuyển tab?")) return;
   activateTab(tab, editor.data, elements);
   if (tab === "playable") playable.enter();
   requestAnimationFrame(() => {

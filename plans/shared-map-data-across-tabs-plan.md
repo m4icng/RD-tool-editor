@@ -47,3 +47,4 @@ Other Tabs
 - 2026-08-20: Lưu plan riêng vào `plans/shared-map-data-across-tabs-plan.md`.
 - 2026-08-20: Playable preview đọc trực tiếp `LevelState` đang active thay vì giữ snapshot riêng khi chuyển tab.
 - 2026-08-20: Giữ Generate preview là working copy tạm thời chỉ để xem trước; Apply mới ghi vào `LevelState`, đúng flow preview/apply hiện có.
+- 2026-08-20: Bỏ hộp thoại xác nhận khi chuyển tab để các tab đổi liên tục trên cùng `LevelState`.

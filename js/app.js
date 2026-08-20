@@ -32,7 +32,7 @@ import {
   setOneWayEntryIndex
 } from "./objects/one-way-object.js";
 import { getDeleteTargets } from "./editor/delete-resolver.js";
-import { applyTool, clearEntireMap, eraseAtPosition, togglePathAt } from "./editor/object-placement.js";
+import { applyTool, clearAllItemLayers, clearEntireMap, eraseAtPosition, togglePathAt } from "./editor/object-placement.js";
 import { selectCell, changeSelectedTruckCapacity } from "./editor/selection-manager.js";
 import { renderGrid } from "./editor/grid-renderer.js";
 import { InputController } from "./editor/input-controller.js";
@@ -867,6 +867,24 @@ elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);
 
 document.querySelector(".tool-list").addEventListener("click", (event) => {
   const eraseAction = event.target.closest("[data-erase-action]");
+  if (eraseAction?.dataset.eraseAction === "current") {
+    editor.data.tool = "erase";
+    setEraseMenuExpanded(false);
+    editor.notify();
+    return;
+  }
+  if (eraseAction?.dataset.eraseAction === "active-layer") {
+    setEraseMenuExpanded(false);
+    deleteActiveLayer();
+    return;
+  }
+  if (eraseAction?.dataset.eraseAction === "all-items") {
+    if (!confirm("Xóa toàn bộ Item trên Map ở tất cả itemLayers? Path, Tray, PriorityPoint và Element sẽ được giữ nguyên. Hành động này có thể hoàn tác bằng Undo.")) return;
+    const result = mutate(clearAllItemLayers);
+    setEraseMenuExpanded(false);
+    showNotification(elements.toast, result.changed ? `Đã xóa ${result.removedItems} Item trên toàn bộ Map` : "Map không có Item để xóa");
+    return;
+  }
   if (eraseAction?.dataset.eraseAction === "all") {
     if (!confirm("Xóa toàn bộ đường đi, item và element trên tất cả layer? Hành động này có thể hoàn tác bằng Undo.")) return;
     const result = mutate(clearEntireMap);

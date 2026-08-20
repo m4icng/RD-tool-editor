@@ -469,6 +469,27 @@ export function clearEntireMap(state) {
   return { changed: removedCells > 0, removedCells };
 }
 
+function clearLayerItemCells(layer) {
+  let removedItems = 0;
+  Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
+    if (!cell?.item) return;
+    removedItems += 1;
+    const nextCell = { ...cell, item: null };
+    if (!nextCell.path && !nextCell.element) delete layer.cells[key];
+    else layer.cells[key] = nextCell;
+  });
+  return removedItems;
+}
+
+export function clearAllItemLayers(state) {
+  let removedItems = 0;
+  for (const layer of state.layers ?? []) removedItems += clearLayerItemCells(layer);
+  const removedMysteryItems = (state.mysteryFruitElement ?? []).reduce((sum, entry) => sum + (entry.index?.length ?? 0), 0);
+  state.mysteryFruitElement = [];
+  state.selectedCell = null;
+  return { changed: removedItems > 0 || removedMysteryItems > 0, removedItems, removedMysteryItems };
+}
+
 export function deleteItemAt(state, position) {
   return eraseAtPosition(state, position, "smart").changed;
 }

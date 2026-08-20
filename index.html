@@ -50,6 +50,11 @@
             <div class="tool-menu erase-tool-menu">
               <button class="tool-btn" id="eraseToolBtn" type="button" data-tool="erase" aria-haspopup="menu" aria-controls="eraseOptions" aria-expanded="false"><span class="tool-icon">⌫</span><span class="tool-label">Xóa: Smart</span><span class="shortcut">4</span></button>
               <div class="erase-options" id="eraseOptions" role="menu" aria-label="Tùy chọn xóa">
+                <strong>XÓA</strong>
+                <button class="erase-option" type="button" role="menuitem" data-erase-action="current"><span>⌫</span><span>Xóa theo thao tác hiện tại</span></button>
+                <button class="erase-option danger" type="button" role="menuitem" data-erase-action="active-layer"><span>▦</span><span>Xóa Item Layer hiện tại</span></button>
+                <button class="erase-option danger" type="button" role="menuitem" data-erase-action="all-items"><span>■</span><span>Xóa toàn bộ Item trên Map</span></button>
+                <div class="erase-divider" role="separator"></div>
                 <button class="erase-option danger" type="button" role="menuitem" data-erase-action="all"><span>🧹</span><span>Xóa toàn bộ map</span></button>
                 <div class="erase-divider" role="separator"></div>
                 <button class="erase-option active" type="button" role="menuitemradio" aria-checked="true" data-erase-mode="smart"><span>🧹</span><span>Smart Delete</span><i>✓</i></button>

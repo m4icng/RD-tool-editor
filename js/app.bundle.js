@@ -5378,6 +5378,27 @@ function clearEntireMap(state) {
   return { changed: removedCells > 0, removedCells };
 }
 
+function clearLayerItemCells(layer) {
+  let removedItems = 0;
+  Object.entries(layer.cells ?? {}).forEach(([key, cell]) => {
+    if (!cell?.item) return;
+    removedItems += 1;
+    const nextCell = { ...cell, item: null };
+    if (!nextCell.path && !nextCell.element) delete layer.cells[key];
+    else layer.cells[key] = nextCell;
+  });
+  return removedItems;
+}
+
+function clearAllItemLayers(state) {
+  let removedItems = 0;
+  for (const layer of state.layers ?? []) removedItems += clearLayerItemCells(layer);
+  const removedMysteryItems = (state.mysteryFruitElement ?? []).reduce((sum, entry) => sum + (entry.index?.length ?? 0), 0);
+  state.mysteryFruitElement = [];
+  state.selectedCell = null;
+  return { changed: removedItems > 0 || removedMysteryItems > 0, removedItems, removedMysteryItems };
+}
+
 function deleteItemAt(state, position) {
   return eraseAtPosition(state, position, "smart").changed;
 }
@@ -10224,6 +10245,24 @@ elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);
 
 document.querySelector(".tool-list").addEventListener("click", (event) => {
   const eraseAction = event.target.closest("[data-erase-action]");
+  if (eraseAction?.dataset.eraseAction === "current") {
+    editor.data.tool = "erase";
+    setEraseMenuExpanded(false);
+    editor.notify();
+    return;
+  }
+  if (eraseAction?.dataset.eraseAction === "active-layer") {
+    setEraseMenuExpanded(false);
+    deleteActiveLayer();
+    return;
+  }
+  if (eraseAction?.dataset.eraseAction === "all-items") {
+    if (!confirm("Xóa toàn bộ Item trên Map ở tất cả itemLayers? Path, Tray, PriorityPoint và Element sẽ được giữ nguyên. Hành động này có thể hoàn tác bằng Undo.")) return;
+    const result = mutate(clearAllItemLayers);
+    setEraseMenuExpanded(false);
+    showNotification(elements.toast, result.changed ? `Đã xóa ${result.removedItems} Item trên toàn bộ Map` : "Map không có Item để xóa");
+    return;
+  }
   if (eraseAction?.dataset.eraseAction === "all") {
     if (!confirm("Xóa toàn bộ đường đi, item và element trên tất cả layer? Hành động này có thể hoàn tác bằng Undo.")) return;
     const result = mutate(clearEntireMap);

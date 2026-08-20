@@ -3,7 +3,7 @@ import { createLayer, reindexLayers } from "../core/editor-state.js";
 import { createFruit } from "../objects/fruit-object.js";
 import { pathConnectionsAt } from "../objects/element-placement-rules.js";
 import { cellKey, indexToPosition } from "../utils/grid-utils.js";
-import { GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
+import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_KEYS, GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
 import { analyzeAdaptiveLevel, createTuningState, estimateDerivedGenerateParameters, updateTuningState } from "./adaptive-parameters.js";
 import { analyzeGenerateSource, branchCellsForIndexes, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
 
@@ -636,6 +636,34 @@ function canRetryGeneration(result) {
   return result?.issues?.some((issue) => retryableCodes.has(issue.code));
 }
 
+function applyOverrideDerivedParameters(derivedParameters, overrideSettings) {
+  const next = {
+    ...derivedParameters,
+    clusterSizeDistribution: { ...(derivedParameters.clusterSizeDistribution ?? {}) }
+  };
+  Object.entries(overrideSettings).forEach(([key, value]) => {
+    if (Object.prototype.hasOwnProperty.call(next, key)) {
+      next[key] = value;
+      return;
+    }
+    const alias = DERIVED_GENERATE_PARAMETER_ALIASES[key];
+    if (!alias) return;
+    if (alias === "clusterSizeDistribution.max") {
+      const max = Number(value);
+      const min = Math.min(Number(next.clusterSizeDistribution.min ?? 1), max);
+      next.clusterSizeDistribution = {
+        ...next.clusterSizeDistribution,
+        min,
+        preferred: Math.min(Math.max(Number(next.clusterSizeDistribution.preferred ?? max), min), max),
+        max
+      };
+      return;
+    }
+    next[alias] = value;
+  });
+  return next;
+}
+
 export function generatePreview(state, rawSettings = {}) {
   const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
   const baseSettings = normalizeGenerateSettings(settingsResult.settings);
@@ -650,11 +678,16 @@ export function generatePreview(state, rawSettings = {}) {
   let tuning = createTuningState();
   for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
     const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
+    const overrideSettings = Object.fromEntries((baseSettings.derivedOverrideKeys ?? [])
+      .filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key))
+      .map((key) => [key, baseSettings[key]]));
+    const autoDerivedParameters = applyOverrideDerivedParameters(derived.derivedParameters, overrideSettings);
     const settings = normalizeGenerateSettings({
       ...baseSettings,
       ...derived.settings,
+      ...overrideSettings,
       seed: createRandomGenerateSeed(),
-      autoDerivedParameters: derived.derivedParameters,
+      autoDerivedParameters,
       autoTuningAttempt: attempt + 1,
       autoTuningProfile: tuning
     });

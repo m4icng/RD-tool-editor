@@ -52,7 +52,7 @@ import { createPlayableController, validatePlayableLevel } from "./gameplay/play
 import { renderDataSummary } from "./ui/data-summary.js";
 import { initPanelResizers } from "./ui/panel-resizer.js";
 import { createGridIndexTooltip } from "./ui/grid-index-tooltip.js";
-import { applyGeneratePreset, normalizeGenerateSettings } from "./generate/generate-settings.js";
+import { DERIVED_GENERATE_SETTING_KEYS, applyGeneratePreset, normalizeGenerateSettings } from "./generate/generate-settings.js";
 import { analyzeGenerateSource } from "./generate/generate-source.js";
 import { applyGeneratedPreview, generatePreview, resetGeneratedItems } from "./generate/generator-engine.js";
 import { renderGenerateControls, renderGenerateResults } from "./ui/generate-panel.js";
@@ -756,7 +756,16 @@ function setGenerateSetting(key, value, type = "text") {
   if (key === "seed") return;
   const current = normalizeGenerateSettings(editor.data.generateSettings);
   const nextValue = type === "percent" ? Number(value) / 100 : value;
-  editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue });
+  const overrideKeys = new Set(current.derivedOverrideKeys ?? []);
+  if (DERIVED_GENERATE_SETTING_KEYS.includes(key)) overrideKeys.add(key);
+  editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue, derivedOverrideKeys: [...overrideKeys] });
+  clearGeneratePreview();
+  editor.notify();
+}
+
+function resetDerivedGenerateSettings() {
+  const current = normalizeGenerateSettings(editor.data.generateSettings);
+  editor.data.generateSettings = normalizeGenerateSettings({ ...current, derivedOverrideKeys: [] });
   clearGeneratePreview();
   editor.notify();
 }
@@ -806,6 +815,10 @@ elements.generateControls.addEventListener("change", (event) => {
 });
 
 elements.generateControls.addEventListener("click", async (event) => {
+  if (event.target.closest("[data-reset-derived-settings]")) {
+    resetDerivedGenerateSettings();
+    return;
+  }
   const preset = event.target.closest("[data-generate-preset]");
   if (preset) {
     editor.data.generateSettings = applyGeneratePreset(editor.data.generateSettings, preset.dataset.generatePreset);

@@ -122,6 +122,8 @@ Level Data
 - Placement planner chia map thành vùng 3x3 và cộng penalty cho vùng đã dày item, giúp các cụm rải đều toàn map thay vì tập trung nhiều vào một phía.
 - Placement layer sau né index item của layer liền trước; overlap chỉ nằm khoảng 10-25% theo độ rộng map, và map càng rộng càng giảm trùng.
 - Số item mỗi map/path layer được chia đều theo số layer hợp lệ; không dùng heuristic cố định khoảng 27-30 item/layer.
+- Auto Derived mặc định tự tính theo level nhưng designer có thể override từng thông số; field đã chỉnh được khóa theo giá trị designer nhập cho lần generate.
+- Mỗi field Auto Derived có tooltip giải thích thông số đó dùng để kiểm soát phần nào của generator.
 - Không thay đổi Path, Tray, Element, schema export JSON hoặc hard rule quota hiện có.
 
 ## Change History
@@ -136,3 +138,4 @@ Level Data
 - 2026-08-20: Thêm spatial spread penalty theo vùng 3x3 để cụm item phân bổ đều hơn trên toàn map.
 - 2026-08-20: Thêm adjacent layer overlap budget 10-25% để hạn chế item layer sau trùng index layer trước.
 - 2026-08-20: Bỏ heuristic `totalItem / 32`; layer budget chia đều theo số layer path hợp lệ.
+- 2026-08-20: Cho designer chỉnh từng Auto Derived parameter, lưu override key và thêm tooltip mô tả ý nghĩa field.

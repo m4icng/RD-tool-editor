@@ -41,12 +41,25 @@ export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "maxImmediateChainCount", label: "Chuỗi gần đầu tối đa", type: "number", min: 0, max: 12, step: 1, group: "Lớp và xuất hiện", tip: "Số vật phẩm lớp mới liên tiếp được phép xuất hiện quá gần đầu tàu." },
   { key: "nextLayerTrapPressure", label: "Áp lực bẫy lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Mức cho phép tạo áp lực khi chuyển sang lớp tiếp theo." },
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
+  { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
+  { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
   { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
   { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
 ]);
+
+export const DERIVED_GENERATE_SETTING_KEYS = Object.freeze(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.key));
+
+export const DERIVED_GENERATE_PARAMETER_ALIASES = Object.freeze({
+  avgTailLengthTarget: "targetAverageTail",
+  tailLengthCap: "safeTailLimit",
+  unreleasedInventoryTarget: "highPressureRatio",
+  clusterRatio: "clusterAdjacencyRatio",
+  maxClusterSizePerBranch: "clusterSizeDistribution.max",
+  branchDistributionBalance: "branchDistribution"
+});
 
 export const GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "difficultyScore", label: "Điểm độ khó", type: "percent", min: 0, max: 1, step: 0.01, group: "Designer Intent", tip: "Mục tiêu tổng quát; các thông số sinh chi tiết sẽ được tự tính theo level." }
@@ -70,7 +83,9 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   releaseDelayTarget: 6,
   unreleasedInventoryTarget: 0.28,
   maxUnreleasedItems: 7,
-  releaseDistanceWeight: 0.42
+  releaseDistanceWeight: 0.42,
+  noiseRatio: 0.42,
+  carryOverRatio: 0.34
 });
 
 function clamp(value, min, max) {
@@ -85,6 +100,7 @@ export function createDefaultGenerateSettings() {
     difficultyScore: GENERATE_PRESETS.Thuong.difficultyScore,
     multiBranchMode: "balanced",
     autoDerived: true,
+    derivedOverrideKeys: [],
     ...FALLBACK_DERIVED_SETTINGS
   };
 }
@@ -121,12 +137,15 @@ export function normalizeGenerateSettings(value = {}) {
     settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
   settings.autoDerived = settings.autoDerived !== false;
+  settings.derivedOverrideKeys = Array.isArray(settings.derivedOverrideKeys)
+    ? [...new Set(settings.derivedOverrideKeys.filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key)))]
+    : [];
   return settings;
 }
 
 export function applyGeneratePreset(settings, presetName) {
   const preset = GENERATE_PRESETS[presetName] ? presetName : "Thuong";
-  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, difficultyScore: GENERATE_PRESETS[preset].difficultyScore, autoDerived: true });
+  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, difficultyScore: GENERATE_PRESETS[preset].difficultyScore, autoDerived: true, derivedOverrideKeys: [] });
 }
 
 export function validateGenerateSettings(settings) {

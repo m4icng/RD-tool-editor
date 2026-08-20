@@ -3011,12 +3011,25 @@ const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "maxImmediateChainCount", label: "Chuỗi gần đầu tối đa", type: "number", min: 0, max: 12, step: 1, group: "Lớp và xuất hiện", tip: "Số vật phẩm lớp mới liên tiếp được phép xuất hiện quá gần đầu tàu." },
   { key: "nextLayerTrapPressure", label: "Áp lực bẫy lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Mức cho phép tạo áp lực khi chuyển sang lớp tiếp theo." },
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
+  { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
+  { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
   { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
   { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
   { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
   { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
 ]);
+
+const DERIVED_GENERATE_SETTING_KEYS = Object.freeze(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.key));
+
+const DERIVED_GENERATE_PARAMETER_ALIASES = Object.freeze({
+  avgTailLengthTarget: "targetAverageTail",
+  tailLengthCap: "safeTailLimit",
+  unreleasedInventoryTarget: "highPressureRatio",
+  clusterRatio: "clusterAdjacencyRatio",
+  maxClusterSizePerBranch: "clusterSizeDistribution.max",
+  branchDistributionBalance: "branchDistribution"
+});
 
 const GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "difficultyScore", label: "Điểm độ khó", type: "percent", min: 0, max: 1, step: 0.01, group: "Designer Intent", tip: "Mục tiêu tổng quát; các thông số sinh chi tiết sẽ được tự tính theo level." }
@@ -3040,7 +3053,9 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   releaseDelayTarget: 6,
   unreleasedInventoryTarget: 0.28,
   maxUnreleasedItems: 7,
-  releaseDistanceWeight: 0.42
+  releaseDistanceWeight: 0.42,
+  noiseRatio: 0.42,
+  carryOverRatio: 0.34
 });
 
 function clamp(value, min, max) {
@@ -3055,6 +3070,7 @@ function createDefaultGenerateSettings() {
     difficultyScore: GENERATE_PRESETS.Thuong.difficultyScore,
     multiBranchMode: "balanced",
     autoDerived: true,
+    derivedOverrideKeys: [],
     ...FALLBACK_DERIVED_SETTINGS
   };
 }
@@ -3091,12 +3107,15 @@ function normalizeGenerateSettings(value = {}) {
     settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
   settings.autoDerived = settings.autoDerived !== false;
+  settings.derivedOverrideKeys = Array.isArray(settings.derivedOverrideKeys)
+    ? [...new Set(settings.derivedOverrideKeys.filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key)))]
+    : [];
   return settings;
 }
 
 function applyGeneratePreset(settings, presetName) {
   const preset = GENERATE_PRESETS[presetName] ? presetName : "Thuong";
-  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, difficultyScore: GENERATE_PRESETS[preset].difficultyScore, autoDerived: true });
+  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, difficultyScore: GENERATE_PRESETS[preset].difficultyScore, autoDerived: true, derivedOverrideKeys: [] });
 }
 
 function validateGenerateSettings(settings) {
@@ -4195,6 +4214,34 @@ function canRetryGeneration(result) {
   return result?.issues?.some((issue) => retryableCodes.has(issue.code));
 }
 
+function applyOverrideDerivedParameters(derivedParameters, overrideSettings) {
+  const next = {
+    ...derivedParameters,
+    clusterSizeDistribution: { ...(derivedParameters.clusterSizeDistribution ?? {}) }
+  };
+  Object.entries(overrideSettings).forEach(([key, value]) => {
+    if (Object.prototype.hasOwnProperty.call(next, key)) {
+      next[key] = value;
+      return;
+    }
+    const alias = DERIVED_GENERATE_PARAMETER_ALIASES[key];
+    if (!alias) return;
+    if (alias === "clusterSizeDistribution.max") {
+      const max = Number(value);
+      const min = Math.min(Number(next.clusterSizeDistribution.min ?? 1), max);
+      next.clusterSizeDistribution = {
+        ...next.clusterSizeDistribution,
+        min,
+        preferred: Math.min(Math.max(Number(next.clusterSizeDistribution.preferred ?? max), min), max),
+        max
+      };
+      return;
+    }
+    next[alias] = value;
+  });
+  return next;
+}
+
 function generatePreview(state, rawSettings = {}) {
   const settingsResult = validateGenerateSettings({ ...rawSettings, seed: createRandomGenerateSeed() });
   const baseSettings = normalizeGenerateSettings(settingsResult.settings);
@@ -4209,11 +4256,16 @@ function generatePreview(state, rawSettings = {}) {
   let tuning = createTuningState();
   for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
     const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
+    const overrideSettings = Object.fromEntries((baseSettings.derivedOverrideKeys ?? [])
+      .filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key))
+      .map((key) => [key, baseSettings[key]]));
+    const autoDerivedParameters = applyOverrideDerivedParameters(derived.derivedParameters, overrideSettings);
     const settings = normalizeGenerateSettings({
       ...baseSettings,
       ...derived.settings,
+      ...overrideSettings,
       seed: createRandomGenerateSeed(),
-      autoDerivedParameters: derived.derivedParameters,
+      autoDerivedParameters,
       autoTuningAttempt: attempt + 1,
       autoTuningProfile: tuning
     });
@@ -6166,11 +6218,72 @@ function intentFieldsHtml(settings) {
   `;
 }
 
+function derivedFieldGroupsHtml(settings, estimatedSettings) {
+  const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
+  const groups = [...new Set(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.group))];
+  return groups.map((group) => {
+    const fields = DERIVED_GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
+    return `
+      <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
+        <summary>${escapeHtml(group)}</summary>
+        <div class="generate-field-grid">
+          ${fields.map((field) => {
+            const overridden = overrideKeys.has(field.key);
+            const rawValue = overridden ? settings[field.key] : estimatedSettings[field.key];
+            const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
+            const min = field.type === "percent" ? field.min * 100 : field.min;
+            const max = field.type === "percent" ? field.max * 100 : field.max;
+            const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+            return `
+              <label class="generate-field ${overridden ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
+                <span>${escapeHtml(field.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
+                <input type="number" data-generate-derived-setting="${escapeHtml(field.key)}" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+              </label>
+            `;
+          }).join("")}
+        </div>
+      </details>
+    `;
+  }).join("");
+}
+
+function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys) {
+  const next = {
+    ...derivedParameters,
+    clusterSizeDistribution: { ...(derivedParameters.clusterSizeDistribution ?? {}) }
+  };
+  overrideKeys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(next, key)) {
+      next[key] = settings[key];
+      return;
+    }
+    const alias = DERIVED_GENERATE_PARAMETER_ALIASES[key];
+    if (!alias) return;
+    if (alias === "clusterSizeDistribution.max") {
+      const max = Number(settings[key]);
+      const min = Math.min(Number(next.clusterSizeDistribution.min ?? 1), max);
+      next.clusterSizeDistribution = {
+        ...next.clusterSizeDistribution,
+        min,
+        preferred: Math.min(Math.max(Number(next.clusterSizeDistribution.preferred ?? max), min), max),
+        max
+      };
+      return;
+    }
+    next[alias] = settings[key];
+  });
+  return next;
+}
+
 function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
   const analysis = analyzeAdaptiveLevel(state, source);
-  const derived = estimateDerivedGenerateParameters(source, analysis, settings).derivedParameters;
+  const derivedEstimate = estimateDerivedGenerateParameters(source, analysis, settings);
+  const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
+  const derived = applyDerivedDisplayOverrides(derivedEstimate.derivedParameters, settings, overrideKeys);
+  const estimatedSettings = { ...derivedEstimate.settings, ...derivedEstimate.derivedParameters };
+  const overrideCount = settings.derivedOverrideKeys?.length ?? 0;
 
   container.innerHTML = `
     <section class="control-section">
@@ -6205,7 +6318,7 @@ function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Auto Derived</h2><span>Level riêng</span></div>
+      <div class="section-heading"><h2>Auto Derived</h2><span>${overrideCount ? `${overrideCount} chỉnh tay` : "Level riêng"}</span></div>
       <div class="generate-derived-grid">
         <div><span>Avg Tail</span><strong>${formatNumber(derived.targetAverageTail)}</strong></div>
         <div><span>Peak Tail</span><strong>${formatNumber(derived.targetPeakTail)}</strong></div>
@@ -6216,6 +6329,8 @@ function renderGenerateControls(container, state) {
         <div><span>Release</span><strong>${formatNumber(derived.releaseAmountTarget)}</strong></div>
         <div><span>Beam</span><strong>${formatNumber(derived.beamWidth)}</strong></div>
       </div>
+      ${derivedFieldGroupsHtml(settings, estimatedSettings)}
+      <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
   `;
 }
@@ -9431,7 +9546,16 @@ function setGenerateSetting(key, value, type = "text") {
   if (key === "seed") return;
   const current = normalizeGenerateSettings(editor.data.generateSettings);
   const nextValue = type === "percent" ? Number(value) / 100 : value;
-  editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue });
+  const overrideKeys = new Set(current.derivedOverrideKeys ?? []);
+  if (DERIVED_GENERATE_SETTING_KEYS.includes(key)) overrideKeys.add(key);
+  editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue, derivedOverrideKeys: [...overrideKeys] });
+  clearGeneratePreview();
+  editor.notify();
+}
+
+function resetDerivedGenerateSettings() {
+  const current = normalizeGenerateSettings(editor.data.generateSettings);
+  editor.data.generateSettings = normalizeGenerateSettings({ ...current, derivedOverrideKeys: [] });
   clearGeneratePreview();
   editor.notify();
 }
@@ -9481,6 +9605,10 @@ elements.generateControls.addEventListener("change", (event) => {
 });
 
 elements.generateControls.addEventListener("click", async (event) => {
+  if (event.target.closest("[data-reset-derived-settings]")) {
+    resetDerivedGenerateSettings();
+    return;
+  }
   const preset = event.target.closest("[data-generate-preset]");
   if (preset) {
     editor.data.generateSettings = applyGeneratePreset(editor.data.generateSettings, preset.dataset.generatePreset);

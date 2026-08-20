@@ -1,4 +1,4 @@
-import { GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
+import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_FIELDS, GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
 import { analyzeAdaptiveLevel, estimateDerivedGenerateParameters } from "../generate/adaptive-parameters.js";
 import { analyzeGenerateSource } from "../generate/generate-source.js";
 
@@ -65,11 +65,72 @@ function intentFieldsHtml(settings) {
   `;
 }
 
+function derivedFieldGroupsHtml(settings, estimatedSettings) {
+  const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
+  const groups = [...new Set(DERIVED_GENERATE_SETTING_FIELDS.map((field) => field.group))];
+  return groups.map((group) => {
+    const fields = DERIVED_GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
+    return `
+      <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
+        <summary>${escapeHtml(group)}</summary>
+        <div class="generate-field-grid">
+          ${fields.map((field) => {
+            const overridden = overrideKeys.has(field.key);
+            const rawValue = overridden ? settings[field.key] : estimatedSettings[field.key];
+            const value = field.type === "percent" ? Math.round(Number(rawValue) * 100) : rawValue;
+            const min = field.type === "percent" ? field.min * 100 : field.min;
+            const max = field.type === "percent" ? field.max * 100 : field.max;
+            const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+            return `
+              <label class="generate-field ${overridden ? "overridden" : ""}" title="${escapeHtml(field.tip)}">
+                <span>${escapeHtml(field.label)}<i title="${escapeHtml(field.tip)}">?</i></span>
+                <input type="number" data-generate-derived-setting="${escapeHtml(field.key)}" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+              </label>
+            `;
+          }).join("")}
+        </div>
+      </details>
+    `;
+  }).join("");
+}
+
+function applyDerivedDisplayOverrides(derivedParameters, settings, overrideKeys) {
+  const next = {
+    ...derivedParameters,
+    clusterSizeDistribution: { ...(derivedParameters.clusterSizeDistribution ?? {}) }
+  };
+  overrideKeys.forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(next, key)) {
+      next[key] = settings[key];
+      return;
+    }
+    const alias = DERIVED_GENERATE_PARAMETER_ALIASES[key];
+    if (!alias) return;
+    if (alias === "clusterSizeDistribution.max") {
+      const max = Number(settings[key]);
+      const min = Math.min(Number(next.clusterSizeDistribution.min ?? 1), max);
+      next.clusterSizeDistribution = {
+        ...next.clusterSizeDistribution,
+        min,
+        preferred: Math.min(Math.max(Number(next.clusterSizeDistribution.preferred ?? max), min), max),
+        max
+      };
+      return;
+    }
+    next[alias] = settings[key];
+  });
+  return next;
+}
+
 export function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
   const analysis = analyzeAdaptiveLevel(state, source);
-  const derived = estimateDerivedGenerateParameters(source, analysis, settings).derivedParameters;
+  const derivedEstimate = estimateDerivedGenerateParameters(source, analysis, settings);
+  const overrideKeys = new Set(settings.derivedOverrideKeys ?? []);
+  const derived = applyDerivedDisplayOverrides(derivedEstimate.derivedParameters, settings, overrideKeys);
+  const estimatedSettings = { ...derivedEstimate.settings, ...derivedEstimate.derivedParameters };
+  const overrideCount = settings.derivedOverrideKeys?.length ?? 0;
 
   container.innerHTML = `
     <section class="control-section">
@@ -104,7 +165,7 @@ export function renderGenerateControls(container, state) {
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Auto Derived</h2><span>Level riêng</span></div>
+      <div class="section-heading"><h2>Auto Derived</h2><span>${overrideCount ? `${overrideCount} chỉnh tay` : "Level riêng"}</span></div>
       <div class="generate-derived-grid">
         <div><span>Avg Tail</span><strong>${formatNumber(derived.targetAverageTail)}</strong></div>
         <div><span>Peak Tail</span><strong>${formatNumber(derived.targetPeakTail)}</strong></div>
@@ -115,6 +176,8 @@ export function renderGenerateControls(container, state) {
         <div><span>Release</span><strong>${formatNumber(derived.releaseAmountTarget)}</strong></div>
         <div><span>Beam</span><strong>${formatNumber(derived.beamWidth)}</strong></div>
       </div>
+      ${derivedFieldGroupsHtml(settings, estimatedSettings)}
+      <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
   `;
 }

@@ -19,24 +19,29 @@ export function activateTab(tab, editorData, elements) {
   editorData.tab = tab;
   document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === tab));
   const isLevel = tab === "level";
+  const isGenerate = tab === "generate";
   const isPlayable = tab === "playable";
   const isJson = tab === "json";
   elements.levelWorkspace.classList.toggle("hidden", isPlayable);
   elements.playableWorkspace.classList.toggle("hidden", !isPlayable);
   document.querySelectorAll(".level-rail-content").forEach((element) => element.classList.toggle("hidden", !isLevel));
   elements.jsonFolderCard.classList.toggle("hidden", !isJson);
-  elements.levelRightRail.classList.toggle("json-mode", isJson);
-  elements.canvasArea.classList.toggle("read-only", isJson);
-  elements.gridBoard.setAttribute("aria-readonly", String(isJson));
+  elements.generateResultCard?.classList.toggle("hidden", !isGenerate);
+  elements.levelRightRail.classList.toggle("json-mode", isJson || isGenerate);
+  elements.canvasArea.classList.toggle("read-only", isJson || isGenerate);
+  elements.gridBoard.setAttribute("aria-readonly", String(isJson || isGenerate));
   elements.levelControls.classList.toggle("hidden", !isLevel);
+  elements.generateControls?.classList.toggle("hidden", !isGenerate);
   elements.playableControls.classList.toggle("hidden", !isPlayable);
   elements.jsonControls.classList.toggle("hidden", !isJson);
   elements.levelActions.classList.toggle("hidden", !isLevel);
+  elements.generateActions?.classList.toggle("hidden", !isGenerate);
   elements.jsonActions.classList.toggle("hidden", !isJson);
   elements.levelLayerPicker.classList.toggle("hidden", isPlayable);
-  elements.levelLayerPicker.classList.toggle("read-only", isJson);
-  elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson));
+  elements.levelLayerPicker.classList.toggle("read-only", isJson || isGenerate);
+  elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson || isGenerate));
   if (isJson) elements.activeToolBadge.textContent = "Chỉ xem";
+  else if (isGenerate) elements.activeToolBadge.textContent = "Generate Preview";
   else if (isLevel) {
     const eraseMode = ERASE_MODE_LABELS[editorData.eraseMode] ? editorData.eraseMode : "smart";
     elements.activeToolBadge.textContent = editorData.tool === "erase"
@@ -44,5 +49,5 @@ export function activateTab(tab, editorData, elements) {
     : TOOL_LABELS[editorData.tool];
   }
   elements.placeholderView.classList.add("hidden");
-  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
+  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isGenerate ? "Generate / Auto Generator Level" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
 }

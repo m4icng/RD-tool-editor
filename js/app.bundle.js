@@ -2875,6 +2875,621 @@ class LevelFileManager {
 }
 
 
+// ---- js/generate/generate-settings.js ----
+const GENERATOR_VERSION = "1.0.0";
+
+const GENERATE_PRESETS = Object.freeze({
+  Easy: {
+    clusterRatio: 0.62,
+    maxClusterSizePerBranch: 4,
+    layerDistributionBalance: 0.9,
+    branchDistributionBalance: 0.9,
+    avgTailLengthTarget: 5,
+    tailLengthGrowthCurve: "linear",
+    tailLengthCap: 9,
+    tailLengthVariance: 1,
+    progressionPressure: 0.25,
+    pressureCurve: "Flat",
+    reliefSegmentRatio: 0.35,
+    noiseClusterCountBeforeTarget: 0,
+    noiseItemCountPerCluster: 1,
+    noiseBeforeTargetRatio: 0.08,
+    noiseSpacingMin: 4,
+    noiseColorDiversity: 1,
+    itemDensityTarget: 0.35,
+    clusterCompactness: 0.55,
+    routeChoicePressure: 0.2,
+    decisionPointFrequency: 0.2
+  },
+  Normal: {
+    clusterRatio: 0.8,
+    maxClusterSizePerBranch: 6,
+    layerDistributionBalance: 0.8,
+    branchDistributionBalance: 0.75,
+    avgTailLengthTarget: 8,
+    tailLengthGrowthCurve: "linear",
+    tailLengthCap: 14,
+    tailLengthVariance: 2,
+    progressionPressure: 0.5,
+    pressureCurve: "Ramp",
+    reliefSegmentRatio: 0.22,
+    noiseClusterCountBeforeTarget: 1,
+    noiseItemCountPerCluster: 2,
+    noiseBeforeTargetRatio: 0.2,
+    noiseSpacingMin: 3,
+    noiseColorDiversity: 2,
+    itemDensityTarget: 0.5,
+    clusterCompactness: 0.72,
+    routeChoicePressure: 0.45,
+    decisionPointFrequency: 0.45
+  },
+  Hard: {
+    clusterRatio: 0.88,
+    maxClusterSizePerBranch: 6,
+    layerDistributionBalance: 0.65,
+    branchDistributionBalance: 0.58,
+    avgTailLengthTarget: 11,
+    tailLengthGrowthCurve: "ramp",
+    tailLengthCap: 18,
+    tailLengthVariance: 3,
+    progressionPressure: 0.72,
+    pressureCurve: "PeakLate",
+    reliefSegmentRatio: 0.14,
+    noiseClusterCountBeforeTarget: 2,
+    noiseItemCountPerCluster: 3,
+    noiseBeforeTargetRatio: 0.32,
+    noiseSpacingMin: 2,
+    noiseColorDiversity: 3,
+    itemDensityTarget: 0.68,
+    clusterCompactness: 0.86,
+    routeChoicePressure: 0.68,
+    decisionPointFrequency: 0.66
+  },
+  Expert: {
+    clusterRatio: 0.94,
+    maxClusterSizePerBranch: 6,
+    layerDistributionBalance: 0.52,
+    branchDistributionBalance: 0.45,
+    avgTailLengthTarget: 14,
+    tailLengthGrowthCurve: "peak-late",
+    tailLengthCap: 22,
+    tailLengthVariance: 4,
+    progressionPressure: 0.9,
+    pressureCurve: "Sawtooth",
+    reliefSegmentRatio: 0.08,
+    noiseClusterCountBeforeTarget: 3,
+    noiseItemCountPerCluster: 4,
+    noiseBeforeTargetRatio: 0.45,
+    noiseSpacingMin: 1,
+    noiseColorDiversity: 4,
+    itemDensityTarget: 0.82,
+    clusterCompactness: 0.94,
+    routeChoicePressure: 0.86,
+    decisionPointFrequency: 0.82
+  }
+});
+
+const GENERATE_SETTING_FIELDS = Object.freeze([
+  { key: "clusterRatio", label: "Cluster Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Ty le uu tien gom cung mau thanh cum." },
+  { key: "maxClusterSizePerBranch", label: "Max Cluster", type: "number", min: 1, max: 6, step: 1, group: "Distribution", tip: "So item toi da trong mot cum tren moi nhanh." },
+  { key: "layerDistributionBalance", label: "Layer Balance", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Uu tien mem cho phan bo deu theo layer path." },
+  { key: "branchDistributionBalance", label: "Branch Balance", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Uu tien mem cho phan bo deu giua cac nhanh hop le." },
+  { key: "avgTailLengthTarget", label: "Avg Tail", type: "number", min: 1, max: 40, step: 1, group: "Tail Pressure", tip: "Do dai duoi tau trung binh muc tieu." },
+  { key: "tailLengthCap", label: "Tail Cap", type: "number", min: 1, max: 60, step: 1, group: "Tail Pressure", tip: "Gioi han do dai duoi toi da." },
+  { key: "tailLengthVariance", label: "Tail Variance", type: "number", min: 0, max: 12, step: 1, group: "Tail Pressure", tip: "Muc dao dong do dai duoi giua cac doan." },
+  { key: "progressionPressure", label: "Progression", type: "percent", min: 0, max: 1, step: 0.01, group: "Progression", tip: "Ap luc tong the theo tien trinh level." },
+  { key: "reliefSegmentRatio", label: "Relief Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Progression", tip: "Ty le doan giam ap luc." },
+  { key: "noiseClusterCountBeforeTarget", label: "Noise Clusters", type: "number", min: 0, max: 12, step: 1, group: "Noise", tip: "So cum nhieu truoc item muc tieu." },
+  { key: "noiseItemCountPerCluster", label: "Noise Size", type: "number", min: 0, max: 9, step: 1, group: "Noise", tip: "So item trong moi cum nhieu." },
+  { key: "noiseBeforeTargetRatio", label: "Noise Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise", tip: "Ty le item nhieu truoc muc tieu." },
+  { key: "noiseSpacingMin", label: "Noise Spacing", type: "number", min: 0, max: 20, step: 1, group: "Noise", tip: "Khoang cach toi thieu giua cac cum nhieu." },
+  { key: "noiseColorDiversity", label: "Noise Diversity", type: "number", min: 1, max: 7, step: 1, group: "Noise", tip: "Do da dang itemId trong vung nhieu." },
+  { key: "itemDensityTarget", label: "Item Density", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Mat do item muc tieu tren path hop le." },
+  { key: "clusterCompactness", label: "Compactness", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Muc do nen chat cum cung itemId." },
+  { key: "routeChoicePressure", label: "Route Choice", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Ap luc buoc nguoi choi can nhac nhanh." },
+  { key: "decisionPointFrequency", label: "Decision Freq", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Tan suat diem can quyet dinh." },
+  { key: "bodyCollisionPressure", label: "Body Collision", type: "percent", min: 0, max: 1, step: 0.01, group: "Collision", tip: "Muc nguy co dau tau va vao than tau." },
+  { key: "narrowPathUsage", label: "Narrow Usage", type: "percent", min: 0, max: 1, step: 0.01, group: "Collision", tip: "Muc su dung cac doan path hep." },
+  { key: "obstacleProximity", label: "Obstacle Prox", type: "number", min: 0, max: 8, step: 1, group: "Collision", tip: "Khoang cach item toi element hoac vung han che." }
+]);
+
+function createDefaultGenerateSettings() {
+  return {
+    seed: 12345,
+    maxRetries: 50,
+    difficultyPreset: "Normal",
+    multiBranchMode: "balanced",
+    pressureCurve: "Ramp",
+    tailLengthGrowthCurve: "linear",
+    bodyCollisionPressure: 0.35,
+    narrowPathUsage: 0.3,
+    obstacleProximity: 1,
+    ...GENERATE_PRESETS.Normal
+  };
+}
+
+function normalizeGenerateSettings(value = {}) {
+  const defaults = createDefaultGenerateSettings();
+  const settings = { ...defaults, ...(value ?? {}) };
+  settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Normal";
+  settings.seed = Math.max(0, Math.floor(Number(settings.seed) || defaults.seed));
+  settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
+  settings.multiBranchMode = ["balanced", "spread", "clustered"].includes(settings.multiBranchMode) ? settings.multiBranchMode : "balanced";
+  settings.pressureCurve = ["Flat", "Ramp", "Sawtooth", "PeakLate"].includes(settings.pressureCurve) ? settings.pressureCurve : defaults.pressureCurve;
+  settings.tailLengthGrowthCurve = ["linear", "flat", "ramp", "peak-late"].includes(settings.tailLengthGrowthCurve) ? settings.tailLengthGrowthCurve : defaults.tailLengthGrowthCurve;
+  GENERATE_SETTING_FIELDS.forEach((field) => {
+    const numeric = Number(settings[field.key]);
+    settings[field.key] = Number.isFinite(numeric) ? numeric : defaults[field.key];
+  });
+  return settings;
+}
+
+function applyGeneratePreset(settings, presetName) {
+  const preset = GENERATE_PRESETS[presetName] ? presetName : "Normal";
+  return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, ...GENERATE_PRESETS[preset] });
+}
+
+function validateGenerateSettings(settings) {
+  const normalized = normalizeGenerateSettings(settings);
+  const errors = [];
+  GENERATE_SETTING_FIELDS.forEach((field) => {
+    const value = Number(normalized[field.key]);
+    if (value < field.min || value > field.max) {
+      errors.push({
+        code: "DIFFICULTY_OUT_OF_RANGE",
+        severity: "error",
+        message: `${field.label} must be between ${field.min} and ${field.max}.`,
+        settingKey: field.key,
+        suggestion: "Reset preset or adjust the value inside the allowed range."
+      });
+    }
+  });
+  if (normalized.maxRetries < 1) {
+    errors.push({
+      code: "DIFFICULTY_OUT_OF_RANGE",
+      severity: "error",
+      message: "maxRetries must be greater than 0.",
+      settingKey: "maxRetries",
+      suggestion: "Use a retry limit from 1 to 500."
+    });
+  }
+  return { settings: normalized, errors };
+}
+
+
+// ---- js/generate/generate-source.js ----
+
+
+
+
+
+
+
+const FRUIT_TYPE_BY_ITEM_ID = Object.freeze(Object.fromEntries(
+  Object.entries(FRUIT_ITEM_IDS).map(([type, itemId]) => [String(itemId), type])
+));
+
+function fruitTypeFromItemId(itemId) {
+  return FRUIT_TYPE_BY_ITEM_ID[String(itemId)] ?? null;
+}
+
+function createGeneratorIssue({ code, message, severity = "error", levelId = null, layerIndex = null, trayId = null, index = null, suggestion = "" }) {
+  return { code, message, severity, levelId, layerIndex, trayId, index, suggestion };
+}
+
+function collectPathIndexes(state) {
+  return Object.entries(state.sharedCells ?? {})
+    .filter(([, cell]) => cell?.path)
+    .map(([key]) => {
+      const { x, y } = parseCellKey(key);
+      return positionToIndex(x, y, state.grid.columns);
+    })
+    .sort((a, b) => a - b);
+}
+
+function collectTrayRequirements(state) {
+  const requirements = [];
+  Object.entries(state.sharedCells ?? {}).forEach(([key, cell]) => {
+    const item = cell?.item;
+    if (!["tray", "truck"].includes(item?.kind)) return;
+    const { x, y } = parseCellKey(key);
+    const trayId = Number.isInteger(item.trayId) ? item.trayId : positionToIndex(x, y, state.grid.columns);
+    if (item.kind === "truck") {
+      const itemId = Number(FRUIT_ITEM_IDS[item.fruitType] ?? item.itemId ?? item.id);
+      requirements.push({ trayId, layerIndex: 0, itemId, fruitType: item.fruitType, amount: Number(item.capacity) || 0 });
+      return;
+    }
+    (item.trayLayers ?? []).forEach((trayLayer, order) => {
+      const layerIndex = Number.isInteger(trayLayer.layer) ? trayLayer.layer : order;
+      FRUIT_TYPES.forEach((fruitType) => {
+        const amount = Number(trayLayer.recipe?.[fruitType]) || 0;
+        if (amount > 0) requirements.push({ trayId, layerIndex, itemId: FRUIT_ITEM_IDS[fruitType], fruitType, amount });
+      });
+      (trayLayer.unknownItems ?? []).forEach((unknown) => {
+        const itemId = Number(unknown.itemId);
+        const amount = Number(unknown.count) || 0;
+        if (Number.isInteger(itemId) && amount > 0) requirements.push({ trayId, layerIndex, itemId, fruitType: fruitTypeFromItemId(itemId), amount });
+      });
+    });
+  });
+  return requirements.sort((a, b) => a.layerIndex - b.layerIndex || a.trayId - b.trayId || a.itemId - b.itemId);
+}
+
+function sharedBlockedIndexes(state) {
+  const blocked = new Set();
+  Object.entries(state.sharedCells ?? {}).forEach(([key, cell]) => {
+    const { x, y } = parseCellKey(key);
+    const index = positionToIndex(x, y, state.grid.columns);
+    if (cell.item?.kind === "snake" || cell.item?.kind === "tray" || cell.element) blocked.add(index);
+    if (cell.item?.kind === "tray") {
+      getTrayVisualCells(cell.item, { x, y }).forEach((visual) => {
+        if (isInsideGrid(state.grid, visual.x, visual.y)) blocked.add(positionToIndex(visual.x, visual.y, state.grid.columns));
+      });
+    }
+    if (cell.element?.kind === "bridge") {
+      bridgeVisualCells(state, index).forEach((visual) => {
+        if (isInsideGrid(state.grid, visual.x, visual.y)) blocked.add(positionToIndex(visual.x, visual.y, state.grid.columns));
+      });
+      bridgeItemBlockCells(state, index).forEach((visual) => {
+        if (isInsideGrid(state.grid, visual.x, visual.y)) blocked.add(positionToIndex(visual.x, visual.y, state.grid.columns));
+      });
+    }
+  });
+  Object.keys(state.priorityPoints ?? {}).forEach((key) => {
+    const { x, y } = parseCellKey(key);
+    blocked.add(positionToIndex(x, y, state.grid.columns));
+  });
+  normalizeCountBarrierElement(state.countBarrierElement).forEach((barrier) => {
+    blocked.add(barrier.startIndex);
+    blocked.add(barrier.endIndex);
+  });
+  normalizeTunnelElement(state.tunnelElement).forEach((tunnel) => {
+    tunnel.entryPoints.forEach((point) => blocked.add(point.index));
+  });
+  normalizeOneWayElement(state.oneWayElement).forEach((oneWay) => {
+    oneWay.entryPoints.forEach((point) => blocked.add(point.index));
+  });
+  return blocked;
+}
+
+function indexesAfterStart(state, pathIndexes, amount = 2) {
+  const spawnIndex = Object.entries(state.sharedCells ?? {}).flatMap(([key, cell]) => {
+    if (cell.item?.kind !== "snake") return [];
+    const { x, y } = parseCellKey(key);
+    return [positionToIndex(x, y, state.grid.columns)];
+  })[0];
+  if (!Number.isInteger(spawnIndex)) return new Set();
+  const startOffset = pathIndexes.indexOf(spawnIndex);
+  if (startOffset < 0) return new Set();
+  return new Set(pathIndexes.slice(startOffset + 1, startOffset + 1 + amount));
+}
+
+function collectValidCellsByLayer(state, extraLayerIndexes = []) {
+  const pathIndexes = collectPathIndexes(state);
+  const blocked = sharedBlockedIndexes(state);
+  const layerOneStartBuffer = indexesAfterStart(state, pathIndexes, 2);
+  const validByLayer = new Map();
+  const layerIndexes = new Set([
+    ...(state.layers ?? []).map((layer, order) => Number.isInteger(layer.layer) ? layer.layer : order),
+    ...extraLayerIndexes
+  ]);
+  layerIndexes.forEach((layerIndex) => {
+    const valid = pathIndexes.filter((index) => {
+      if (blocked.has(index)) return false;
+      if (layerIndex === 0 && layerOneStartBuffer.has(index)) return false;
+      return true;
+    });
+    validByLayer.set(layerIndex, valid);
+  });
+  return validByLayer;
+}
+
+function branchCellsForIndexes(state, indexes) {
+  const remaining = new Set(indexes);
+  const branches = [];
+  while (remaining.size > 0) {
+    const first = remaining.values().next().value;
+    const queue = [first];
+    const cells = [];
+    remaining.delete(first);
+    while (queue.length > 0) {
+      const current = queue.shift();
+      cells.push(current);
+      const connections = pathConnectionsAt(state, current);
+      connections.forEach((direction) => {
+        const { x, y } = indexToPosition(current, state.grid.columns);
+        const next = [
+          { x, y: y - 1 },
+          { x: x + 1, y },
+          { x, y: y + 1 },
+          { x: x - 1, y }
+        ][direction];
+        if (!next || !isInsideGrid(state.grid, next.x, next.y)) return;
+        const nextIndex = positionToIndex(next.x, next.y, state.grid.columns);
+        if (!remaining.has(nextIndex)) return;
+        remaining.delete(nextIndex);
+        queue.push(nextIndex);
+      });
+    }
+    branches.push({ branchId: `branch_${branches.length + 1}`, indexes: cells.sort((a, b) => a - b) });
+  }
+  return branches.sort((a, b) => b.indexes.length - a.indexes.length);
+}
+
+function analyzeGenerateSource(state) {
+  const issues = [];
+  const pathIndexes = collectPathIndexes(state);
+  const requirements = collectTrayRequirements(state);
+  const validByLayer = collectValidCellsByLayer(state, requirements.map((entry) => entry.layerIndex));
+  const requiredByLayer = new Map();
+  requirements.forEach((entry) => {
+    if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
+      issues.push(createGeneratorIssue({
+        code: "TRAY_INVALID",
+        message: `Tray ${entry.trayId} has invalid itemId or amount.`,
+        trayId: entry.trayId,
+        layerIndex: entry.layerIndex,
+        suggestion: "Check tray recipe in Level Des."
+      }));
+      return;
+    }
+    requiredByLayer.set(entry.layerIndex, (requiredByLayer.get(entry.layerIndex) ?? 0) + entry.amount);
+  });
+  if (pathIndexes.length === 0) {
+    issues.push(createGeneratorIssue({
+      code: "SOURCE_INVALID",
+      message: "Level has no path cells.",
+      suggestion: "Draw path in Level Des before generating items."
+    }));
+  }
+  if (requirements.length === 0) {
+    issues.push(createGeneratorIssue({
+      code: "TRAY_INVALID",
+      message: "No tray requirement found.",
+      suggestion: "Add tray layers and block amounts in Level Des."
+    }));
+  }
+  requiredByLayer.forEach((required, layerIndex) => {
+    const validSlots = validByLayer.get(layerIndex)?.length ?? 0;
+    if (required > validSlots) {
+      issues.push(createGeneratorIssue({
+        code: "NOT_ENOUGH_VALID_CELLS",
+        message: `Layer ${layerIndex + 1} needs ${required} items but only has ${validSlots} valid cells.`,
+        layerIndex,
+        suggestion: "Add more valid path cells or reduce tray requirement."
+      }));
+    }
+  });
+  const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
+  return {
+    valid: issues.every((issue) => issue.severity !== "error"),
+    issues,
+    pathIndexes,
+    requirements,
+    validByLayer,
+    stats: {
+      layers: state.layers?.length ?? 0,
+      trays: trayCount,
+      totalRequired: requirements.reduce((sum, entry) => sum + entry.amount, 0),
+      totalValidSlots: [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0)
+    }
+  };
+}
+
+
+// ---- js/generate/generator-engine.js ----
+
+
+
+
+
+
+function createRandom(seed) {
+  let state = (Number(seed) || 1) >>> 0;
+  return () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return ((state >>> 0) / 4294967296);
+  };
+}
+
+function shuffle(values, random) {
+  const copy = values.slice();
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function ensureLayers(state, maxLayerIndex) {
+  while ((state.layers ?? []).length <= maxLayerIndex) {
+    state.layers.push(createLayer(state.layers.length));
+  }
+  reindexLayers(state.layers);
+}
+
+function clearGeneratedLayerItems(state) {
+  (state.layers ?? []).forEach((layer) => {
+    layer.cells = {};
+  });
+  state.mysteryFruitElement = [];
+}
+
+function createItemFromRequirement(requirement) {
+  const fruitType = requirement.fruitType ?? fruitTypeFromItemId(requirement.itemId);
+  if (fruitType) return createFruit(fruitType, blockVisualMeta(fruitType).label, BLOCK_ITEM_GLYPH);
+  return {
+    id: requirement.itemId,
+    itemId: requirement.itemId,
+    kind: "fruit",
+    category: "item",
+    fruitType: `unknown-${requirement.itemId}`,
+    label: `Unknown #${requirement.itemId}`,
+    icon: "?"
+  };
+}
+
+function takeCellsFromBranches(branches, amount, settings, random) {
+  const branchQueues = branches
+    .map((branch) => ({ ...branch, indexes: shuffle(branch.indexes, random) }))
+    .filter((branch) => branch.indexes.length > 0);
+  const picked = [];
+  let cursor = 0;
+  let guard = 0;
+  while (picked.length < amount && branchQueues.length > 0 && guard < amount * Math.max(1, branchQueues.length) * 3) {
+    const branch = branchQueues[cursor % branchQueues.length];
+    const chunkSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, amount - picked.length));
+    const actualChunk = Math.max(1, Math.round(chunkSize * Math.max(0.15, settings.clusterRatio)));
+    for (let i = 0; i < actualChunk && picked.length < amount && branch.indexes.length > 0; i += 1) {
+      picked.push({ index: branch.indexes.shift(), branchId: branch.branchId });
+    }
+    cursor += settings.multiBranchMode === "clustered" ? (random() > settings.branchDistributionBalance ? 1 : 0) : 1;
+    guard += 1;
+    for (let i = branchQueues.length - 1; i >= 0; i -= 1) {
+      if (branchQueues[i].indexes.length === 0) branchQueues.splice(i, 1);
+    }
+  }
+  return picked;
+}
+
+function generatedMetrics(generatedItems, settings, source) {
+  const byBranch = new Set(generatedItems.map((item) => item.branchId).filter(Boolean));
+  const byLayer = new Map();
+  generatedItems.forEach((item) => byLayer.set(item.layerIndex, (byLayer.get(item.layerIndex) ?? 0) + 1));
+  let sameAdjacent = 0;
+  let comparable = 0;
+  [...byLayer.keys()].forEach((layerIndex) => {
+    const items = generatedItems
+      .filter((item) => item.layerIndex === layerIndex)
+      .sort((a, b) => a.pathIndex - b.pathIndex);
+    for (let i = 1; i < items.length; i += 1) {
+      comparable += 1;
+      if (items[i].itemId === items[i - 1].itemId) sameAdjacent += 1;
+    }
+  });
+  const actualClusterRatio = comparable ? sameAdjacent / comparable : 1;
+  const avgTailLength = Math.min(settings.tailLengthCap, Math.max(1, settings.avgTailLengthTarget + (actualClusterRatio - settings.clusterRatio) * settings.tailLengthVariance));
+  return {
+    status: "Generated",
+    generatedAt: Date.now(),
+    generatorVersion: GENERATOR_VERSION,
+    totalRequired: source.stats.totalRequired,
+    totalGenerated: generatedItems.length,
+    missing: Math.max(0, source.stats.totalRequired - generatedItems.length),
+    branchCount: byBranch.size,
+    clusterCount: Math.max(1, Math.ceil(generatedItems.length / Math.max(1, settings.maxClusterSizePerBranch))),
+    actualClusterRatio: Number(actualClusterRatio.toFixed(3)),
+    avgTailLength: Number(avgTailLength.toFixed(2))
+  };
+}
+
+function generatePreview(state, rawSettings = {}) {
+  const settingsResult = validateGenerateSettings(rawSettings);
+  const settings = normalizeGenerateSettings(settingsResult.settings);
+  const source = analyzeGenerateSource(state);
+  const errors = [...settingsResult.errors, ...source.issues.filter((issue) => issue.severity === "error")];
+  if (errors.length > 0) {
+    return { ok: false, preview: null, source, settings, issues: errors };
+  }
+
+  const random = createRandom(settings.seed);
+  const next = structuredClone(state);
+  const maxLayerIndex = Math.max(0, ...source.requirements.map((entry) => entry.layerIndex));
+  ensureLayers(next, maxLayerIndex);
+  clearGeneratedLayerItems(next);
+
+  const generatedItems = [];
+  const sourceByLayer = new Map();
+  source.requirements.forEach((requirement) => {
+    const list = sourceByLayer.get(requirement.layerIndex) ?? [];
+    list.push(requirement);
+    sourceByLayer.set(requirement.layerIndex, list);
+  });
+
+  for (const [layerIndex, requirements] of sourceByLayer.entries()) {
+    const validCells = source.validByLayer.get(layerIndex) ?? [];
+    const branches = branchCellsForIndexes(state, validCells);
+    if (branches.length === 0 && requirements.some((entry) => entry.amount > 0)) {
+      return {
+        ok: false,
+        preview: null,
+        source,
+        settings,
+        issues: [createGeneratorIssue({
+          code: "BRANCH_DISTRIBUTION_FAILED",
+          message: `Layer ${layerIndex + 1} has no valid branch for generated items.`,
+          layerIndex,
+          suggestion: "Add playable path cells or remove blocked cells on this layer."
+        })]
+      };
+    }
+    const branchCopies = branches.map((branch) => ({ ...branch, indexes: branch.indexes.slice() }));
+    requirements.forEach((requirement) => {
+      const cells = takeCellsFromBranches(branchCopies, requirement.amount, settings, random);
+      if (cells.length < requirement.amount) return;
+      const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
+      cells.forEach((cell, order) => {
+        const { x, y } = indexToPosition(cell.index, next.grid.columns);
+        layer.cells[cellKey(x, y)] = { item: createItemFromRequirement(requirement) };
+        generatedItems.push({
+          id: `gen_${layerIndex}_${requirement.trayId}_${requirement.itemId}_${cell.index}_${order}`,
+          itemId: requirement.itemId,
+          layerIndex,
+          gridX: x,
+          gridY: y,
+          pathIndex: cell.index,
+          branchId: cell.branchId,
+          sourceTrayId: `tray_${requirement.trayId}`
+        });
+      });
+    });
+  }
+
+  if (generatedItems.length !== source.stats.totalRequired) {
+    return {
+      ok: false,
+      preview: null,
+      source,
+      settings,
+      issues: [createGeneratorIssue({
+        code: "GENERATION_FAILED",
+        message: `Generated ${generatedItems.length}/${source.stats.totalRequired} items after ${settings.maxRetries} retry limit.`,
+        suggestion: "Increase valid slots, lower cluster pressure, or use an easier preset."
+      })]
+    };
+  }
+
+  const meta = generatedMetrics(generatedItems, settings, source);
+  next.generateSettings = settings;
+  next.generatedItems = generatedItems;
+  next.generationMeta = meta;
+  return { ok: true, preview: next, source, settings, issues: [], generatedItems, meta };
+}
+
+function applyGeneratedPreview(targetState, previewState) {
+  if (!previewState?.layers || !previewState?.generationMeta) return false;
+  targetState.layers = structuredClone(previewState.layers);
+  targetState.activeLayerId = previewState.activeLayerId;
+  targetState.mysteryFruitElement = structuredClone(previewState.mysteryFruitElement ?? []);
+  targetState.generateSettings = structuredClone(previewState.generateSettings);
+  targetState.generatedItems = structuredClone(previewState.generatedItems ?? []);
+  targetState.generationMeta = structuredClone(previewState.generationMeta);
+  return true;
+}
+
+function resetGeneratedItems(targetState, backupState) {
+  if (!backupState?.layers) return false;
+  targetState.layers = structuredClone(backupState.layers);
+  targetState.activeLayerId = backupState.activeLayerId;
+  targetState.mysteryFruitElement = structuredClone(backupState.mysteryFruitElement ?? []);
+  targetState.generatedItems = [];
+  targetState.generationMeta = { status: "Not Generated", generatedAt: 0, generatorVersion: GENERATOR_VERSION };
+  return true;
+}
+
+
 // ---- js/editor/delete-resolver.js ----
 
 
@@ -4708,6 +5323,186 @@ function createGridIndexTooltip({ grid, getGrid, isEnabled }) {
 }
 
 
+// ---- js/ui/generate-panel.js ----
+
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function formatPercent(value) {
+  return `${Math.round(Number(value) * 100)}%`;
+}
+
+function statusOf(state) {
+  const meta = state.generationMeta;
+  if (meta?.status === "Error") return "Error";
+  if (meta?.status === "Generated" && state.fileDirty) return "Modified";
+  if (meta?.status === "Generated") return "Generated";
+  return "Not Generated";
+}
+
+function issueRows(issues) {
+  if (!issues?.length) return `<div class="generate-issue ok"><strong>OK</strong><span>No generator issue.</span></div>`;
+  return issues.map((issue) => `
+    <div class="generate-issue ${escapeHtml(issue.severity ?? "error")}">
+      <strong>${escapeHtml(issue.code)}</strong>
+      <span>${escapeHtml(issue.message)}</span>
+      ${issue.suggestion ? `<small>${escapeHtml(issue.suggestion)}</small>` : ""}
+    </div>
+  `).join("");
+}
+
+function settingsGroupHtml(settings, group) {
+  const fields = GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
+  return `
+    <details class="generate-settings-group" ${group === "Distribution" ? "open" : ""}>
+      <summary>${escapeHtml(group)}</summary>
+      <div class="generate-field-grid">
+        ${fields.map((field) => {
+          const value = field.type === "percent" ? Math.round(Number(settings[field.key]) * 100) : settings[field.key];
+          const min = field.type === "percent" ? field.min * 100 : field.min;
+          const max = field.type === "percent" ? field.max * 100 : field.max;
+          const step = field.type === "percent" ? Math.max(1, field.step * 100) : field.step;
+          return `
+            <label class="generate-field" title="${escapeHtml(field.tip)}">
+              <span>${escapeHtml(field.label)}</span>
+              <input type="number" data-generate-setting="${escapeHtml(field.key)}" data-setting-type="${field.type}" min="${min}" max="${max}" step="${step}" value="${value}">
+            </label>
+          `;
+        }).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function renderGenerateControls(container, state, uiState = {}) {
+  const settings = normalizeGenerateSettings(state.generateSettings);
+  const source = analyzeGenerateSource(state);
+  const status = statusOf(state);
+  const search = uiState.search ?? "";
+  const filter = uiState.filter ?? "all";
+  const sort = uiState.sort ?? "name";
+  const files = (uiState.folderFiles ?? []).filter((file) => file.status === "valid");
+  const visibleFiles = files
+    .filter((file) => {
+      const nameMatch = file.name.toLowerCase().includes(search.toLowerCase());
+      const statusMatch = filter === "all" || status === filter;
+      return nameMatch && statusMatch;
+    })
+    .sort((a, b) => sort === "id" ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.name.localeCompare(b.name));
+
+  container.innerHTML = `
+    <section class="control-section">
+      <div class="section-heading"><h2>Generate Levels</h2><span>${escapeHtml(status)}</span></div>
+      <div class="generate-level-tools">
+        <input id="generateLevelSearch" type="search" placeholder="Search level" value="${escapeHtml(search)}">
+        <select id="generateStatusFilter">
+          ${["all", "Not Generated", "Generated", "Modified", "Error"].map((value) => `<option value="${escapeHtml(value)}" ${filter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+        </select>
+        <select id="generateSortSelect">
+          <option value="name" ${sort === "name" ? "selected" : ""}>Sort by name</option>
+          <option value="id" ${sort === "id" ? "selected" : ""}>Sort by level ID</option>
+        </select>
+      </div>
+      <div class="generate-level-list">
+        <button class="generate-level-row active" type="button" data-generate-current-level>
+          <strong>${escapeHtml(state.fileName ?? "untitled-level.json")}</strong>
+          <span>${escapeHtml(status)} · current</span>
+        </button>
+        ${visibleFiles.map((file) => `
+          <button class="generate-level-row" type="button" data-generate-open-file="${escapeHtml(file.name)}">
+            <strong>${escapeHtml(file.name)}</strong>
+            <span>Loaded from folder</span>
+          </button>
+        `).join("")}
+        ${files.length === 0 ? `<div class="generate-empty">Open a folder in DataJson to list more levels.</div>` : ""}
+      </div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Source Data</h2><span>Read only</span></div>
+      <div class="generate-source-grid">
+        <div><span>Layers</span><strong>${source.stats.layers}</strong></div>
+        <div><span>Trays</span><strong>${source.stats.trays}</strong></div>
+        <div><span>Need</span><strong>${source.stats.totalRequired}</strong></div>
+        <div><span>Valid Slots</span><strong>${source.stats.totalValidSlots}</strong></div>
+      </div>
+      <div class="generate-source-note">Path, tray, start, delivery, priority and element data are locked here. Edit source in LevelDes.</div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Distribution</h2><span>Seeded</span></div>
+      <div class="generate-field-grid">
+        <label class="generate-field"><span>Seed</span><input type="number" data-generate-setting="seed" min="0" step="1" value="${settings.seed}"></label>
+        <label class="generate-field"><span>Retries</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
+        <label class="generate-field wide"><span>Multi Branch</span>
+          <select data-generate-setting="multiBranchMode">
+            ${["balanced", "spread", "clustered"].map((value) => `<option value="${value}" ${settings.multiBranchMode === value ? "selected" : ""}>${value}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Difficulty</h2><span>Preset</span></div>
+      <div class="generate-preset-list">
+        ${Object.keys(GENERATE_PRESETS).map((preset) => `<button class="generate-preset ${settings.difficultyPreset === preset ? "active" : ""}" type="button" data-generate-preset="${preset}">${preset}</button>`).join("")}
+      </div>
+      ${["Distribution", "Tail Pressure", "Progression", "Noise", "Item & Route", "Collision"].map((group) => settingsGroupHtml(settings, group)).join("")}
+      <div class="generate-field-grid">
+        <label class="generate-field wide"><span>Pressure Curve</span>
+          <select data-generate-setting="pressureCurve">${["Flat", "Ramp", "Sawtooth", "PeakLate"].map((value) => `<option value="${value}" ${settings.pressureCurve === value ? "selected" : ""}>${value}</option>`).join("")}</select>
+        </label>
+      </div>
+    </section>
+  `;
+}
+
+function renderGenerateResults(container, state, result = null) {
+  const source = result?.source ?? analyzeGenerateSource(state);
+  const meta = result?.meta ?? state.generationMeta ?? {};
+  const issues = result?.issues?.length ? result.issues : source.issues;
+  const status = result?.ok ? "Preview Ready" : statusOf(state);
+  const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
+  container.innerHTML = `
+    <header class="panel-header">
+      <div class="panel-title"><span class="panel-accent green"></span><div><h2>Generate Result</h2><p>${escapeHtml(status)}</p></div></div>
+      <span class="generate-status-badge ${escapeHtml(status.toLowerCase().replaceAll(" ", "-"))}">${escapeHtml(status)}</span>
+    </header>
+    <div class="generate-result-scroll">
+      <section class="generate-result-card">
+        <header><h3>Item Result</h3><span>${totalGenerated}/${source.stats.totalRequired}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Required</span><strong>${source.stats.totalRequired}</strong></div>
+          <div><span>Generated</span><strong>${totalGenerated}</strong></div>
+          <div><span>Missing</span><strong>${Math.max(0, source.stats.totalRequired - totalGenerated)}</strong></div>
+          <div><span>Branches</span><strong>${meta.branchCount ?? "-"}</strong></div>
+        </div>
+      </section>
+      <section class="generate-result-card">
+        <header><h3>Difficulty Metrics</h3><span>${meta.generatorVersion ?? "draft"}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Clusters</span><strong>${meta.clusterCount ?? "-"}</strong></div>
+          <div><span>Cluster Ratio</span><strong>${Number.isFinite(meta.actualClusterRatio) ? formatPercent(meta.actualClusterRatio) : "-"}</strong></div>
+          <div><span>Avg Tail</span><strong>${meta.avgTailLength ?? "-"}</strong></div>
+          <div><span>Slots</span><strong>${source.stats.totalValidSlots}</strong></div>
+        </div>
+      </section>
+      <section class="generate-result-card">
+        <header><h3>Warnings & Errors</h3><span>${issues.length}</span></header>
+        <div class="generate-issue-list">${issueRows(issues)}</div>
+      </section>
+    </div>
+  `;
+}
+
+
 // ---- js/ui/toolbar.js ----
 
 function renderToolbar(editor, elements) {
@@ -4729,24 +5524,29 @@ function activateTab(tab, editorData, elements) {
   editorData.tab = tab;
   document.querySelectorAll("[data-tab]").forEach((button) => button.classList.toggle("active", button.dataset.tab === tab));
   const isLevel = tab === "level";
+  const isGenerate = tab === "generate";
   const isPlayable = tab === "playable";
   const isJson = tab === "json";
   elements.levelWorkspace.classList.toggle("hidden", isPlayable);
   elements.playableWorkspace.classList.toggle("hidden", !isPlayable);
   document.querySelectorAll(".level-rail-content").forEach((element) => element.classList.toggle("hidden", !isLevel));
   elements.jsonFolderCard.classList.toggle("hidden", !isJson);
-  elements.levelRightRail.classList.toggle("json-mode", isJson);
-  elements.canvasArea.classList.toggle("read-only", isJson);
-  elements.gridBoard.setAttribute("aria-readonly", String(isJson));
+  elements.generateResultCard?.classList.toggle("hidden", !isGenerate);
+  elements.levelRightRail.classList.toggle("json-mode", isJson || isGenerate);
+  elements.canvasArea.classList.toggle("read-only", isJson || isGenerate);
+  elements.gridBoard.setAttribute("aria-readonly", String(isJson || isGenerate));
   elements.levelControls.classList.toggle("hidden", !isLevel);
+  elements.generateControls?.classList.toggle("hidden", !isGenerate);
   elements.playableControls.classList.toggle("hidden", !isPlayable);
   elements.jsonControls.classList.toggle("hidden", !isJson);
   elements.levelActions.classList.toggle("hidden", !isLevel);
+  elements.generateActions?.classList.toggle("hidden", !isGenerate);
   elements.jsonActions.classList.toggle("hidden", !isJson);
   elements.levelLayerPicker.classList.toggle("hidden", isPlayable);
-  elements.levelLayerPicker.classList.toggle("read-only", isJson);
-  elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson));
+  elements.levelLayerPicker.classList.toggle("read-only", isJson || isGenerate);
+  elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson || isGenerate));
   if (isJson) elements.activeToolBadge.textContent = "Chỉ xem";
+  else if (isGenerate) elements.activeToolBadge.textContent = "Generate Preview";
   else if (isLevel) {
     const eraseMode = ERASE_MODE_LABELS[editorData.eraseMode] ? editorData.eraseMode : "smart";
     elements.activeToolBadge.textContent = editorData.tool === "erase"
@@ -4754,7 +5554,7 @@ function activateTab(tab, editorData, elements) {
     : TOOL_LABELS[editorData.tool];
   }
   elements.placeholderView.classList.add("hidden");
-  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
+  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isGenerate ? "Generate / Auto Generator Level" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
 }
 
 
@@ -7230,18 +8030,23 @@ function createPlayableController({ getLevel, elements, onExitEditor }) {
 
 
 
+
+
+
+
 const byId = (id) => document.getElementById(id);
 const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
   "zoomOutBtn", "zoomInBtn", "zoomResetBtn", "zoomValue",
   "layerSelect", "toggleActiveLayerVisibilityBtn", "mysteryFruitDebugBtn", "deleteActiveLayerBtn", "contextPanelTitle", "contextPanelSubtitle", "contextPanelCloseBtn", "trayPanel", "dataSummary", "validationList", "inspectorBody", "inspectorDetails",
-  "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
-  "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
+  "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard", "generateResultCard",
+  "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "generateControls", "playableControls", "jsonControls", "levelActions", "generateActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
   "playModeSelect", "playableSettings", "playTrainSpeedInput", "playTrayFillSpeedInput", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playReviveBtn", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
-  "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
+  "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus",
+  "generateValidateBtn", "generatePreviewBtn", "generateApplyBtn", "generateAndApplyBtn", "generateResetBtn", "generateSaveBtn", "generateExportBtn"
 ].map((id) => [id, byId(id)]));
 
 const editor = new EditorState(loadSavedState());
@@ -7260,6 +8065,10 @@ const folderFileState = {
 let folderFiles = [];
 let fileDirty = editor.data.fileDirty ?? !editor.data.sourceFileName;
 let activePaletteCategory = "item";
+let generatePreviewState = null;
+let generateLastResult = null;
+let generateLastAppliedBackup = null;
+const generateUiState = { search: "", filter: "all", sort: "name" };
 const playable = createPlayableController({
   getLevel: () => editor.data,
   elements,
@@ -7269,7 +8078,7 @@ initPanelResizers();
 const gridIndexTooltip = createGridIndexTooltip({
   grid: elements.gridBoard,
   getGrid: () => editor.data.grid,
-  isEnabled: () => ["level", "json"].includes(editor.data.tab)
+  isEnabled: () => ["level", "generate", "json"].includes(editor.data.tab)
 });
 const editorCamera = new CameraController({
   onChange: updateZoomUi
@@ -7286,6 +8095,7 @@ function updateZoomUi() {
 function switchTab(tab) {
   if (tab === "playable") gridIndexTooltip.hide();
   if (editor.data.tab === "playable" && tab !== "playable") playable.leave();
+  if (fileDirty && editor.data.tab !== tab && ["level", "generate", "json"].includes(tab) && !confirm("Level hiện tại có thay đổi chưa lưu. Chuyển tab?")) return;
   activateTab(tab, editor.data, elements);
   if (tab === "playable") playable.enter();
   requestAnimationFrame(() => {
@@ -7416,6 +8226,7 @@ function oneWayDraftBadge(draft) {
 
 function renderAll() {
   const layer = editor.activeLayer;
+  editor.data.generateSettings = normalizeGenerateSettings(editor.data.generateSettings);
   const paletteObjects = objectsByCategory(activePaletteCategory);
   renderObjectPalette(elements.assetPalette, paletteObjects, editor.data.selectedAssetId, {
     emptyLabel: activePaletteCategory === "element" ? "Element sẽ được bổ sung ở bước tiếp theo." : `Chưa có ${activePaletteCategory}.`,
@@ -7430,7 +8241,8 @@ function renderAll() {
     button.setAttribute("aria-selected", String(active));
     button.tabIndex = active ? 0 : -1;
   });
-  renderGrid(elements.gridBoard, editor.data);
+  const gridState = editor.data.tab === "generate" && generatePreviewState ? generatePreviewState : editor.data;
+  renderGrid(elements.gridBoard, gridState);
   renderLayers();
   if (editor.data.selectedCell) {
     elements.trayPanel.classList.add("inspector-mode");
@@ -7468,8 +8280,10 @@ function renderAll() {
   elements.mapHeightInput.value = String(editor.data.grid.rows);
   elements.gridMeta.textContent = `${editor.data.grid.columns} × ${editor.data.grid.rows} · ${layer.name} · chỉ hoa quả thay đổi`;
   if (editor.data.tab === "level") elements.topbarEyebrow.textContent = "Level Design / Layer fruit đang chọn";
+  if (editor.data.tab === "generate") elements.topbarEyebrow.textContent = generatePreviewState ? "Generate / Preview chưa apply" : "Generate / Auto Generator Level";
   elements.boardWrap.classList.remove("hidden-layer");
   elements.assetCount.textContent = `${paletteObjects.length} ${activePaletteCategory}`;
+  renderGenerateWorkspace();
   renderJsonWorkspace();
   requestAnimationFrame(fitBoardToCanvas);
   persist();
@@ -7479,6 +8293,11 @@ function mutate(mutator) {
   fileDirty = true;
   editor.data.fileDirty = true;
   return editor.mutate(mutator);
+}
+
+function clearGeneratePreview() {
+  generatePreviewState = null;
+  generateLastResult = null;
 }
 
 function renderJsonWorkspace() {
@@ -7891,6 +8710,117 @@ document.querySelector(".tabs").addEventListener("click", (event) => {
   const button = event.target.closest("[data-tab]");
   if (button) switchTab(button.dataset.tab);
 });
+
+function setGenerateSetting(key, value, type = "text") {
+  const current = normalizeGenerateSettings(editor.data.generateSettings);
+  const nextValue = type === "percent" ? Number(value) / 100 : value;
+  editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue });
+  clearGeneratePreview();
+  editor.notify();
+}
+
+function validateGenerateSourceOnly() {
+  const source = analyzeGenerateSource(editor.data);
+  generateLastResult = { ok: source.valid, source, settings: normalizeGenerateSettings(editor.data.generateSettings), issues: source.issues };
+  renderAll();
+  showNotification(elements.toast, source.valid ? "Generate source hợp lệ." : `Generate source có ${source.issues.length} lỗi.`);
+  return source.valid;
+}
+
+function createGeneratePreviewResult({ silent = false } = {}) {
+  const result = generatePreview(editor.data, editor.data.generateSettings);
+  generateLastResult = result;
+  generatePreviewState = result.ok ? result.preview : null;
+  if (!result.ok) {
+    editor.data.generationMeta = { ...(editor.data.generationMeta ?? {}), status: "Error" };
+  }
+  renderAll();
+  if (!silent) {
+    showNotification(elements.toast, result.ok ? `Đã tạo preview ${result.generatedItems.length} item.` : `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+  }
+  return result;
+}
+
+function applyGeneratePreviewResult() {
+  if (!generatePreviewState) {
+    showNotification(elements.toast, "Chưa có preview để apply.");
+    return false;
+  }
+  generateLastAppliedBackup = structuredClone(editor.data);
+  const changed = mutate((state) => applyGeneratedPreview(state, generatePreviewState));
+  if (!changed) return false;
+  generatePreviewState = null;
+  generateLastResult = { ok: true, source: analyzeGenerateSource(editor.data), settings: editor.data.generateSettings, issues: [], generatedItems: editor.data.generatedItems, meta: editor.data.generationMeta };
+  renderAll();
+  showNotification(elements.toast, "Đã apply generated items vào level hiện tại.");
+  return true;
+}
+
+elements.generateControls.addEventListener("input", (event) => {
+  const search = event.target.closest("#generateLevelSearch");
+  if (!search) return;
+  generateUiState.search = search.value;
+  renderAll();
+});
+
+elements.generateControls.addEventListener("change", (event) => {
+  const filter = event.target.closest("#generateStatusFilter");
+  if (filter) {
+    generateUiState.filter = filter.value;
+    renderAll();
+    return;
+  }
+  const sort = event.target.closest("#generateSortSelect");
+  if (sort) {
+    generateUiState.sort = sort.value;
+    renderAll();
+    return;
+  }
+  const setting = event.target.closest("[data-generate-setting]");
+  if (setting) setGenerateSetting(setting.dataset.generateSetting, setting.value, setting.dataset.settingType);
+});
+
+elements.generateControls.addEventListener("click", async (event) => {
+  const preset = event.target.closest("[data-generate-preset]");
+  if (preset) {
+    editor.data.generateSettings = applyGeneratePreset(editor.data.generateSettings, preset.dataset.generatePreset);
+    clearGeneratePreview();
+    editor.notify();
+    return;
+  }
+  const fileButton = event.target.closest("[data-generate-open-file]");
+  if (fileButton) {
+    const name = fileButton.dataset.generateOpenFile;
+    const entry = folderFiles.find((file) => file.name === name);
+    if (!entry) return;
+    if (!canReplaceCurrentLevel()) return;
+    openFolderDataEntry(entry);
+  }
+});
+
+elements.generateValidateBtn.addEventListener("click", validateGenerateSourceOnly);
+elements.generatePreviewBtn.addEventListener("click", () => createGeneratePreviewResult());
+elements.generateApplyBtn.addEventListener("click", applyGeneratePreviewResult);
+elements.generateAndApplyBtn.addEventListener("click", () => {
+  const result = createGeneratePreviewResult({ silent: true });
+  if (result.ok) applyGeneratePreviewResult();
+  else showNotification(elements.toast, `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+});
+elements.generateResetBtn.addEventListener("click", () => {
+  const backup = generateLastAppliedBackup;
+  if (!backup) {
+    showNotification(elements.toast, "Chưa có bản apply gần nhất để reset.");
+    return;
+  }
+  mutate((state) => resetGeneratedItems(state, backup));
+  generateLastAppliedBackup = null;
+  clearGeneratePreview();
+  renderAll();
+  showNotification(elements.toast, "Đã reset generated items về trước lần apply gần nhất.");
+});
+elements.generateSaveBtn.addEventListener("click", downloadCurrentLevel);
+elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);
+
 document.querySelector(".tool-list").addEventListener("click", (event) => {
   const eraseAction = event.target.closest("[data-erase-action]");
   if (eraseAction?.dataset.eraseAction === "all") {
@@ -8111,6 +9041,15 @@ function placeInspectorElement(assetId) {
   else if (result?.reason === "bridge-outside-grid") showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
   else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng 1 ô xung quanh.");
   else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
+}
+
+function renderGenerateWorkspace() {
+  if (!elements.generateControls || !elements.generateResultCard) return;
+  renderGenerateControls(elements.generateControls, editor.data, { ...generateUiState, folderFiles });
+  renderGenerateResults(elements.generateResultCard, editor.data, generateLastResult);
+  const hasPreview = Boolean(generatePreviewState);
+  elements.generateApplyBtn.disabled = !hasPreview;
+  elements.generateResetBtn.disabled = !generateLastAppliedBackup;
 }
 
 elements.trayPanel.addEventListener("click", (event) => {
@@ -8519,6 +9458,8 @@ function openImportedData(raw, fileName) {
   editor.history.clear();
   fileDirty = false;
   data.fileDirty = false;
+  clearGeneratePreview();
+  generateLastAppliedBackup = null;
   editor.replace(data);
   switchTab("level");
   const report = validateLevel(data);
@@ -8582,6 +9523,8 @@ elements.newLevelBtn.addEventListener("click", () => {
   if (!canReplaceCurrentLevel()) return;
   editor.history.clear();
   fileDirty = true;
+  clearGeneratePreview();
+  generateLastAppliedBackup = null;
   editor.replace(createInitialState());
   renderAll();
 });
@@ -8744,7 +9687,7 @@ editor.events.on("change", renderAll);
 new ResizeObserver(fitBoardToCanvas).observe(elements.canvasArea);
 renderAll();
 updateZoomUi();
-switchTab(["playable", "json"].includes(editor.data.tab) ? editor.data.tab : "level");
+switchTab(["generate", "playable", "json"].includes(editor.data.tab) ? editor.data.tab : "level");
 restoreSavedFolder();
 
 })();

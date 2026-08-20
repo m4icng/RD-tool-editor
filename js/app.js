@@ -52,6 +52,10 @@ import { createPlayableController, validatePlayableLevel } from "./gameplay/play
 import { renderDataSummary } from "./ui/data-summary.js";
 import { initPanelResizers } from "./ui/panel-resizer.js";
 import { createGridIndexTooltip } from "./ui/grid-index-tooltip.js";
+import { applyGeneratePreset, normalizeGenerateSettings } from "./generate/generate-settings.js";
+import { analyzeGenerateSource } from "./generate/generate-source.js";
+import { applyGeneratedPreview, generatePreview, resetGeneratedItems } from "./generate/generator-engine.js";
+import { renderGenerateControls, renderGenerateResults } from "./ui/generate-panel.js";
 import {
   addTrayLayer,
   changeTrayLayerRecipe,
@@ -72,13 +76,14 @@ const elements = Object.fromEntries([
   "gridBoard", "boardWrap", "canvasArea", "mapWidthInput", "mapHeightInput", "gridMeta", "assetPalette", "assetCount",
   "zoomOutBtn", "zoomInBtn", "zoomResetBtn", "zoomValue",
   "layerSelect", "toggleActiveLayerVisibilityBtn", "mysteryFruitDebugBtn", "deleteActiveLayerBtn", "contextPanelTitle", "contextPanelSubtitle", "contextPanelCloseBtn", "trayPanel", "dataSummary", "validationList", "inspectorBody", "inspectorDetails",
-  "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard",
-  "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "playableControls", "jsonControls", "levelActions", "jsonActions",
+  "undoBtn", "redoBtn", "activeToolBadge", "topbarEyebrow", "levelWorkspace", "playableWorkspace", "levelLayerPicker", "levelRightRail", "jsonFolderCard", "generateResultCard",
+  "placeholderView", "placeholderIcon", "placeholderTitle", "placeholderCopy", "levelControls", "generateControls", "playableControls", "jsonControls", "levelActions", "generateActions", "jsonActions",
   "playableGridBoard", "playableBoardWrap", "playableCanvasArea", "playableGridMeta", "playableStatusBadge", "playableStatusCopy", "playableBlocker",
   "playModeSelect", "playableSettings", "playTrainSpeedInput", "playTrayFillSpeedInput", "playPauseBtn", "playRestartBtn", "playableShovelBtn", "playableDirectionHint", "playableCargoCount", "playableCargo",
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playReviveBtn", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
-  "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus"
+  "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus",
+  "generateValidateBtn", "generatePreviewBtn", "generateApplyBtn", "generateAndApplyBtn", "generateResetBtn", "generateSaveBtn", "generateExportBtn"
 ].map((id) => [id, byId(id)]));
 
 const editor = new EditorState(loadSavedState());
@@ -97,6 +102,10 @@ const folderFileState = {
 let folderFiles = [];
 let fileDirty = editor.data.fileDirty ?? !editor.data.sourceFileName;
 let activePaletteCategory = "item";
+let generatePreviewState = null;
+let generateLastResult = null;
+let generateLastAppliedBackup = null;
+const generateUiState = { search: "", filter: "all", sort: "name" };
 const playable = createPlayableController({
   getLevel: () => editor.data,
   elements,
@@ -106,7 +115,7 @@ initPanelResizers();
 const gridIndexTooltip = createGridIndexTooltip({
   grid: elements.gridBoard,
   getGrid: () => editor.data.grid,
-  isEnabled: () => ["level", "json"].includes(editor.data.tab)
+  isEnabled: () => ["level", "generate", "json"].includes(editor.data.tab)
 });
 const editorCamera = new CameraController({
   onChange: updateZoomUi
@@ -123,6 +132,7 @@ function updateZoomUi() {
 function switchTab(tab) {
   if (tab === "playable") gridIndexTooltip.hide();
   if (editor.data.tab === "playable" && tab !== "playable") playable.leave();
+  if (fileDirty && editor.data.tab !== tab && ["level", "generate", "json"].includes(tab) && !confirm("Level hiện tại có thay đổi chưa lưu. Chuyển tab?")) return;
   activateTab(tab, editor.data, elements);
   if (tab === "playable") playable.enter();
   requestAnimationFrame(() => {
@@ -253,6 +263,7 @@ function oneWayDraftBadge(draft) {
 
 function renderAll() {
   const layer = editor.activeLayer;
+  editor.data.generateSettings = normalizeGenerateSettings(editor.data.generateSettings);
   const paletteObjects = objectsByCategory(activePaletteCategory);
   renderObjectPalette(elements.assetPalette, paletteObjects, editor.data.selectedAssetId, {
     emptyLabel: activePaletteCategory === "element" ? "Element sẽ được bổ sung ở bước tiếp theo." : `Chưa có ${activePaletteCategory}.`,
@@ -267,7 +278,8 @@ function renderAll() {
     button.setAttribute("aria-selected", String(active));
     button.tabIndex = active ? 0 : -1;
   });
-  renderGrid(elements.gridBoard, editor.data);
+  const gridState = editor.data.tab === "generate" && generatePreviewState ? generatePreviewState : editor.data;
+  renderGrid(elements.gridBoard, gridState);
   renderLayers();
   if (editor.data.selectedCell) {
     elements.trayPanel.classList.add("inspector-mode");
@@ -305,8 +317,10 @@ function renderAll() {
   elements.mapHeightInput.value = String(editor.data.grid.rows);
   elements.gridMeta.textContent = `${editor.data.grid.columns} × ${editor.data.grid.rows} · ${layer.name} · chỉ hoa quả thay đổi`;
   if (editor.data.tab === "level") elements.topbarEyebrow.textContent = "Level Design / Layer fruit đang chọn";
+  if (editor.data.tab === "generate") elements.topbarEyebrow.textContent = generatePreviewState ? "Generate / Preview chưa apply" : "Generate / Auto Generator Level";
   elements.boardWrap.classList.remove("hidden-layer");
   elements.assetCount.textContent = `${paletteObjects.length} ${activePaletteCategory}`;
+  renderGenerateWorkspace();
   renderJsonWorkspace();
   requestAnimationFrame(fitBoardToCanvas);
   persist();
@@ -316,6 +330,11 @@ function mutate(mutator) {
   fileDirty = true;
   editor.data.fileDirty = true;
   return editor.mutate(mutator);
+}
+
+function clearGeneratePreview() {
+  generatePreviewState = null;
+  generateLastResult = null;
 }
 
 function renderJsonWorkspace() {
@@ -728,6 +747,117 @@ document.querySelector(".tabs").addEventListener("click", (event) => {
   const button = event.target.closest("[data-tab]");
   if (button) switchTab(button.dataset.tab);
 });
+
+function setGenerateSetting(key, value, type = "text") {
+  const current = normalizeGenerateSettings(editor.data.generateSettings);
+  const nextValue = type === "percent" ? Number(value) / 100 : value;
+  editor.data.generateSettings = normalizeGenerateSettings({ ...current, [key]: nextValue });
+  clearGeneratePreview();
+  editor.notify();
+}
+
+function validateGenerateSourceOnly() {
+  const source = analyzeGenerateSource(editor.data);
+  generateLastResult = { ok: source.valid, source, settings: normalizeGenerateSettings(editor.data.generateSettings), issues: source.issues };
+  renderAll();
+  showNotification(elements.toast, source.valid ? "Generate source hợp lệ." : `Generate source có ${source.issues.length} lỗi.`);
+  return source.valid;
+}
+
+function createGeneratePreviewResult({ silent = false } = {}) {
+  const result = generatePreview(editor.data, editor.data.generateSettings);
+  generateLastResult = result;
+  generatePreviewState = result.ok ? result.preview : null;
+  if (!result.ok) {
+    editor.data.generationMeta = { ...(editor.data.generationMeta ?? {}), status: "Error" };
+  }
+  renderAll();
+  if (!silent) {
+    showNotification(elements.toast, result.ok ? `Đã tạo preview ${result.generatedItems.length} item.` : `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+  }
+  return result;
+}
+
+function applyGeneratePreviewResult() {
+  if (!generatePreviewState) {
+    showNotification(elements.toast, "Chưa có preview để apply.");
+    return false;
+  }
+  generateLastAppliedBackup = structuredClone(editor.data);
+  const changed = mutate((state) => applyGeneratedPreview(state, generatePreviewState));
+  if (!changed) return false;
+  generatePreviewState = null;
+  generateLastResult = { ok: true, source: analyzeGenerateSource(editor.data), settings: editor.data.generateSettings, issues: [], generatedItems: editor.data.generatedItems, meta: editor.data.generationMeta };
+  renderAll();
+  showNotification(elements.toast, "Đã apply generated items vào level hiện tại.");
+  return true;
+}
+
+elements.generateControls.addEventListener("input", (event) => {
+  const search = event.target.closest("#generateLevelSearch");
+  if (!search) return;
+  generateUiState.search = search.value;
+  renderAll();
+});
+
+elements.generateControls.addEventListener("change", (event) => {
+  const filter = event.target.closest("#generateStatusFilter");
+  if (filter) {
+    generateUiState.filter = filter.value;
+    renderAll();
+    return;
+  }
+  const sort = event.target.closest("#generateSortSelect");
+  if (sort) {
+    generateUiState.sort = sort.value;
+    renderAll();
+    return;
+  }
+  const setting = event.target.closest("[data-generate-setting]");
+  if (setting) setGenerateSetting(setting.dataset.generateSetting, setting.value, setting.dataset.settingType);
+});
+
+elements.generateControls.addEventListener("click", async (event) => {
+  const preset = event.target.closest("[data-generate-preset]");
+  if (preset) {
+    editor.data.generateSettings = applyGeneratePreset(editor.data.generateSettings, preset.dataset.generatePreset);
+    clearGeneratePreview();
+    editor.notify();
+    return;
+  }
+  const fileButton = event.target.closest("[data-generate-open-file]");
+  if (fileButton) {
+    const name = fileButton.dataset.generateOpenFile;
+    const entry = folderFiles.find((file) => file.name === name);
+    if (!entry) return;
+    if (!canReplaceCurrentLevel()) return;
+    openFolderDataEntry(entry);
+  }
+});
+
+elements.generateValidateBtn.addEventListener("click", validateGenerateSourceOnly);
+elements.generatePreviewBtn.addEventListener("click", () => createGeneratePreviewResult());
+elements.generateApplyBtn.addEventListener("click", applyGeneratePreviewResult);
+elements.generateAndApplyBtn.addEventListener("click", () => {
+  const result = createGeneratePreviewResult({ silent: true });
+  if (result.ok) applyGeneratePreviewResult();
+  else showNotification(elements.toast, `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+});
+elements.generateResetBtn.addEventListener("click", () => {
+  const backup = generateLastAppliedBackup;
+  if (!backup) {
+    showNotification(elements.toast, "Chưa có bản apply gần nhất để reset.");
+    return;
+  }
+  mutate((state) => resetGeneratedItems(state, backup));
+  generateLastAppliedBackup = null;
+  clearGeneratePreview();
+  renderAll();
+  showNotification(elements.toast, "Đã reset generated items về trước lần apply gần nhất.");
+});
+elements.generateSaveBtn.addEventListener("click", downloadCurrentLevel);
+elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);
+
 document.querySelector(".tool-list").addEventListener("click", (event) => {
   const eraseAction = event.target.closest("[data-erase-action]");
   if (eraseAction?.dataset.eraseAction === "all") {
@@ -948,6 +1078,15 @@ function placeInspectorElement(assetId) {
   else if (result?.reason === "bridge-outside-grid") showNotification(elements.toast, "Bridge cần đủ 3 ô ngang.");
   else if (result?.reason === "bridge-item-overlap") showNotification(elements.toast, "Bridge không cho phép Item trong vùng 1 ô xung quanh.");
   else showNotification(elements.toast, `Đã thêm ${assetId === "gate" ? "Gate" : assetId === "count-barrier" ? "Count Barrier" : assetId === "tunnel" ? "Tunnel" : assetId === "one-way" ? "One Way" : "Bridge"}`);
+}
+
+function renderGenerateWorkspace() {
+  if (!elements.generateControls || !elements.generateResultCard) return;
+  renderGenerateControls(elements.generateControls, editor.data, { ...generateUiState, folderFiles });
+  renderGenerateResults(elements.generateResultCard, editor.data, generateLastResult);
+  const hasPreview = Boolean(generatePreviewState);
+  elements.generateApplyBtn.disabled = !hasPreview;
+  elements.generateResetBtn.disabled = !generateLastAppliedBackup;
 }
 
 elements.trayPanel.addEventListener("click", (event) => {
@@ -1356,6 +1495,8 @@ function openImportedData(raw, fileName) {
   editor.history.clear();
   fileDirty = false;
   data.fileDirty = false;
+  clearGeneratePreview();
+  generateLastAppliedBackup = null;
   editor.replace(data);
   switchTab("level");
   const report = validateLevel(data);
@@ -1419,6 +1560,8 @@ elements.newLevelBtn.addEventListener("click", () => {
   if (!canReplaceCurrentLevel()) return;
   editor.history.clear();
   fileDirty = true;
+  clearGeneratePreview();
+  generateLastAppliedBackup = null;
   editor.replace(createInitialState());
   renderAll();
 });
@@ -1581,5 +1724,5 @@ editor.events.on("change", renderAll);
 new ResizeObserver(fitBoardToCanvas).observe(elements.canvasArea);
 renderAll();
 updateZoomUi();
-switchTab(["playable", "json"].includes(editor.data.tab) ? editor.data.tab : "level");
+switchTab(["generate", "playable", "json"].includes(editor.data.tab) ? editor.data.tab : "level");
 restoreSavedFolder();

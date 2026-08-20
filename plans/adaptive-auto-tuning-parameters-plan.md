@@ -114,6 +114,9 @@ Level Data
 - `generator-engine.js` dùng derived parameters cho từng level trước mỗi attempt.
 - Auto Tuner cập nhật `repairIntensity` theo lỗi retryable: tail pressure, release pressure, spawn trap và quota mismatch.
 - Generation meta lưu `derivedParameters`, `autoTuningAttempt` và `autoTuningProfile` để panel kết quả hiển thị.
+- Generate preview dùng đúng danh sách layer của preview state, nên xem được các layer item sinh ra thay vì chỉ layer nguồn đầu tiên.
+- Generator partition `Global Item Pool` sang các Map Item Layer riêng; không map tuyến tính `Tray Layer -> Item Layer`.
+- Noise/carry-over được tạo bằng cách đưa một phần demand của tray layer tương lai vào map layer sớm hơn, trong khi tổng itemId toàn map vẫn khớp tray.
 - Không thay đổi Path, Tray, Element, schema export JSON hoặc hard rule quota hiện có.
 
 ## Change History
@@ -122,3 +125,5 @@ Level Data
 - 2026-08-20: Chuyển Generate Settings từ các thông số cố định sang Designer Intent + Auto Derived Parameters.
 - 2026-08-20: Thêm adaptive analyzer/estimator/tuner và nối vào retry loop của Generator.
 - 2026-08-20: Panel Generate hiển thị tham số dẫn xuất đọc-only cho từng level và kết quả tuning sau generate.
+- 2026-08-20: Sửa Generate preview layer picker đọc từ preview state để xem được toàn bộ layer đã sinh.
+- 2026-08-20: Sửa generator không còn sinh tuyến tính theo tray layer; thêm global demand partition với noise/carry-over từ future tray demand.

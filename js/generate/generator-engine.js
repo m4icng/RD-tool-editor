@@ -143,31 +143,118 @@ function quotaKey(layerIndex, itemId) {
   return `${layerIndex}:${itemId}`;
 }
 
+function deriveGeneratedMapLayerCount(state, source) {
+  const explicitCount = Math.max(1, state.layers?.length ?? 1);
+  const trayLayerCount = new Set(source.requirements.map((entry) => entry.layerIndex)).size;
+  const densityCount = Math.max(1, Math.ceil((source.stats.totalRequired || 1) / 32));
+  const autoCount = Math.max(1, Math.min(8, densityCount, Math.max(1, trayLayerCount)));
+  if (explicitCount > 1 && explicitCount < trayLayerCount) return explicitCount;
+  return autoCount;
+}
+
+function generatedLayerBudgets(total, layerCount) {
+  if (layerCount <= 1) return [total];
+  const weights = Array.from({ length: layerCount }, (_, index) => 1 + index / Math.max(1, layerCount - 1) * 0.22);
+  const weightSum = weights.reduce((sum, value) => sum + value, 0);
+  const budgets = weights.map((weight) => Math.floor(total * weight / weightSum));
+  let remainder = total - budgets.reduce((sum, value) => sum + value, 0);
+  for (let index = budgets.length - 1; remainder > 0; index = (index - 1 + budgets.length) % budgets.length) {
+    budgets[index] += 1;
+    remainder -= 1;
+  }
+  return budgets;
+}
+
+function takeDemandFromPool(pool, amount, predicate, sortEntries) {
+  const taken = [];
+  let remaining = amount;
+  const candidates = pool
+    .filter((entry) => entry.remaining > 0 && predicate(entry))
+    .sort(sortEntries);
+  candidates.forEach((entry) => {
+    if (remaining <= 0) return;
+    const count = Math.min(entry.remaining, remaining);
+    entry.remaining -= count;
+    remaining -= count;
+    taken.push({ ...entry, amount: count });
+  });
+  return { taken, missing: remaining };
+}
+
+function buildAdaptiveLayerRequirements(state, source, settings) {
+  const layerCount = deriveGeneratedMapLayerCount(state, source);
+  const budgets = generatedLayerBudgets(source.stats.totalRequired, layerCount);
+  const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.25);
+  const pool = source.requirements
+    .map((entry) => ({ ...entry, sourceTrayLayerIndex: entry.layerIndex, remaining: entry.amount }))
+    .sort((a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId);
+  const planned = [];
+  budgets.forEach((budget, mapLayerIndex) => {
+    const remainingTotal = pool.reduce((sum, entry) => sum + entry.remaining, 0);
+    const target = mapLayerIndex === budgets.length - 1 ? remainingTotal : Math.min(budget, remainingTotal);
+    if (target <= 0) return;
+    const earliestTrayLayer = pool.find((entry) => entry.remaining > 0)?.sourceTrayLayerIndex ?? 0;
+    const noiseTarget = mapLayerIndex === budgets.length - 1
+      ? 0
+      : Math.min(target, Math.round(target * noiseRatio));
+    const requiredTarget = target - noiseTarget;
+    const required = takeDemandFromPool(
+      pool,
+      requiredTarget,
+      () => true,
+      (a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId
+    );
+    const future = takeDemandFromPool(
+      pool,
+      noiseTarget,
+      (entry) => entry.sourceTrayLayerIndex > earliestTrayLayer + 1,
+      (a, b) => b.sourceTrayLayerIndex - a.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId
+    );
+    const fallback = future.missing > 0
+      ? takeDemandFromPool(
+        pool,
+        future.missing,
+        () => true,
+        (a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId
+      ).taken
+      : [];
+    [...required.taken, ...future.taken, ...fallback].forEach((entry) => {
+      planned.push({
+        ...entry,
+        layerIndex: mapLayerIndex,
+        sourceTrayLayerIndex: entry.sourceTrayLayerIndex,
+        amount: entry.amount
+      });
+    });
+  });
+  pool.filter((entry) => entry.remaining > 0).forEach((entry) => {
+    planned.push({ ...entry, layerIndex: layerCount - 1, amount: entry.remaining });
+    entry.remaining = 0;
+  });
+  return { layerCount, requirements: planned };
+}
+
 function quotaCountsFromRequirements(requirements) {
-  const totalByLayer = new Map();
-  const totalByLayerItem = new Map();
+  const totalByItem = new Map();
   let total = 0;
   requirements.forEach((entry) => {
     total += entry.amount;
-    totalByLayer.set(entry.layerIndex, (totalByLayer.get(entry.layerIndex) ?? 0) + entry.amount);
-    totalByLayerItem.set(quotaKey(entry.layerIndex, entry.itemId), (totalByLayerItem.get(quotaKey(entry.layerIndex, entry.itemId)) ?? 0) + entry.amount);
+    totalByItem.set(entry.itemId, (totalByItem.get(entry.itemId) ?? 0) + entry.amount);
   });
-  return { total, totalByLayer, totalByLayerItem };
+  return { total, totalByItem };
 }
 
 function quotaCountsFromGenerated(generatedItems) {
-  const totalByLayer = new Map();
-  const totalByLayerItem = new Map();
+  const totalByItem = new Map();
   const seenCells = new Set();
   const duplicateCells = [];
   generatedItems.forEach((entry) => {
-    totalByLayer.set(entry.layerIndex, (totalByLayer.get(entry.layerIndex) ?? 0) + 1);
-    totalByLayerItem.set(quotaKey(entry.layerIndex, entry.itemId), (totalByLayerItem.get(quotaKey(entry.layerIndex, entry.itemId)) ?? 0) + 1);
+    totalByItem.set(entry.itemId, (totalByItem.get(entry.itemId) ?? 0) + 1);
     const cellKey = quotaKey(entry.layerIndex, entry.pathIndex);
     if (seenCells.has(cellKey)) duplicateCells.push(entry.pathIndex);
     seenCells.add(cellKey);
   });
-  return { total: generatedItems.length, totalByLayer, totalByLayerItem, duplicateCells };
+  return { total: generatedItems.length, totalByItem, duplicateCells };
 }
 
 function validateGeneratedQuotas(generatedItems, source) {
@@ -181,26 +268,13 @@ function validateGeneratedQuotas(generatedItems, source) {
       suggestion: "Không áp dụng màn; kiểm tra ô hợp lệ hoặc giảm áp lực sinh."
     }));
   }
-  required.totalByLayer.forEach((amount, layerIndex) => {
-    const actual = generated.totalByLayer.get(layerIndex) ?? 0;
+  required.totalByItem.forEach((amount, itemId) => {
+    const actual = generated.totalByItem.get(itemId) ?? 0;
     if (actual !== amount) {
-      issues.push(createGeneratorIssue({
-        code: "LAYER_QUOTA_MISMATCH",
-        message: `Lớp ${layerIndex + 1} sinh ${actual}/${amount} vật phẩm.`,
-        layerIndex,
-        suggestion: "Giữ vật phẩm đúng lớp nguồn, không chuyển vật phẩm giữa các lớp."
-      }));
-    }
-  });
-  required.totalByLayerItem.forEach((amount, key) => {
-    const actual = generated.totalByLayerItem.get(key) ?? 0;
-    if (actual !== amount) {
-      const [layerIndex, itemId] = key.split(":").map(Number);
       issues.push(createGeneratorIssue({
         code: "ITEM_ID_QUOTA_MISMATCH",
-        message: `Lớp ${layerIndex + 1} mã vật phẩm ${itemId} sinh ${actual}/${amount}.`,
-        layerIndex,
-        suggestion: "Bộ sinh phải giữ đúng mã vật phẩm và số lượng từ khay nguồn."
+        message: `Mã vật phẩm ${itemId} sinh ${actual}/${amount}, không khớp tổng yêu cầu khay.`,
+        suggestion: "Bộ sinh phải giữ đúng tổng mã vật phẩm từ khay nguồn."
       }));
     }
   });
@@ -252,6 +326,7 @@ function generatedMetrics(generatedItems, settings, source) {
   const peakTailLength = Math.ceil(avgTailLength + settings.tailLengthVariance + Math.min(settings.maxClusterSizePerBranch, generatedItems.length) * itemDensity);
   const maxUnreleasedItems = estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClusterRatio, settings });
   const spawnTrapCount = generatedItems.filter((item) => item.spawnRisk).length;
+  const carryOverCount = generatedItems.filter((item) => Number(item.sourceTrayLayerIndex) > Number(item.layerIndex) + 1).length;
   const decisionPointFrequency = source.pathIndexes?.length ? (source.stats.priorityPoints ?? 0) / source.pathIndexes.length : 0;
   const loopRiskScore = generatedItems.length
     ? generatedItems.filter((item) => item.connectionCount <= 1).length / generatedItems.length
@@ -273,6 +348,9 @@ function generatedMetrics(generatedItems, settings, source) {
     maxReleaseDelay,
     unreleasedInventoryRatio: Number(unreleasedInventoryRatio.toFixed(3)),
     maxUnreleasedItems,
+    carryOverCount,
+    carryOverActualRatio: generatedItems.length ? Number((carryOverCount / generatedItems.length).toFixed(3)) : 0,
+    generatedMapLayerCount: byLayer.size,
     spawnTrapCount,
     decisionPointFrequency: Number(decisionPointFrequency.toFixed(3)),
     loopRiskScore: Number(loopRiskScore.toFixed(3)),
@@ -313,13 +391,14 @@ function validateDifficultyMetrics(meta, settings) {
 function generatePreviewAttempt(state, source, settings) {
   const random = createRandom(settings.seed);
   const next = structuredClone(state);
-  const maxLayerIndex = Math.max(0, ...source.requirements.map((entry) => entry.layerIndex));
+  const layerPlan = buildAdaptiveLayerRequirements(state, source, settings);
+  const maxLayerIndex = Math.max(0, layerPlan.layerCount - 1);
   ensureLayers(next, maxLayerIndex);
   clearGeneratedLayerItems(next);
 
   const generatedItems = [];
   const sourceByLayer = new Map();
-  source.requirements.forEach((requirement) => {
+  layerPlan.requirements.forEach((requirement) => {
     const list = sourceByLayer.get(requirement.layerIndex) ?? [];
     list.push(requirement);
     sourceByLayer.set(requirement.layerIndex, list);
@@ -327,6 +406,21 @@ function generatePreviewAttempt(state, source, settings) {
 
   for (const [layerIndex, requirements] of sourceByLayer.entries()) {
     const validCells = source.validByLayer.get(layerIndex) ?? [];
+    const requiredInGeneratedLayer = requirements.reduce((sum, entry) => sum + entry.amount, 0);
+    if (requiredInGeneratedLayer > validCells.length) {
+      return {
+        ok: false,
+        preview: null,
+        source,
+        settings,
+        issues: [createGeneratorIssue({
+          code: "NOT_ENOUGH_VALID_CELLS",
+          message: `Layer sinh ${layerIndex + 1} cần ${requiredInGeneratedLayer} vật phẩm nhưng chỉ có ${validCells.length} ô hợp lệ.`,
+          layerIndex,
+          suggestion: "Tăng số item layer hoặc mở thêm path hợp lệ để giảm mật độ mỗi layer."
+        })]
+      };
+    }
     const branches = branchCellsForIndexes(state, validCells);
     if (branches.length === 0 && requirements.some((entry) => entry.amount > 0)) {
       return {
@@ -357,6 +451,7 @@ function generatePreviewAttempt(state, source, settings) {
           id: `gen_${layerIndex}_${requirement.trayId}_${requirement.itemId}_${cell.index}_${order}`,
           itemId: requirement.itemId,
           layerIndex,
+          sourceTrayLayerIndex: requirement.sourceTrayLayerIndex,
           gridX: x,
           gridY: y,
           pathIndex: cell.index,

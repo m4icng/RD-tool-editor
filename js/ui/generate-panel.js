@@ -151,7 +151,7 @@ export function renderGenerateResults(container, state, result = null) {
           <div><span>Độ trễ xả TB</span><strong>${meta.avgReleaseDelay ?? "-"}</strong></div>
           <div><span>Tồn kho tối đa</span><strong>${meta.maxUnreleasedItems ?? "-"}</strong></div>
           <div><span>Mật độ vật phẩm</span><strong>${Number.isFinite(meta.itemDensity) ? formatPercent(meta.itemDensity) : "-"}</strong></div>
-          <div><span>Bẫy xuất hiện</span><strong>${meta.spawnTrapCount ?? "-"}</strong></div>
+          <div><span>Carry-over</span><strong>${Number.isFinite(meta.carryOverActualRatio) ? formatPercent(meta.carryOverActualRatio) : "-"}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">

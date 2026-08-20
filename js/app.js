@@ -105,6 +105,7 @@ let activePaletteCategory = "item";
 let generatePreviewState = null;
 let generateLastResult = null;
 let generateLastAppliedBackup = null;
+let generateActiveLayerId = null;
 const playable = createPlayableController({
   getLevel: () => editor.data,
   elements,
@@ -193,10 +194,10 @@ function persist() {
   }
 }
 
-function renderLayers() {
-  reindexLayers(editor.data.layers);
+function renderLayers(layerState = editor.data) {
+  reindexLayers(layerState.layers);
   elements.layerSelect.innerHTML = "";
-  editor.data.layers.forEach((layer, index) => {
+  layerState.layers.forEach((layer, index) => {
     const option = document.createElement("option");
     option.value = layer.id;
     const fruitCount = Object.values(layer.cells ?? {}).filter((cell) => cell?.item?.kind === "fruit").length;
@@ -204,9 +205,10 @@ function renderLayers() {
     option.textContent = `${numLabel} · ${layer.name} · ${fruitCount} fruit${layer.visible ? "" : " · Đang ẩn"}`;
     elements.layerSelect.appendChild(option);
   });
-  elements.layerSelect.value = editor.data.activeLayerId;
-  elements.toggleActiveLayerVisibilityBtn.textContent = editor.activeLayer.visible ? "◉" : "○";
-  elements.toggleActiveLayerVisibilityBtn.title = editor.activeLayer.visible ? "Ẩn hoa quả của layer đang chọn" : "Hiện hoa quả của layer đang chọn";
+  const activeLayer = layerState.layers.find((layer) => layer.id === layerState.activeLayerId) ?? layerState.layers[0];
+  elements.layerSelect.value = activeLayer?.id ?? "";
+  elements.toggleActiveLayerVisibilityBtn.textContent = activeLayer?.visible ? "◉" : "○";
+  elements.toggleActiveLayerVisibilityBtn.title = activeLayer?.visible ? "Ẩn hoa quả của layer đang chọn" : "Hiện hoa quả của layer đang chọn";
   elements.mysteryFruitDebugBtn.classList.toggle("active", Boolean(editor.data.mysteryFruitDebug));
   elements.mysteryFruitDebugBtn.title = editor.data.mysteryFruitDebug ? "Tắt Debug Mystery Fruit" : "Bật Debug Mystery Fruit";
   elements.mysteryFruitDebugBtn.setAttribute("aria-pressed", String(Boolean(editor.data.mysteryFruitDebug)));
@@ -277,8 +279,11 @@ function renderAll() {
     button.tabIndex = active ? 0 : -1;
   });
   const gridState = editor.data.tab === "generate" && generatePreviewState ? generatePreviewState : editor.data;
+  if (editor.data.tab === "generate" && generatePreviewState && generateActiveLayerId) {
+    generatePreviewState.activeLayerId = generateActiveLayerId;
+  }
   renderGrid(elements.gridBoard, gridState);
-  renderLayers();
+  renderLayers(gridState);
   if (editor.data.selectedCell) {
     elements.trayPanel.classList.add("inspector-mode");
     elements.contextPanelTitle.textContent = `Ô ${getSelectedCellIndex(editor.data)}`;
@@ -333,6 +338,7 @@ function mutate(mutator) {
 function clearGeneratePreview() {
   generatePreviewState = null;
   generateLastResult = null;
+  generateActiveLayerId = null;
 }
 
 function renderJsonWorkspace() {
@@ -767,6 +773,7 @@ function createGeneratePreviewResult({ silent = false } = {}) {
   const result = generatePreview(editor.data, editor.data.generateSettings);
   generateLastResult = result;
   generatePreviewState = result.ok ? result.preview : null;
+  generateActiveLayerId = result.ok ? result.preview.activeLayerId : null;
   if (!result.ok) {
     editor.data.generationMeta = { ...(editor.data.generationMeta ?? {}), status: "Error" };
   }
@@ -786,6 +793,7 @@ function applyGeneratePreviewResult() {
   const changed = mutate((state) => applyGeneratedPreview(state, generatePreviewState));
   if (!changed) return false;
   generatePreviewState = null;
+  generateActiveLayerId = null;
   generateLastResult = { ok: true, source: analyzeGenerateSource(editor.data), settings: editor.data.generateSettings, issues: [], generatedItems: editor.data.generatedItems, meta: editor.data.generationMeta };
   renderAll();
   showNotification(elements.toast, "Đã áp dụng vật phẩm đã sinh vào màn hiện tại.");
@@ -981,6 +989,12 @@ document.querySelector(".dimension-card").addEventListener("click", (event) => {
   else renderAll();
 }));
 elements.layerSelect.addEventListener("change", () => {
+  if (editor.data.tab === "generate" && generatePreviewState) {
+    generateActiveLayerId = elements.layerSelect.value;
+    generatePreviewState.activeLayerId = generateActiveLayerId;
+    editor.notify();
+    return;
+  }
   editor.data.activeLayerId = elements.layerSelect.value;
   editor.notify();
 });

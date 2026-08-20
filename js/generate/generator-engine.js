@@ -5,7 +5,8 @@ import { pathConnectionsAt } from "../objects/element-placement-rules.js";
 import { cellKey, indexToPosition } from "../utils/grid-utils.js";
 import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_KEYS, GENERATOR_VERSION, createRandomGenerateSeed, normalizeGenerateSettings, validateGenerateSettings } from "./generate-settings.js";
 import { analyzeAdaptiveLevel, createTuningState, estimateDerivedGenerateParameters, updateTuningState } from "./adaptive-parameters.js";
-import { analyzeGenerateSource, branchCellsForIndexes, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
+import { buildStraightClusterContext, placeLayerClusters, summarizeSpatialDistribution } from "./cluster-distribution.js";
+import { analyzeGenerateSource, createGeneratorIssue, fruitTypeFromItemId } from "./generate-source.js";
 import { isItemLayerLocked } from "./item-layer-locks.js";
 
 function createRandom(seed) {
@@ -16,15 +17,6 @@ function createRandom(seed) {
     state ^= state << 5;
     return ((state >>> 0) / 4294967296);
   };
-}
-
-function shuffle(values, random) {
-  const copy = values.slice();
-  for (let i = copy.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
 }
 
 function pathOrderMap(source) {
@@ -83,139 +75,6 @@ function scoreCellForRequirement(state, source, settings, requirement, index, ra
     ? (1 - settings.nextLayerTrapPressure) * 100
     : 0;
   return releaseScore - narrowBonus + spawnPenalty + random() * 0.25;
-}
-
-function spatialRegionKey(state, index) {
-  const { x, y } = indexToPosition(index, state.grid.columns);
-  const xBandSize = Math.max(1, Math.ceil(state.grid.columns / 3));
-  const yBandSize = Math.max(1, Math.ceil(state.grid.rows / 3));
-  const xBand = Math.min(2, Math.floor(x / xBandSize));
-  const yBand = Math.min(2, Math.floor(y / yBandSize));
-  return `${xBand}:${yBand}`;
-}
-
-function createSpatialSpreadState(state, validCells, targetAmount) {
-  const capacityByRegion = new Map();
-  validCells.forEach((index) => {
-    const key = spatialRegionKey(state, index);
-    capacityByRegion.set(key, (capacityByRegion.get(key) ?? 0) + 1);
-  });
-  return {
-    totalCapacity: Math.max(1, validCells.length),
-    targetAmount: Math.max(1, targetAmount),
-    capacityByRegion,
-    usedByRegion: new Map()
-  };
-}
-
-function spatialSpreadPenalty(state, spread, settings, index) {
-  const key = spatialRegionKey(state, index);
-  const capacity = spread.capacityByRegion.get(key) ?? 1;
-  const capacityRatio = capacity / spread.totalCapacity;
-  const idealUse = Math.max(1, spread.targetAmount * capacityRatio);
-  const used = spread.usedByRegion.get(key) ?? 0;
-  const pressure = used / idealUse;
-  const spreadWeight = 12 + settings.branchDistributionBalance * 18;
-  return pressure * spreadWeight + Math.max(0, pressure - 1) * 38;
-}
-
-function markSpatialUse(state, spread, index) {
-  const key = spatialRegionKey(state, index);
-  spread.usedByRegion.set(key, (spread.usedByRegion.get(key) ?? 0) + 1);
-}
-
-function adjacentOverlapRatio(validCellCount, targetAmount) {
-  const roomRatio = validCellCount / Math.max(1, targetAmount);
-  if (roomRatio >= 3) return 0.1;
-  if (roomRatio >= 2) return 0.15;
-  if (roomRatio >= 1.4) return 0.2;
-  return 0.25;
-}
-
-function createAdjacentOverlapState(validCells, targetAmount, previousIndexes) {
-  const previous = previousIndexes ?? new Set();
-  const nonOverlapCapacity = validCells.filter((index) => !previous.has(index)).length;
-  const ratio = adjacentOverlapRatio(validCells.length, targetAmount);
-  const baseBudget = Math.floor(targetAmount * ratio);
-  return {
-    previous,
-    budget: Math.max(baseBudget, Math.max(0, targetAmount - nonOverlapCapacity)),
-    used: 0
-  };
-}
-
-function adjacentOverlapPenalty(overlap, settings, index) {
-  if (!overlap.previous.has(index)) return 0;
-  if (overlap.used >= overlap.budget) return Number.POSITIVE_INFINITY;
-  return 34 + settings.branchDistributionBalance * 24;
-}
-
-function markAdjacentOverlapUse(overlap, index) {
-  if (overlap.previous.has(index)) overlap.used += 1;
-}
-
-function bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread, overlap) {
-  let best = null;
-  branch.indexes.forEach((index) => {
-    if (usedIndexes.has(index)) return;
-    const overlapPenalty = adjacentOverlapPenalty(overlap, settings, index);
-    if (!Number.isFinite(overlapPenalty)) return;
-    const score = scoreCellForRequirement(state, source, settings, requirement, index, random)
-      + spatialSpreadPenalty(state, spread, settings, index)
-      + overlapPenalty;
-    if (!best || score < best.score) best = { index, score };
-  });
-  return best;
-}
-
-function takeCellsFromBranches(state, source, branches, requirement, settings, random, usedIndexes, spread, overlap) {
-  const picked = [];
-  let guard = 0;
-  while (picked.length < requirement.amount && guard < requirement.amount * Math.max(1, branches.length) * 5) {
-    const rankedBranches = branches
-      .map((branch) => ({ branch, candidate: bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread, overlap) }))
-      .filter((entry) => entry.candidate)
-      .sort((a, b) => a.candidate.score - b.candidate.score);
-    if (rankedBranches.length === 0) break;
-    const branch = rankedBranches[0].branch;
-    const chunkSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, requirement.amount - picked.length));
-    const actualChunk = Math.max(1, Math.round(chunkSize * Math.max(0.15, settings.clusterRatio)));
-    for (let i = 0; i < actualChunk && picked.length < requirement.amount && branch.indexes.length > 0; i += 1) {
-      const candidate = bestBranchCandidate(state, source, branch, requirement, settings, random, usedIndexes, spread, overlap);
-      if (!candidate) break;
-      const index = candidate.index;
-      branch.indexes = branch.indexes.filter((entry) => entry !== index);
-      if (usedIndexes.has(index)) continue;
-      usedIndexes.add(index);
-      markSpatialUse(state, spread, index);
-      markAdjacentOverlapUse(overlap, index);
-      picked.push({ index, branchId: branch.branchId });
-    }
-    guard += 1;
-  }
-  return picked;
-}
-
-function requirementChunks(requirements, settings, random) {
-  const remaining = requirements.map((requirement) => ({ ...requirement, remaining: requirement.amount }));
-  const chunks = [];
-  let cursor = 0;
-  while (remaining.some((entry) => entry.remaining > 0)) {
-    const available = remaining.filter((entry) => entry.remaining > 0);
-    let index = remaining.indexOf(available[cursor % available.length]);
-    if (chunks.length > 0 && random() > settings.clusterRatio) {
-      const previous = chunks[chunks.length - 1];
-      const different = available.find((entry) => entry.itemId !== previous.itemId);
-      if (different) index = remaining.indexOf(different);
-    }
-    const entry = remaining[index];
-    const clusterSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, Math.round(settings.maxClusterSizePerBranch * Math.max(0.2, settings.clusterRatio))));
-    const amount = Math.min(entry.remaining, clusterSize);
-    chunks.push({ ...entry, amount });
-    entry.remaining -= amount;
-    cursor += 1;
-  }
-  return chunks;
 }
 
 function quotaKey(layerIndex, itemId) {
@@ -419,6 +278,7 @@ function estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClus
 
 function generatedMetrics(generatedItems, settings, source) {
   const byBranch = new Set(generatedItems.map((item) => item.branchId).filter(Boolean));
+  const byCluster = new Set(generatedItems.map((item) => item.clusterId).filter(Boolean));
   const byLayer = new Map();
   const indexesByLayer = new Map();
   generatedItems.forEach((item) => byLayer.set(item.layerIndex, (byLayer.get(item.layerIndex) ?? 0) + 1));
@@ -477,7 +337,7 @@ function generatedMetrics(generatedItems, settings, source) {
     totalGenerated: generatedItems.length,
     missing: Math.max(0, source.stats.totalRequired - generatedItems.length),
     branchCount: byBranch.size,
-    clusterCount: Math.max(1, Math.ceil(generatedItems.length / Math.max(1, settings.maxClusterSizePerBranch))),
+    clusterCount: byCluster.size || Math.max(1, Math.ceil(generatedItems.length / Math.max(1, settings.maxClusterSizePerBranch))),
     actualClusterRatio: Number(actualClusterRatio.toFixed(3)),
     itemDensity: Number(itemDensity.toFixed(3)),
     avgTailLength: Number(avgTailLength.toFixed(2)),
@@ -498,7 +358,8 @@ function generatedMetrics(generatedItems, settings, source) {
     difficultyScore: Number(settings.difficultyScore),
     derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
     autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
-    autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null)
+    autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null),
+    spatialDistribution: structuredClone(source.spatialDistribution ?? null)
   };
 }
 
@@ -562,8 +423,8 @@ function generatePreviewAttempt(state, source, settings) {
         })]
       };
     }
-    const branches = branchCellsForIndexes(state, validCells);
-    if (branches.length === 0 && requirements.some((entry) => entry.amount > 0)) {
+    const context = buildStraightClusterContext(state, validCells, requiredInGeneratedLayer, settings.maxClusterSizePerBranch);
+    if (context.straightRuns.length === 0 && requirements.some((entry) => entry.amount > 0)) {
       return {
         ok: false,
         preview: null,
@@ -577,35 +438,61 @@ function generatePreviewAttempt(state, source, settings) {
         })]
       };
     }
-    const branchCopies = branches.map((branch) => ({ ...branch, indexes: branch.indexes.slice() }));
-    const usedLayerIndexes = new Set();
-    const spatialSpread = createSpatialSpreadState(state, validCells, requiredInGeneratedLayer);
-    const adjacentOverlap = createAdjacentOverlapState(validCells, requiredInGeneratedLayer, generatedLayerIndexes.get(layerIndex - 1));
-    requirementChunks(requirements, settings, random).forEach((requirement) => {
-      const cells = takeCellsFromBranches(state, source, branchCopies, requirement, settings, random, usedLayerIndexes, spatialSpread, adjacentOverlap);
-      if (cells.length < requirement.amount) return;
-      const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
-      cells.forEach((cell, order) => {
-        const { x, y } = indexToPosition(cell.index, next.grid.columns);
-        const releaseDelay = pathDistance(source, cell.index, requirement.deliverIndex);
-        const pathOrder = pathOrderMap(source).get(cell.index) ?? cell.index;
-        layer.cells[cellKey(x, y)] = { item: createItemFromRequirement(requirement) };
-        generatedItems.push({
-          id: `gen_${layerIndex}_${requirement.trayId}_${requirement.itemId}_${cell.index}_${order}`,
-          itemId: requirement.itemId,
+    const previousLayerIndexes = generatedLayerIndexes.get(layerIndex - 1) ?? new Set();
+    const placed = placeLayerClusters({
+      state,
+      context,
+      requirements,
+      settings,
+      random,
+      previousLayerIndexes,
+      scoreCell: (requirement, index) => scoreCellForRequirement(state, source, settings, requirement, index, random)
+    });
+    if (!placed.ok) {
+      return {
+        ok: false,
+        preview: null,
+        source,
+        settings,
+        issues: [createGeneratorIssue({
+          code: "ITEM_DISTRIBUTION_REPAIR_FAILED",
+          message: `Lớp ${layerIndex + 1} không tìm được cụm thẳng hợp lệ cho ${placed.missing.reduce((sum, entry) => sum + entry.amount, 0)} vật phẩm còn lại.`,
           layerIndex,
-          sourceTrayLayerIndex: requirement.sourceTrayLayerIndex,
-          gridX: x,
-          gridY: y,
-          pathIndex: cell.index,
-          branchId: cell.branchId,
-          sourceTrayId: `tray_${requirement.trayId}`,
-          releaseDelay,
-          spawnRisk: requirement.layerIndex > 0 && pathOrder < settings.spawnSafetyDistance,
-          connectionCount: pathConnectionsAt(state, cell.index).length
-        });
+          suggestion: "Sinh lại với seed khác, giảm mật độ item hoặc thêm đoạn path thẳng hợp lệ."
+        })]
+      };
+    }
+    const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
+    placed.placedCells.forEach((cell, order) => {
+      const requirement = cell.requirement;
+      const { x, y } = indexToPosition(cell.index, next.grid.columns);
+      const releaseDelay = pathDistance(source, cell.index, requirement.deliverIndex);
+      const pathOrder = pathOrderMap(source).get(cell.index) ?? cell.index;
+      layer.cells[cellKey(x, y)] = { item: createItemFromRequirement(requirement) };
+      generatedItems.push({
+        id: `gen_${layerIndex}_${requirement.trayId}_${requirement.itemId}_${cell.index}_${order}`,
+        itemId: requirement.itemId,
+        layerIndex,
+        sourceTrayLayerIndex: requirement.sourceTrayLayerIndex,
+        gridX: x,
+        gridY: y,
+        pathIndex: cell.index,
+        branchId: cell.branchId,
+        regionId: cell.regionId,
+        clusterId: cell.clusterId,
+        clusterSize: cell.clusterSize,
+        clusterOrientation: cell.orientation,
+        sourceTrayId: `tray_${requirement.trayId}`,
+        releaseDelay,
+        spawnRisk: requirement.layerIndex > 0 && pathOrder < settings.spawnSafetyDistance,
+        connectionCount: pathConnectionsAt(state, cell.index).length
       });
     });
+    source.spatialDistribution = {
+      ...(source.spatialDistribution ?? {}),
+      [String(layerIndex)]: summarizeSpatialDistribution(context, placed.placedClusters)
+    };
+    const usedLayerIndexes = new Set(placed.placedCells.map((cell) => cell.index));
     generatedLayerIndexes.set(layerIndex, new Set(usedLayerIndexes));
   }
 
@@ -638,7 +525,8 @@ function canRetryGeneration(result) {
     "ITEM_ID_QUOTA_MISMATCH",
     "TAIL_PRESSURE_EXCEEDED",
     "RELEASE_PRESSURE_EXCEEDED",
-    "NEXT_LAYER_SPAWN_TRAP"
+    "NEXT_LAYER_SPAWN_TRAP",
+    "ITEM_DISTRIBUTION_REPAIR_FAILED"
   ]);
   return result?.issues?.some((issue) => retryableCodes.has(issue.code));
 }

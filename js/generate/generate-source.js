@@ -119,6 +119,7 @@ export function collectValidCellsByLayer(state, extraLayerIndexes = []) {
   layerIndexes.forEach((layerIndex) => {
     const valid = pathIndexes.filter((index) => {
       if (blocked.has(index)) return false;
+      if (pathConnectionsAt(state, index).length >= 3) return false;
       if (layerIndex === 0 && layerOneStartBuffer.has(index)) return false;
       return true;
     });

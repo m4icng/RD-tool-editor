@@ -1,144 +1,151 @@
-export const GENERATOR_VERSION = "1.0.0";
+export const GENERATOR_VERSION = "1.1.0";
 
 export const GENERATE_PRESETS = Object.freeze({
-  Easy: {
-    clusterRatio: 0.62,
+  De: {
+    clusterRatio: 0.9,
     maxClusterSizePerBranch: 4,
-    layerDistributionBalance: 0.9,
     branchDistributionBalance: 0.9,
+    routeChoicePressure: 0.18,
+    narrowPathUsage: 0.18,
+    loopRiskPressure: 0.15,
+    layerDistributionBalance: 0.92,
+    spawnSafetyDistance: 6,
+    maxImmediateChainCount: 1,
+    nextLayerTrapPressure: 0.1,
     avgTailLengthTarget: 5,
-    tailLengthGrowthCurve: "linear",
     tailLengthCap: 9,
+    tailLengthGrowthCurve: "linear",
     tailLengthVariance: 1,
-    progressionPressure: 0.25,
-    pressureCurve: "Flat",
-    reliefSegmentRatio: 0.35,
-    noiseClusterCountBeforeTarget: 0,
-    noiseItemCountPerCluster: 1,
-    noiseBeforeTargetRatio: 0.08,
-    noiseSpacingMin: 4,
-    noiseColorDiversity: 1,
-    itemDensityTarget: 0.35,
-    clusterCompactness: 0.55,
-    routeChoicePressure: 0.2,
-    decisionPointFrequency: 0.2
+    releaseDelayTarget: 5,
+    unreleasedInventoryTarget: 0.22,
+    maxUnreleasedItems: 7,
+    releaseDistanceWeight: 0.35
   },
-  Normal: {
+  Thuong: {
     clusterRatio: 0.8,
     maxClusterSizePerBranch: 6,
-    layerDistributionBalance: 0.8,
     branchDistributionBalance: 0.75,
-    avgTailLengthTarget: 8,
-    tailLengthGrowthCurve: "linear",
-    tailLengthCap: 14,
-    tailLengthVariance: 2,
-    progressionPressure: 0.5,
-    pressureCurve: "Ramp",
-    reliefSegmentRatio: 0.22,
-    noiseClusterCountBeforeTarget: 1,
-    noiseItemCountPerCluster: 2,
-    noiseBeforeTargetRatio: 0.2,
-    noiseSpacingMin: 3,
-    noiseColorDiversity: 2,
-    itemDensityTarget: 0.5,
-    clusterCompactness: 0.72,
     routeChoicePressure: 0.45,
-    decisionPointFrequency: 0.45
+    narrowPathUsage: 0.32,
+    loopRiskPressure: 0.3,
+    layerDistributionBalance: 0.8,
+    spawnSafetyDistance: 4,
+    maxImmediateChainCount: 2,
+    nextLayerTrapPressure: 0.32,
+    avgTailLengthTarget: 8,
+    tailLengthCap: 14,
+    tailLengthGrowthCurve: "linear",
+    tailLengthVariance: 2,
+    releaseDelayTarget: 9,
+    unreleasedInventoryTarget: 0.42,
+    maxUnreleasedItems: 12,
+    releaseDistanceWeight: 0.55
   },
-  Hard: {
-    clusterRatio: 0.88,
+  Kho: {
+    clusterRatio: 0.68,
     maxClusterSizePerBranch: 6,
-    layerDistributionBalance: 0.65,
     branchDistributionBalance: 0.58,
-    avgTailLengthTarget: 11,
-    tailLengthGrowthCurve: "ramp",
-    tailLengthCap: 18,
-    tailLengthVariance: 3,
-    progressionPressure: 0.72,
-    pressureCurve: "PeakLate",
-    reliefSegmentRatio: 0.14,
-    noiseClusterCountBeforeTarget: 2,
-    noiseItemCountPerCluster: 3,
-    noiseBeforeTargetRatio: 0.32,
-    noiseSpacingMin: 2,
-    noiseColorDiversity: 3,
-    itemDensityTarget: 0.68,
-    clusterCompactness: 0.86,
     routeChoicePressure: 0.68,
-    decisionPointFrequency: 0.66
+    narrowPathUsage: 0.58,
+    loopRiskPressure: 0.56,
+    layerDistributionBalance: 0.68,
+    spawnSafetyDistance: 3,
+    maxImmediateChainCount: 3,
+    nextLayerTrapPressure: 0.58,
+    avgTailLengthTarget: 11,
+    tailLengthCap: 18,
+    tailLengthGrowthCurve: "ramp",
+    tailLengthVariance: 3,
+    releaseDelayTarget: 14,
+    unreleasedInventoryTarget: 0.58,
+    maxUnreleasedItems: 17,
+    releaseDistanceWeight: 0.72
   },
-  Expert: {
-    clusterRatio: 0.94,
+  ChuyenGia: {
+    clusterRatio: 0.55,
     maxClusterSizePerBranch: 6,
-    layerDistributionBalance: 0.52,
     branchDistributionBalance: 0.45,
-    avgTailLengthTarget: 14,
-    tailLengthGrowthCurve: "peak-late",
-    tailLengthCap: 22,
-    tailLengthVariance: 4,
-    progressionPressure: 0.9,
-    pressureCurve: "Sawtooth",
-    reliefSegmentRatio: 0.08,
-    noiseClusterCountBeforeTarget: 3,
-    noiseItemCountPerCluster: 4,
-    noiseBeforeTargetRatio: 0.45,
-    noiseSpacingMin: 1,
-    noiseColorDiversity: 4,
-    itemDensityTarget: 0.82,
-    clusterCompactness: 0.94,
     routeChoicePressure: 0.86,
-    decisionPointFrequency: 0.82
+    narrowPathUsage: 0.78,
+    loopRiskPressure: 0.78,
+    layerDistributionBalance: 0.56,
+    spawnSafetyDistance: 2,
+    maxImmediateChainCount: 4,
+    nextLayerTrapPressure: 0.8,
+    avgTailLengthTarget: 14,
+    tailLengthCap: 22,
+    tailLengthGrowthCurve: "peak-late",
+    tailLengthVariance: 4,
+    releaseDelayTarget: 18,
+    unreleasedInventoryTarget: 0.72,
+    maxUnreleasedItems: 22,
+    releaseDistanceWeight: 0.9
   }
 });
 
+export const PRESET_LABELS = Object.freeze({
+  De: "Dễ",
+  Thuong: "Thường",
+  Kho: "Khó",
+  ChuyenGia: "Chuyên gia"
+});
+
+export const MULTI_BRANCH_MODE_LABELS = Object.freeze({
+  balanced: "Cân bằng",
+  spread: "Rải đều",
+  clustered: "Gom nhánh"
+});
+
+export const TAIL_CURVE_LABELS = Object.freeze({
+  linear: "Tuyến tính",
+  flat: "Phẳng",
+  ramp: "Tăng dần",
+  "peak-late": "Khó cuối màn"
+});
+
 export const GENERATE_SETTING_FIELDS = Object.freeze([
-  { key: "clusterRatio", label: "Cluster Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Ty le uu tien gom cung mau thanh cum." },
-  { key: "maxClusterSizePerBranch", label: "Max Cluster", type: "number", min: 1, max: 6, step: 1, group: "Distribution", tip: "So item toi da trong mot cum tren moi nhanh." },
-  { key: "layerDistributionBalance", label: "Layer Balance", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Uu tien mem cho phan bo deu theo layer path." },
-  { key: "branchDistributionBalance", label: "Branch Balance", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Uu tien mem cho phan bo deu giua cac nhanh hop le." },
-  { key: "avgTailLengthTarget", label: "Avg Tail", type: "number", min: 1, max: 40, step: 1, group: "Tail Pressure", tip: "Do dai duoi tau trung binh muc tieu." },
-  { key: "tailLengthCap", label: "Tail Cap", type: "number", min: 1, max: 60, step: 1, group: "Tail Pressure", tip: "Gioi han do dai duoi toi da." },
-  { key: "tailLengthVariance", label: "Tail Variance", type: "number", min: 0, max: 12, step: 1, group: "Tail Pressure", tip: "Muc dao dong do dai duoi giua cac doan." },
-  { key: "progressionPressure", label: "Progression", type: "percent", min: 0, max: 1, step: 0.01, group: "Progression", tip: "Ap luc tong the theo tien trinh level." },
-  { key: "reliefSegmentRatio", label: "Relief Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Progression", tip: "Ty le doan giam ap luc." },
-  { key: "noiseClusterCountBeforeTarget", label: "Noise Clusters", type: "number", min: 0, max: 12, step: 1, group: "Noise", tip: "So cum nhieu truoc item muc tieu." },
-  { key: "noiseItemCountPerCluster", label: "Noise Size", type: "number", min: 0, max: 9, step: 1, group: "Noise", tip: "So item trong moi cum nhieu." },
-  { key: "noiseBeforeTargetRatio", label: "Noise Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise", tip: "Ty le item nhieu truoc muc tieu." },
-  { key: "noiseSpacingMin", label: "Noise Spacing", type: "number", min: 0, max: 20, step: 1, group: "Noise", tip: "Khoang cach toi thieu giua cac cum nhieu." },
-  { key: "noiseColorDiversity", label: "Noise Diversity", type: "number", min: 1, max: 7, step: 1, group: "Noise", tip: "Do da dang itemId trong vung nhieu." },
-  { key: "itemDensityTarget", label: "Item Density", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Mat do item muc tieu tren path hop le." },
-  { key: "clusterCompactness", label: "Compactness", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Muc do nen chat cum cung itemId." },
-  { key: "routeChoicePressure", label: "Route Choice", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Ap luc buoc nguoi choi can nhac nhanh." },
-  { key: "decisionPointFrequency", label: "Decision Freq", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Tan suat diem can quyet dinh." },
-  { key: "bodyCollisionPressure", label: "Body Collision", type: "percent", min: 0, max: 1, step: 0.01, group: "Collision", tip: "Muc nguy co dau tau va vao than tau." },
-  { key: "narrowPathUsage", label: "Narrow Usage", type: "percent", min: 0, max: 1, step: 0.01, group: "Collision", tip: "Muc su dung cac doan path hep." },
-  { key: "obstacleProximity", label: "Obstacle Prox", type: "number", min: 0, max: 8, step: 1, group: "Collision", tip: "Khoang cach item toi element hoac vung han che." }
+  { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
+  { key: "tailLengthCap", label: "Giới hạn đuôi", type: "number", min: 1, max: 60, step: 1, group: "Áp lực đuôi", tip: "Nếu ước tính đuôi vượt ngưỡng này, bộ sinh sẽ báo lỗi." },
+  { key: "tailLengthVariance", label: "Dao động đuôi", type: "number", min: 0, max: 12, step: 1, group: "Áp lực đuôi", tip: "Mức dao động độ dài đuôi giữa các đoạn khó/dễ." },
+  { key: "releaseDelayTarget", label: "Độ trễ xả", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Khoảng cách đường đi mục tiêu từ lúc ăn vật phẩm tới khay phù hợp." },
+  { key: "unreleasedInventoryTarget", label: "Tồn kho mục tiêu", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Tỷ lệ vật phẩm dự kiến chưa xả được tại các đoạn áp lực." },
+  { key: "maxUnreleasedItems", label: "Tồn kho tối đa", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Số vật phẩm chưa xả tối đa cho phép theo mô phỏng nhanh." },
+  { key: "releaseDistanceWeight", label: "Trọng số xả", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Mức ưu tiên khoảng cách vật phẩm tới khay phù hợp khi chọn vị trí." },
+  { key: "layerDistributionBalance", label: "Cân bằng lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Ưu tiên mềm để giữ phân bổ giữa các lớp theo đúng khay nguồn." },
+  { key: "spawnSafetyDistance", label: "Khoảng cách xuất hiện an toàn", type: "number", min: 0, max: 30, step: 1, group: "Lớp và xuất hiện", tip: "Khoảng cách tối thiểu từ điểm bắt đầu tới vật phẩm lớp mới để tránh bẫy xuất hiện." },
+  { key: "maxImmediateChainCount", label: "Chuỗi gần đầu tối đa", type: "number", min: 0, max: 12, step: 1, group: "Lớp và xuất hiện", tip: "Số vật phẩm lớp mới liên tiếp được phép xuất hiện quá gần đầu tàu." },
+  { key: "nextLayerTrapPressure", label: "Áp lực bẫy lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Mức cho phép tạo áp lực khi chuyển sang lớp tiếp theo." },
+  { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
+  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
+  { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
+  { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
+  { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
+  { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
 ]);
 
 export function createDefaultGenerateSettings() {
   return {
     seed: 12345,
     maxRetries: 50,
-    difficultyPreset: "Normal",
+    difficultyPreset: "Thuong",
     multiBranchMode: "balanced",
-    pressureCurve: "Ramp",
     tailLengthGrowthCurve: "linear",
-    bodyCollisionPressure: 0.35,
-    narrowPathUsage: 0.3,
-    obstacleProximity: 1,
-    ...GENERATE_PRESETS.Normal
+    ...GENERATE_PRESETS.Thuong
   };
 }
 
 export function normalizeGenerateSettings(value = {}) {
   const defaults = createDefaultGenerateSettings();
   const settings = { ...defaults, ...(value ?? {}) };
-  settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Normal";
+  if (settings.difficultyPreset === "Easy") settings.difficultyPreset = "De";
+  if (settings.difficultyPreset === "Normal") settings.difficultyPreset = "Thuong";
+  if (settings.difficultyPreset === "Hard") settings.difficultyPreset = "Kho";
+  if (settings.difficultyPreset === "Expert") settings.difficultyPreset = "ChuyenGia";
+  settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Thuong";
   settings.seed = Math.max(0, Math.floor(Number(settings.seed) || defaults.seed));
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
-  settings.multiBranchMode = ["balanced", "spread", "clustered"].includes(settings.multiBranchMode) ? settings.multiBranchMode : "balanced";
-  settings.pressureCurve = ["Flat", "Ramp", "Sawtooth", "PeakLate"].includes(settings.pressureCurve) ? settings.pressureCurve : defaults.pressureCurve;
-  settings.tailLengthGrowthCurve = ["linear", "flat", "ramp", "peak-late"].includes(settings.tailLengthGrowthCurve) ? settings.tailLengthGrowthCurve : defaults.tailLengthGrowthCurve;
+  settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
+  settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
   GENERATE_SETTING_FIELDS.forEach((field) => {
     const numeric = Number(settings[field.key]);
     settings[field.key] = Number.isFinite(numeric) ? numeric : defaults[field.key];
@@ -147,7 +154,7 @@ export function normalizeGenerateSettings(value = {}) {
 }
 
 export function applyGeneratePreset(settings, presetName) {
-  const preset = GENERATE_PRESETS[presetName] ? presetName : "Normal";
+  const preset = GENERATE_PRESETS[presetName] ? presetName : "Thuong";
   return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, ...GENERATE_PRESETS[preset] });
 }
 
@@ -160,9 +167,9 @@ export function validateGenerateSettings(settings) {
       errors.push({
         code: "DIFFICULTY_OUT_OF_RANGE",
         severity: "error",
-        message: `${field.label} must be between ${field.min} and ${field.max}.`,
+        message: `${field.label} phải nằm trong khoảng ${field.min} - ${field.max}.`,
         settingKey: field.key,
-        suggestion: "Reset preset or adjust the value inside the allowed range."
+        suggestion: "Chọn lại preset hoặc chỉnh giá trị về đúng giới hạn."
       });
     }
   });
@@ -170,9 +177,9 @@ export function validateGenerateSettings(settings) {
     errors.push({
       code: "DIFFICULTY_OUT_OF_RANGE",
       severity: "error",
-      message: "maxRetries must be greater than 0.",
+      message: "Số lần thử lại phải lớn hơn 0.",
       settingKey: "maxRetries",
-      suggestion: "Use a retry limit from 1 to 500."
+      suggestion: "Dùng giá trị từ 1 đến 500."
     });
   }
   return { settings: normalized, errors };

@@ -316,7 +316,7 @@ function renderAll() {
   elements.mapHeightInput.value = String(editor.data.grid.rows);
   elements.gridMeta.textContent = `${editor.data.grid.columns} × ${editor.data.grid.rows} · ${layer.name} · chỉ hoa quả thay đổi`;
   if (editor.data.tab === "level") elements.topbarEyebrow.textContent = "Level Design / Layer fruit đang chọn";
-  if (editor.data.tab === "generate") elements.topbarEyebrow.textContent = generatePreviewState ? "Generate / Preview chưa apply" : "Generate / Auto Generator Level";
+  if (editor.data.tab === "generate") elements.topbarEyebrow.textContent = generatePreviewState ? "Sinh màn / Xem trước chưa áp dụng" : "Sinh màn / Tự động sinh vật phẩm";
   elements.boardWrap.classList.remove("hidden-layer");
   elements.assetCount.textContent = `${paletteObjects.length} ${activePaletteCategory}`;
   renderGenerateWorkspace();
@@ -759,7 +759,7 @@ function validateGenerateSourceOnly() {
   const source = analyzeGenerateSource(editor.data);
   generateLastResult = { ok: source.valid, source, settings: normalizeGenerateSettings(editor.data.generateSettings), issues: source.issues };
   renderAll();
-  showNotification(elements.toast, source.valid ? "Generate source hợp lệ." : `Generate source có ${source.issues.length} lỗi.`);
+  showNotification(elements.toast, source.valid ? "Nguồn sinh hợp lệ." : `Nguồn sinh có ${source.issues.length} lỗi.`);
   return source.valid;
 }
 
@@ -772,14 +772,14 @@ function createGeneratePreviewResult({ silent = false } = {}) {
   }
   renderAll();
   if (!silent) {
-    showNotification(elements.toast, result.ok ? `Đã tạo preview ${result.generatedItems.length} item.` : `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+    showNotification(elements.toast, result.ok ? `Đã tạo bản xem trước ${result.generatedItems.length} vật phẩm.` : `Sinh lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
   }
   return result;
 }
 
 function applyGeneratePreviewResult() {
   if (!generatePreviewState) {
-    showNotification(elements.toast, "Chưa có preview để apply.");
+    showNotification(elements.toast, "Chưa có bản xem trước để áp dụng.");
     return false;
   }
   generateLastAppliedBackup = structuredClone(editor.data);
@@ -788,7 +788,7 @@ function applyGeneratePreviewResult() {
   generatePreviewState = null;
   generateLastResult = { ok: true, source: analyzeGenerateSource(editor.data), settings: editor.data.generateSettings, issues: [], generatedItems: editor.data.generatedItems, meta: editor.data.generationMeta };
   renderAll();
-  showNotification(elements.toast, "Đã apply generated items vào level hiện tại.");
+  showNotification(elements.toast, "Đã áp dụng vật phẩm đã sinh vào màn hiện tại.");
   return true;
 }
 
@@ -813,19 +813,19 @@ elements.generateApplyBtn.addEventListener("click", applyGeneratePreviewResult);
 elements.generateAndApplyBtn.addEventListener("click", () => {
   const result = createGeneratePreviewResult({ silent: true });
   if (result.ok) applyGeneratePreviewResult();
-  else showNotification(elements.toast, `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+  else showNotification(elements.toast, `Sinh lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
 });
 elements.generateResetBtn.addEventListener("click", () => {
   const backup = generateLastAppliedBackup;
   if (!backup) {
-    showNotification(elements.toast, "Chưa có bản apply gần nhất để reset.");
+    showNotification(elements.toast, "Chưa có lần áp dụng gần nhất để khôi phục.");
     return;
   }
   mutate((state) => resetGeneratedItems(state, backup));
   generateLastAppliedBackup = null;
   clearGeneratePreview();
   renderAll();
-  showNotification(elements.toast, "Đã reset generated items về trước lần apply gần nhất.");
+  showNotification(elements.toast, "Đã khôi phục vật phẩm về trước lần áp dụng gần nhất.");
 });
 elements.generateSaveBtn.addEventListener("click", downloadCurrentLevel);
 elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);

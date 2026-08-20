@@ -2876,147 +2876,154 @@ class LevelFileManager {
 
 
 // ---- js/generate/generate-settings.js ----
-const GENERATOR_VERSION = "1.0.0";
+const GENERATOR_VERSION = "1.1.0";
 
 const GENERATE_PRESETS = Object.freeze({
-  Easy: {
-    clusterRatio: 0.62,
+  De: {
+    clusterRatio: 0.9,
     maxClusterSizePerBranch: 4,
-    layerDistributionBalance: 0.9,
     branchDistributionBalance: 0.9,
+    routeChoicePressure: 0.18,
+    narrowPathUsage: 0.18,
+    loopRiskPressure: 0.15,
+    layerDistributionBalance: 0.92,
+    spawnSafetyDistance: 6,
+    maxImmediateChainCount: 1,
+    nextLayerTrapPressure: 0.1,
     avgTailLengthTarget: 5,
-    tailLengthGrowthCurve: "linear",
     tailLengthCap: 9,
+    tailLengthGrowthCurve: "linear",
     tailLengthVariance: 1,
-    progressionPressure: 0.25,
-    pressureCurve: "Flat",
-    reliefSegmentRatio: 0.35,
-    noiseClusterCountBeforeTarget: 0,
-    noiseItemCountPerCluster: 1,
-    noiseBeforeTargetRatio: 0.08,
-    noiseSpacingMin: 4,
-    noiseColorDiversity: 1,
-    itemDensityTarget: 0.35,
-    clusterCompactness: 0.55,
-    routeChoicePressure: 0.2,
-    decisionPointFrequency: 0.2
+    releaseDelayTarget: 5,
+    unreleasedInventoryTarget: 0.22,
+    maxUnreleasedItems: 7,
+    releaseDistanceWeight: 0.35
   },
-  Normal: {
+  Thuong: {
     clusterRatio: 0.8,
     maxClusterSizePerBranch: 6,
-    layerDistributionBalance: 0.8,
     branchDistributionBalance: 0.75,
-    avgTailLengthTarget: 8,
-    tailLengthGrowthCurve: "linear",
-    tailLengthCap: 14,
-    tailLengthVariance: 2,
-    progressionPressure: 0.5,
-    pressureCurve: "Ramp",
-    reliefSegmentRatio: 0.22,
-    noiseClusterCountBeforeTarget: 1,
-    noiseItemCountPerCluster: 2,
-    noiseBeforeTargetRatio: 0.2,
-    noiseSpacingMin: 3,
-    noiseColorDiversity: 2,
-    itemDensityTarget: 0.5,
-    clusterCompactness: 0.72,
     routeChoicePressure: 0.45,
-    decisionPointFrequency: 0.45
+    narrowPathUsage: 0.32,
+    loopRiskPressure: 0.3,
+    layerDistributionBalance: 0.8,
+    spawnSafetyDistance: 4,
+    maxImmediateChainCount: 2,
+    nextLayerTrapPressure: 0.32,
+    avgTailLengthTarget: 8,
+    tailLengthCap: 14,
+    tailLengthGrowthCurve: "linear",
+    tailLengthVariance: 2,
+    releaseDelayTarget: 9,
+    unreleasedInventoryTarget: 0.42,
+    maxUnreleasedItems: 12,
+    releaseDistanceWeight: 0.55
   },
-  Hard: {
-    clusterRatio: 0.88,
+  Kho: {
+    clusterRatio: 0.68,
     maxClusterSizePerBranch: 6,
-    layerDistributionBalance: 0.65,
     branchDistributionBalance: 0.58,
-    avgTailLengthTarget: 11,
-    tailLengthGrowthCurve: "ramp",
-    tailLengthCap: 18,
-    tailLengthVariance: 3,
-    progressionPressure: 0.72,
-    pressureCurve: "PeakLate",
-    reliefSegmentRatio: 0.14,
-    noiseClusterCountBeforeTarget: 2,
-    noiseItemCountPerCluster: 3,
-    noiseBeforeTargetRatio: 0.32,
-    noiseSpacingMin: 2,
-    noiseColorDiversity: 3,
-    itemDensityTarget: 0.68,
-    clusterCompactness: 0.86,
     routeChoicePressure: 0.68,
-    decisionPointFrequency: 0.66
+    narrowPathUsage: 0.58,
+    loopRiskPressure: 0.56,
+    layerDistributionBalance: 0.68,
+    spawnSafetyDistance: 3,
+    maxImmediateChainCount: 3,
+    nextLayerTrapPressure: 0.58,
+    avgTailLengthTarget: 11,
+    tailLengthCap: 18,
+    tailLengthGrowthCurve: "ramp",
+    tailLengthVariance: 3,
+    releaseDelayTarget: 14,
+    unreleasedInventoryTarget: 0.58,
+    maxUnreleasedItems: 17,
+    releaseDistanceWeight: 0.72
   },
-  Expert: {
-    clusterRatio: 0.94,
+  ChuyenGia: {
+    clusterRatio: 0.55,
     maxClusterSizePerBranch: 6,
-    layerDistributionBalance: 0.52,
     branchDistributionBalance: 0.45,
-    avgTailLengthTarget: 14,
-    tailLengthGrowthCurve: "peak-late",
-    tailLengthCap: 22,
-    tailLengthVariance: 4,
-    progressionPressure: 0.9,
-    pressureCurve: "Sawtooth",
-    reliefSegmentRatio: 0.08,
-    noiseClusterCountBeforeTarget: 3,
-    noiseItemCountPerCluster: 4,
-    noiseBeforeTargetRatio: 0.45,
-    noiseSpacingMin: 1,
-    noiseColorDiversity: 4,
-    itemDensityTarget: 0.82,
-    clusterCompactness: 0.94,
     routeChoicePressure: 0.86,
-    decisionPointFrequency: 0.82
+    narrowPathUsage: 0.78,
+    loopRiskPressure: 0.78,
+    layerDistributionBalance: 0.56,
+    spawnSafetyDistance: 2,
+    maxImmediateChainCount: 4,
+    nextLayerTrapPressure: 0.8,
+    avgTailLengthTarget: 14,
+    tailLengthCap: 22,
+    tailLengthGrowthCurve: "peak-late",
+    tailLengthVariance: 4,
+    releaseDelayTarget: 18,
+    unreleasedInventoryTarget: 0.72,
+    maxUnreleasedItems: 22,
+    releaseDistanceWeight: 0.9
   }
 });
 
+const PRESET_LABELS = Object.freeze({
+  De: "Dễ",
+  Thuong: "Thường",
+  Kho: "Khó",
+  ChuyenGia: "Chuyên gia"
+});
+
+const MULTI_BRANCH_MODE_LABELS = Object.freeze({
+  balanced: "Cân bằng",
+  spread: "Rải đều",
+  clustered: "Gom nhánh"
+});
+
+const TAIL_CURVE_LABELS = Object.freeze({
+  linear: "Tuyến tính",
+  flat: "Phẳng",
+  ramp: "Tăng dần",
+  "peak-late": "Khó cuối màn"
+});
+
 const GENERATE_SETTING_FIELDS = Object.freeze([
-  { key: "clusterRatio", label: "Cluster Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Ty le uu tien gom cung mau thanh cum." },
-  { key: "maxClusterSizePerBranch", label: "Max Cluster", type: "number", min: 1, max: 6, step: 1, group: "Distribution", tip: "So item toi da trong mot cum tren moi nhanh." },
-  { key: "layerDistributionBalance", label: "Layer Balance", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Uu tien mem cho phan bo deu theo layer path." },
-  { key: "branchDistributionBalance", label: "Branch Balance", type: "percent", min: 0, max: 1, step: 0.01, group: "Distribution", tip: "Uu tien mem cho phan bo deu giua cac nhanh hop le." },
-  { key: "avgTailLengthTarget", label: "Avg Tail", type: "number", min: 1, max: 40, step: 1, group: "Tail Pressure", tip: "Do dai duoi tau trung binh muc tieu." },
-  { key: "tailLengthCap", label: "Tail Cap", type: "number", min: 1, max: 60, step: 1, group: "Tail Pressure", tip: "Gioi han do dai duoi toi da." },
-  { key: "tailLengthVariance", label: "Tail Variance", type: "number", min: 0, max: 12, step: 1, group: "Tail Pressure", tip: "Muc dao dong do dai duoi giua cac doan." },
-  { key: "progressionPressure", label: "Progression", type: "percent", min: 0, max: 1, step: 0.01, group: "Progression", tip: "Ap luc tong the theo tien trinh level." },
-  { key: "reliefSegmentRatio", label: "Relief Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Progression", tip: "Ty le doan giam ap luc." },
-  { key: "noiseClusterCountBeforeTarget", label: "Noise Clusters", type: "number", min: 0, max: 12, step: 1, group: "Noise", tip: "So cum nhieu truoc item muc tieu." },
-  { key: "noiseItemCountPerCluster", label: "Noise Size", type: "number", min: 0, max: 9, step: 1, group: "Noise", tip: "So item trong moi cum nhieu." },
-  { key: "noiseBeforeTargetRatio", label: "Noise Ratio", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise", tip: "Ty le item nhieu truoc muc tieu." },
-  { key: "noiseSpacingMin", label: "Noise Spacing", type: "number", min: 0, max: 20, step: 1, group: "Noise", tip: "Khoang cach toi thieu giua cac cum nhieu." },
-  { key: "noiseColorDiversity", label: "Noise Diversity", type: "number", min: 1, max: 7, step: 1, group: "Noise", tip: "Do da dang itemId trong vung nhieu." },
-  { key: "itemDensityTarget", label: "Item Density", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Mat do item muc tieu tren path hop le." },
-  { key: "clusterCompactness", label: "Compactness", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Muc do nen chat cum cung itemId." },
-  { key: "routeChoicePressure", label: "Route Choice", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Ap luc buoc nguoi choi can nhac nhanh." },
-  { key: "decisionPointFrequency", label: "Decision Freq", type: "percent", min: 0, max: 1, step: 0.01, group: "Item & Route", tip: "Tan suat diem can quyet dinh." },
-  { key: "bodyCollisionPressure", label: "Body Collision", type: "percent", min: 0, max: 1, step: 0.01, group: "Collision", tip: "Muc nguy co dau tau va vao than tau." },
-  { key: "narrowPathUsage", label: "Narrow Usage", type: "percent", min: 0, max: 1, step: 0.01, group: "Collision", tip: "Muc su dung cac doan path hep." },
-  { key: "obstacleProximity", label: "Obstacle Prox", type: "number", min: 0, max: 8, step: 1, group: "Collision", tip: "Khoang cach item toi element hoac vung han che." }
+  { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
+  { key: "tailLengthCap", label: "Giới hạn đuôi", type: "number", min: 1, max: 60, step: 1, group: "Áp lực đuôi", tip: "Nếu ước tính đuôi vượt ngưỡng này, bộ sinh sẽ báo lỗi." },
+  { key: "tailLengthVariance", label: "Dao động đuôi", type: "number", min: 0, max: 12, step: 1, group: "Áp lực đuôi", tip: "Mức dao động độ dài đuôi giữa các đoạn khó/dễ." },
+  { key: "releaseDelayTarget", label: "Độ trễ xả", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Khoảng cách đường đi mục tiêu từ lúc ăn vật phẩm tới khay phù hợp." },
+  { key: "unreleasedInventoryTarget", label: "Tồn kho mục tiêu", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Tỷ lệ vật phẩm dự kiến chưa xả được tại các đoạn áp lực." },
+  { key: "maxUnreleasedItems", label: "Tồn kho tối đa", type: "number", min: 1, max: 80, step: 1, group: "Áp lực xả", tip: "Số vật phẩm chưa xả tối đa cho phép theo mô phỏng nhanh." },
+  { key: "releaseDistanceWeight", label: "Trọng số xả", type: "percent", min: 0, max: 1, step: 0.01, group: "Áp lực xả", tip: "Mức ưu tiên khoảng cách vật phẩm tới khay phù hợp khi chọn vị trí." },
+  { key: "layerDistributionBalance", label: "Cân bằng lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Ưu tiên mềm để giữ phân bổ giữa các lớp theo đúng khay nguồn." },
+  { key: "spawnSafetyDistance", label: "Khoảng cách xuất hiện an toàn", type: "number", min: 0, max: 30, step: 1, group: "Lớp và xuất hiện", tip: "Khoảng cách tối thiểu từ điểm bắt đầu tới vật phẩm lớp mới để tránh bẫy xuất hiện." },
+  { key: "maxImmediateChainCount", label: "Chuỗi gần đầu tối đa", type: "number", min: 0, max: 12, step: 1, group: "Lớp và xuất hiện", tip: "Số vật phẩm lớp mới liên tiếp được phép xuất hiện quá gần đầu tàu." },
+  { key: "nextLayerTrapPressure", label: "Áp lực bẫy lớp", type: "percent", min: 0, max: 1, step: 0.01, group: "Lớp và xuất hiện", tip: "Mức cho phép tạo áp lực khi chuyển sang lớp tiếp theo." },
+  { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
+  { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 6, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
+  { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
+  { key: "routeChoicePressure", label: "Áp lực chọn đường", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức độ buộc người chơi cân nhắc đường đi khi thu item." },
+  { key: "narrowPathUsage", label: "Dùng ray hẹp", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức ưu tiên các đoạn ray ít lối thoát để tăng rủi ro." },
+  { key: "loopRiskPressure", label: "Rủi ro vòng/ngõ cụt", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Mức sử dụng vòng ngắn hoặc ngõ cụt có nguy cơ tự va chạm." }
 ]);
 
 function createDefaultGenerateSettings() {
   return {
     seed: 12345,
     maxRetries: 50,
-    difficultyPreset: "Normal",
+    difficultyPreset: "Thuong",
     multiBranchMode: "balanced",
-    pressureCurve: "Ramp",
     tailLengthGrowthCurve: "linear",
-    bodyCollisionPressure: 0.35,
-    narrowPathUsage: 0.3,
-    obstacleProximity: 1,
-    ...GENERATE_PRESETS.Normal
+    ...GENERATE_PRESETS.Thuong
   };
 }
 
 function normalizeGenerateSettings(value = {}) {
   const defaults = createDefaultGenerateSettings();
   const settings = { ...defaults, ...(value ?? {}) };
-  settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Normal";
+  if (settings.difficultyPreset === "Easy") settings.difficultyPreset = "De";
+  if (settings.difficultyPreset === "Normal") settings.difficultyPreset = "Thuong";
+  if (settings.difficultyPreset === "Hard") settings.difficultyPreset = "Kho";
+  if (settings.difficultyPreset === "Expert") settings.difficultyPreset = "ChuyenGia";
+  settings.difficultyPreset = GENERATE_PRESETS[settings.difficultyPreset] ? settings.difficultyPreset : "Thuong";
   settings.seed = Math.max(0, Math.floor(Number(settings.seed) || defaults.seed));
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
-  settings.multiBranchMode = ["balanced", "spread", "clustered"].includes(settings.multiBranchMode) ? settings.multiBranchMode : "balanced";
-  settings.pressureCurve = ["Flat", "Ramp", "Sawtooth", "PeakLate"].includes(settings.pressureCurve) ? settings.pressureCurve : defaults.pressureCurve;
-  settings.tailLengthGrowthCurve = ["linear", "flat", "ramp", "peak-late"].includes(settings.tailLengthGrowthCurve) ? settings.tailLengthGrowthCurve : defaults.tailLengthGrowthCurve;
+  settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
+  settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
   GENERATE_SETTING_FIELDS.forEach((field) => {
     const numeric = Number(settings[field.key]);
     settings[field.key] = Number.isFinite(numeric) ? numeric : defaults[field.key];
@@ -3025,7 +3032,7 @@ function normalizeGenerateSettings(value = {}) {
 }
 
 function applyGeneratePreset(settings, presetName) {
-  const preset = GENERATE_PRESETS[presetName] ? presetName : "Normal";
+  const preset = GENERATE_PRESETS[presetName] ? presetName : "Thuong";
   return normalizeGenerateSettings({ ...settings, difficultyPreset: preset, ...GENERATE_PRESETS[preset] });
 }
 
@@ -3038,9 +3045,9 @@ function validateGenerateSettings(settings) {
       errors.push({
         code: "DIFFICULTY_OUT_OF_RANGE",
         severity: "error",
-        message: `${field.label} must be between ${field.min} and ${field.max}.`,
+        message: `${field.label} phải nằm trong khoảng ${field.min} - ${field.max}.`,
         settingKey: field.key,
-        suggestion: "Reset preset or adjust the value inside the allowed range."
+        suggestion: "Chọn lại preset hoặc chỉnh giá trị về đúng giới hạn."
       });
     }
   });
@@ -3048,9 +3055,9 @@ function validateGenerateSettings(settings) {
     errors.push({
       code: "DIFFICULTY_OUT_OF_RANGE",
       severity: "error",
-      message: "maxRetries must be greater than 0.",
+      message: "Số lần thử lại phải lớn hơn 0.",
       settingKey: "maxRetries",
-      suggestion: "Use a retry limit from 1 to 500."
+      suggestion: "Dùng giá trị từ 1 đến 500."
     });
   }
   return { settings: normalized, errors };
@@ -3093,22 +3100,23 @@ function collectTrayRequirements(state) {
     const item = cell?.item;
     if (!["tray", "truck"].includes(item?.kind)) return;
     const { x, y } = parseCellKey(key);
+    const deliverIndex = positionToIndex(x, y, state.grid.columns);
     const trayId = Number.isInteger(item.trayId) ? item.trayId : positionToIndex(x, y, state.grid.columns);
     if (item.kind === "truck") {
       const itemId = Number(FRUIT_ITEM_IDS[item.fruitType] ?? item.itemId ?? item.id);
-      requirements.push({ trayId, layerIndex: 0, itemId, fruitType: item.fruitType, amount: Number(item.capacity) || 0 });
+      requirements.push({ trayId, deliverIndex, layerIndex: 0, itemId, fruitType: item.fruitType, amount: Number(item.capacity) || 0 });
       return;
     }
     (item.trayLayers ?? []).forEach((trayLayer, order) => {
       const layerIndex = Number.isInteger(trayLayer.layer) ? trayLayer.layer : order;
       FRUIT_TYPES.forEach((fruitType) => {
         const amount = Number(trayLayer.recipe?.[fruitType]) || 0;
-        if (amount > 0) requirements.push({ trayId, layerIndex, itemId: FRUIT_ITEM_IDS[fruitType], fruitType, amount });
+        if (amount > 0) requirements.push({ trayId, deliverIndex, layerIndex, itemId: FRUIT_ITEM_IDS[fruitType], fruitType, amount });
       });
       (trayLayer.unknownItems ?? []).forEach((unknown) => {
         const itemId = Number(unknown.itemId);
         const amount = Number(unknown.count) || 0;
-        if (Number.isInteger(itemId) && amount > 0) requirements.push({ trayId, layerIndex, itemId, fruitType: fruitTypeFromItemId(itemId), amount });
+        if (Number.isInteger(itemId) && amount > 0) requirements.push({ trayId, deliverIndex, layerIndex, itemId, fruitType: fruitTypeFromItemId(itemId), amount });
       });
     });
   });
@@ -3226,10 +3234,10 @@ function analyzeGenerateSource(state) {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
       issues.push(createGeneratorIssue({
         code: "TRAY_INVALID",
-        message: `Tray ${entry.trayId} has invalid itemId or amount.`,
+        message: `Khay ${entry.trayId} có mã vật phẩm hoặc số lượng không hợp lệ.`,
         trayId: entry.trayId,
         layerIndex: entry.layerIndex,
-        suggestion: "Check tray recipe in Level Des."
+        suggestion: "Kiểm tra công thức khay trong tab LevelDes."
       }));
       return;
     }
@@ -3238,15 +3246,15 @@ function analyzeGenerateSource(state) {
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
       code: "SOURCE_INVALID",
-      message: "Level has no path cells.",
-      suggestion: "Draw path in Level Des before generating items."
+      message: "Level chưa có ô đường ray.",
+      suggestion: "Vẽ đường ray trong tab LevelDes trước khi sinh màn."
     }));
   }
   if (requirements.length === 0) {
     issues.push(createGeneratorIssue({
       code: "TRAY_INVALID",
-      message: "No tray requirement found.",
-      suggestion: "Add tray layers and block amounts in Level Des."
+      message: "Không tìm thấy yêu cầu vật phẩm từ khay.",
+      suggestion: "Thêm lớp khay và số lượng vật phẩm trong tab LevelDes."
     }));
   }
   requiredByLayer.forEach((required, layerIndex) => {
@@ -3254,13 +3262,16 @@ function analyzeGenerateSource(state) {
     if (required > validSlots) {
       issues.push(createGeneratorIssue({
         code: "NOT_ENOUGH_VALID_CELLS",
-        message: `Layer ${layerIndex + 1} needs ${required} items but only has ${validSlots} valid cells.`,
+        message: `Lớp ${layerIndex + 1} cần ${required} vật phẩm nhưng chỉ có ${validSlots} ô hợp lệ.`,
         layerIndex,
-        suggestion: "Add more valid path cells or reduce tray requirement."
+        suggestion: "Thêm ô đường ray hợp lệ hoặc giảm yêu cầu trong khay."
       }));
     }
   });
   const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
+  const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
+  const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
+  const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     issues,
@@ -3270,14 +3281,17 @@ function analyzeGenerateSource(state) {
     stats: {
       layers: state.layers?.length ?? 0,
       trays: trayCount,
-      totalRequired: requirements.reduce((sum, entry) => sum + entry.amount, 0),
-      totalValidSlots: [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0)
+      priorityPoints: priorityCount,
+      totalRequired,
+      totalValidSlots,
+      itemDensity: totalValidSlots > 0 ? totalRequired / totalValidSlots : 0
     }
   };
 }
 
 
 // ---- js/generate/generator-engine.js ----
+
 
 
 
@@ -3301,6 +3315,18 @@ function shuffle(values, random) {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+function pathOrderMap(source) {
+  return new Map((source.pathIndexes ?? []).map((index, order) => [index, order]));
+}
+
+function pathDistance(source, fromIndex, toIndex) {
+  const order = pathOrderMap(source);
+  const from = order.get(fromIndex);
+  const to = order.get(toIndex);
+  if (Number.isInteger(from) && Number.isInteger(to)) return Math.abs(from - to);
+  return Math.abs(Number(fromIndex) - Number(toIndex));
 }
 
 function ensureLayers(state, maxLayerIndex) {
@@ -3331,27 +3357,152 @@ function createItemFromRequirement(requirement) {
   };
 }
 
-function takeCellsFromBranches(branches, amount, settings, random) {
+function scoreCellForRequirement(state, source, settings, requirement, index, random) {
+  const order = pathOrderMap(source).get(index) ?? index;
+  const releaseDelay = pathDistance(source, index, requirement.deliverIndex);
+  const releaseScore = Math.abs(releaseDelay - settings.releaseDelayTarget) * settings.releaseDistanceWeight;
+  const connections = pathConnectionsAt(state, index).length;
+  const narrowBonus = connections <= 1
+    ? settings.loopRiskPressure + settings.narrowPathUsage
+    : connections === 2
+      ? settings.narrowPathUsage * 0.35
+      : settings.routeChoicePressure * -0.35;
+  const spawnPenalty = requirement.layerIndex > 0 && order < settings.spawnSafetyDistance
+    ? (1 - settings.nextLayerTrapPressure) * 100
+    : 0;
+  return releaseScore - narrowBonus + spawnPenalty + random() * 0.25;
+}
+
+function takeCellsFromBranches(state, source, branches, requirement, settings, random, usedIndexes) {
   const branchQueues = branches
-    .map((branch) => ({ ...branch, indexes: shuffle(branch.indexes, random) }))
-    .filter((branch) => branch.indexes.length > 0);
+    .filter((branch) => branch.indexes.some((index) => !usedIndexes.has(index)));
+  branchQueues.forEach((branch) => {
+    const rankedIndexes = shuffle(branch.indexes.filter((index) => !usedIndexes.has(index)), random)
+      .map((index) => ({ index, score: scoreCellForRequirement(state, source, settings, requirement, index, random) }))
+      .sort((a, b) => a.score - b.score);
+    branch.score = rankedIndexes[0]?.score ?? Number.POSITIVE_INFINITY;
+    branch.indexes = rankedIndexes.map((entry) => entry.index);
+  });
+  const activeQueues = branchQueues
+    .filter((branch) => branch.indexes.length > 0)
+    .sort((a, b) => a.score - b.score);
   const picked = [];
   let cursor = 0;
   let guard = 0;
-  while (picked.length < amount && branchQueues.length > 0 && guard < amount * Math.max(1, branchQueues.length) * 3) {
-    const branch = branchQueues[cursor % branchQueues.length];
-    const chunkSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, amount - picked.length));
+  while (picked.length < requirement.amount && activeQueues.length > 0 && guard < requirement.amount * Math.max(1, activeQueues.length) * 3) {
+    const branch = activeQueues[cursor % activeQueues.length];
+    const chunkSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, requirement.amount - picked.length));
     const actualChunk = Math.max(1, Math.round(chunkSize * Math.max(0.15, settings.clusterRatio)));
-    for (let i = 0; i < actualChunk && picked.length < amount && branch.indexes.length > 0; i += 1) {
-      picked.push({ index: branch.indexes.shift(), branchId: branch.branchId });
+    for (let i = 0; i < actualChunk && picked.length < requirement.amount && branch.indexes.length > 0; i += 1) {
+      const index = branch.indexes.shift();
+      if (usedIndexes.has(index)) continue;
+      usedIndexes.add(index);
+      picked.push({ index, branchId: branch.branchId });
     }
     cursor += settings.multiBranchMode === "clustered" ? (random() > settings.branchDistributionBalance ? 1 : 0) : 1;
     guard += 1;
-    for (let i = branchQueues.length - 1; i >= 0; i -= 1) {
-      if (branchQueues[i].indexes.length === 0) branchQueues.splice(i, 1);
+    for (let i = activeQueues.length - 1; i >= 0; i -= 1) {
+      if (activeQueues[i].indexes.length === 0) activeQueues.splice(i, 1);
     }
   }
   return picked;
+}
+
+function requirementChunks(requirements, settings, random) {
+  const remaining = requirements.map((requirement) => ({ ...requirement, remaining: requirement.amount }));
+  const chunks = [];
+  let cursor = 0;
+  while (remaining.some((entry) => entry.remaining > 0)) {
+    const available = remaining.filter((entry) => entry.remaining > 0);
+    let index = remaining.indexOf(available[cursor % available.length]);
+    if (chunks.length > 0 && random() > settings.clusterRatio) {
+      const previous = chunks[chunks.length - 1];
+      const different = available.find((entry) => entry.itemId !== previous.itemId);
+      if (different) index = remaining.indexOf(different);
+    }
+    const entry = remaining[index];
+    const clusterSize = Math.max(1, Math.min(settings.maxClusterSizePerBranch, Math.round(settings.maxClusterSizePerBranch * Math.max(0.2, settings.clusterRatio))));
+    const amount = Math.min(entry.remaining, clusterSize);
+    chunks.push({ ...entry, amount });
+    entry.remaining -= amount;
+    cursor += 1;
+  }
+  return chunks;
+}
+
+function quotaKey(layerIndex, itemId) {
+  return `${layerIndex}:${itemId}`;
+}
+
+function quotaCountsFromRequirements(requirements) {
+  const totalByLayer = new Map();
+  const totalByLayerItem = new Map();
+  let total = 0;
+  requirements.forEach((entry) => {
+    total += entry.amount;
+    totalByLayer.set(entry.layerIndex, (totalByLayer.get(entry.layerIndex) ?? 0) + entry.amount);
+    totalByLayerItem.set(quotaKey(entry.layerIndex, entry.itemId), (totalByLayerItem.get(quotaKey(entry.layerIndex, entry.itemId)) ?? 0) + entry.amount);
+  });
+  return { total, totalByLayer, totalByLayerItem };
+}
+
+function quotaCountsFromGenerated(generatedItems) {
+  const totalByLayer = new Map();
+  const totalByLayerItem = new Map();
+  const seenCells = new Set();
+  const duplicateCells = [];
+  generatedItems.forEach((entry) => {
+    totalByLayer.set(entry.layerIndex, (totalByLayer.get(entry.layerIndex) ?? 0) + 1);
+    totalByLayerItem.set(quotaKey(entry.layerIndex, entry.itemId), (totalByLayerItem.get(quotaKey(entry.layerIndex, entry.itemId)) ?? 0) + 1);
+    const cellKey = quotaKey(entry.layerIndex, entry.pathIndex);
+    if (seenCells.has(cellKey)) duplicateCells.push(entry.pathIndex);
+    seenCells.add(cellKey);
+  });
+  return { total: generatedItems.length, totalByLayer, totalByLayerItem, duplicateCells };
+}
+
+function validateGeneratedQuotas(generatedItems, source) {
+  const required = quotaCountsFromRequirements(source.requirements);
+  const generated = quotaCountsFromGenerated(generatedItems);
+  const issues = [];
+  if (generated.total !== required.total) {
+    issues.push(createGeneratorIssue({
+      code: "ITEM_QUOTA_MISMATCH",
+      message: `Tổng vật phẩm sinh ra ${generated.total}/${required.total} không khớp yêu cầu khay.`,
+      suggestion: "Không áp dụng màn; kiểm tra ô hợp lệ hoặc giảm áp lực sinh."
+    }));
+  }
+  required.totalByLayer.forEach((amount, layerIndex) => {
+    const actual = generated.totalByLayer.get(layerIndex) ?? 0;
+    if (actual !== amount) {
+      issues.push(createGeneratorIssue({
+        code: "LAYER_QUOTA_MISMATCH",
+        message: `Lớp ${layerIndex + 1} sinh ${actual}/${amount} vật phẩm.`,
+        layerIndex,
+        suggestion: "Giữ vật phẩm đúng lớp nguồn, không chuyển vật phẩm giữa các lớp."
+      }));
+    }
+  });
+  required.totalByLayerItem.forEach((amount, key) => {
+    const actual = generated.totalByLayerItem.get(key) ?? 0;
+    if (actual !== amount) {
+      const [layerIndex, itemId] = key.split(":").map(Number);
+      issues.push(createGeneratorIssue({
+        code: "ITEM_ID_QUOTA_MISMATCH",
+        message: `Lớp ${layerIndex + 1} mã vật phẩm ${itemId} sinh ${actual}/${amount}.`,
+        layerIndex,
+        suggestion: "Bộ sinh phải giữ đúng mã vật phẩm và số lượng từ khay nguồn."
+      }));
+    }
+  });
+  if (generated.duplicateCells.length > 0) {
+    issues.push(createGeneratorIssue({
+      code: "ITEM_QUOTA_MISMATCH",
+      message: `Có ${generated.duplicateCells.length} vật phẩm trùng ô hoặc thứ tự đường ray.`,
+      suggestion: "Sinh lại với seed khác hoặc giảm áp lực cụm."
+    }));
+  }
+  return issues;
 }
 
 function generatedMetrics(generatedItems, settings, source) {
@@ -3370,7 +3521,25 @@ function generatedMetrics(generatedItems, settings, source) {
     }
   });
   const actualClusterRatio = comparable ? sameAdjacent / comparable : 1;
-  const avgTailLength = Math.min(settings.tailLengthCap, Math.max(1, settings.avgTailLengthTarget + (actualClusterRatio - settings.clusterRatio) * settings.tailLengthVariance));
+  const avgReleaseDelay = generatedItems.length
+    ? generatedItems.reduce((sum, item) => sum + (Number(item.releaseDelay) || 0), 0) / generatedItems.length
+    : 0;
+  const maxReleaseDelay = generatedItems.reduce((max, item) => Math.max(max, Number(item.releaseDelay) || 0), 0);
+  const itemDensity = source.stats.itemDensity ?? 0;
+  const unreleasedInventoryRatio = generatedItems.length
+    ? generatedItems.filter((item) => item.releaseDelay >= settings.releaseDelayTarget).length / generatedItems.length
+    : 0;
+  const avgTailLength = Math.max(1, settings.avgTailLengthTarget
+    + (avgReleaseDelay / Math.max(1, settings.releaseDelayTarget) - 1) * settings.releaseDistanceWeight * 2
+    + itemDensity * settings.tailLengthVariance
+    + (1 - actualClusterRatio) * settings.tailLengthVariance);
+  const peakTailLength = Math.ceil(avgTailLength + settings.tailLengthVariance + Math.min(settings.maxClusterSizePerBranch, generatedItems.length) * itemDensity);
+  const maxUnreleasedItems = Math.ceil(generatedItems.length * Math.max(unreleasedInventoryRatio, settings.unreleasedInventoryTarget * 0.5));
+  const spawnTrapCount = generatedItems.filter((item) => item.spawnRisk).length;
+  const decisionPointFrequency = source.pathIndexes?.length ? (source.stats.priorityPoints ?? 0) / source.pathIndexes.length : 0;
+  const loopRiskScore = generatedItems.length
+    ? generatedItems.filter((item) => item.connectionCount <= 1).length / generatedItems.length
+    : 0;
   return {
     status: "Generated",
     generatedAt: Date.now(),
@@ -3381,8 +3550,44 @@ function generatedMetrics(generatedItems, settings, source) {
     branchCount: byBranch.size,
     clusterCount: Math.max(1, Math.ceil(generatedItems.length / Math.max(1, settings.maxClusterSizePerBranch))),
     actualClusterRatio: Number(actualClusterRatio.toFixed(3)),
-    avgTailLength: Number(avgTailLength.toFixed(2))
+    itemDensity: Number(itemDensity.toFixed(3)),
+    avgTailLength: Number(avgTailLength.toFixed(2)),
+    peakTailLength,
+    avgReleaseDelay: Number(avgReleaseDelay.toFixed(2)),
+    maxReleaseDelay,
+    unreleasedInventoryRatio: Number(unreleasedInventoryRatio.toFixed(3)),
+    maxUnreleasedItems,
+    spawnTrapCount,
+    decisionPointFrequency: Number(decisionPointFrequency.toFixed(3)),
+    loopRiskScore: Number(loopRiskScore.toFixed(3)),
+    quotaValidated: true
   };
+}
+
+function validateDifficultyMetrics(meta, settings) {
+  const issues = [];
+  if (meta.peakTailLength > settings.tailLengthCap) {
+    issues.push(createGeneratorIssue({
+      code: "TAIL_PRESSURE_EXCEEDED",
+      message: `Đuôi đỉnh ước tính ${meta.peakTailLength} vượt giới hạn ${settings.tailLengthCap}.`,
+      suggestion: "Tăng giới hạn đuôi, tăng gom cụm màu hoặc giảm độ trễ xả."
+    }));
+  }
+  if (meta.maxUnreleasedItems > settings.maxUnreleasedItems) {
+    issues.push(createGeneratorIssue({
+      code: "RELEASE_PRESSURE_EXCEEDED",
+      message: `Tồn kho chưa xả ${meta.maxUnreleasedItems} vượt ngưỡng ${settings.maxUnreleasedItems}.`,
+      suggestion: "Giảm độ trễ xả, tăng gom màu hoặc chọn preset dễ hơn."
+    }));
+  }
+  if (meta.spawnTrapCount > settings.maxImmediateChainCount) {
+    issues.push(createGeneratorIssue({
+      code: "NEXT_LAYER_SPAWN_TRAP",
+      message: `Có ${meta.spawnTrapCount} vật phẩm lớp mới nằm trong vùng xuất hiện rủi ro.`,
+      suggestion: "Tăng khoảng cách xuất hiện an toàn hoặc giảm áp lực bẫy lớp."
+    }));
+  }
+  return issues;
 }
 
 function generatePreview(state, rawSettings = {}) {
@@ -3419,19 +3624,22 @@ function generatePreview(state, rawSettings = {}) {
         settings,
         issues: [createGeneratorIssue({
           code: "BRANCH_DISTRIBUTION_FAILED",
-          message: `Layer ${layerIndex + 1} has no valid branch for generated items.`,
+          message: `Lớp ${layerIndex + 1} không có nhánh hợp lệ để sinh vật phẩm.`,
           layerIndex,
-          suggestion: "Add playable path cells or remove blocked cells on this layer."
+          suggestion: "Thêm path có thể đi được hoặc bỏ vùng chặn trên layer này."
         })]
       };
     }
     const branchCopies = branches.map((branch) => ({ ...branch, indexes: branch.indexes.slice() }));
-    requirements.forEach((requirement) => {
-      const cells = takeCellsFromBranches(branchCopies, requirement.amount, settings, random);
+    const usedLayerIndexes = new Set();
+    requirementChunks(requirements, settings, random).forEach((requirement) => {
+      const cells = takeCellsFromBranches(state, source, branchCopies, requirement, settings, random, usedLayerIndexes);
       if (cells.length < requirement.amount) return;
       const layer = next.layers.find((candidate, order) => (Number.isInteger(candidate.layer) ? candidate.layer : order) === layerIndex);
       cells.forEach((cell, order) => {
         const { x, y } = indexToPosition(cell.index, next.grid.columns);
+        const releaseDelay = pathDistance(source, cell.index, requirement.deliverIndex);
+        const pathOrder = pathOrderMap(source).get(cell.index) ?? cell.index;
         layer.cells[cellKey(x, y)] = { item: createItemFromRequirement(requirement) };
         generatedItems.push({
           id: `gen_${layerIndex}_${requirement.trayId}_${requirement.itemId}_${cell.index}_${order}`,
@@ -3441,27 +3649,31 @@ function generatePreview(state, rawSettings = {}) {
           gridY: y,
           pathIndex: cell.index,
           branchId: cell.branchId,
-          sourceTrayId: `tray_${requirement.trayId}`
+          sourceTrayId: `tray_${requirement.trayId}`,
+          releaseDelay,
+          spawnRisk: requirement.layerIndex > 0 && pathOrder < settings.spawnSafetyDistance,
+          connectionCount: pathConnectionsAt(state, cell.index).length
         });
       });
     });
   }
 
-  if (generatedItems.length !== source.stats.totalRequired) {
+  const quotaIssues = validateGeneratedQuotas(generatedItems, source);
+  if (quotaIssues.length > 0) {
     return {
       ok: false,
       preview: null,
       source,
       settings,
-      issues: [createGeneratorIssue({
-        code: "GENERATION_FAILED",
-        message: `Generated ${generatedItems.length}/${source.stats.totalRequired} items after ${settings.maxRetries} retry limit.`,
-        suggestion: "Increase valid slots, lower cluster pressure, or use an easier preset."
-      })]
+      issues: quotaIssues
     };
   }
 
   const meta = generatedMetrics(generatedItems, settings, source);
+  const metricIssues = validateDifficultyMetrics(meta, settings);
+  if (metricIssues.length > 0) {
+    return { ok: false, preview: null, source, settings, issues: metricIssues, generatedItems, meta };
+  }
   next.generateSettings = settings;
   next.generatedItems = generatedItems;
   next.generationMeta = meta;
@@ -5341,14 +5553,24 @@ function formatPercent(value) {
 
 function statusOf(state) {
   const meta = state.generationMeta;
-  if (meta?.status === "Error") return "Error";
-  if (meta?.status === "Generated" && state.fileDirty) return "Modified";
-  if (meta?.status === "Generated") return "Generated";
-  return "Not Generated";
+  if (meta?.status === "Error") return "Lỗi";
+  if (meta?.status === "Generated" && state.fileDirty) return "Đã chỉnh sửa";
+  if (meta?.status === "Generated") return "Đã sinh";
+  return "Chưa sinh";
+}
+
+function statusClass(status) {
+  return {
+    "Sẵn sàng xem trước": "preview-ready",
+    "Đã sinh": "generated",
+    "Đã chỉnh sửa": "modified",
+    "Lỗi": "error",
+    "Chưa sinh": "not-generated"
+  }[status] ?? "not-generated";
 }
 
 function issueRows(issues) {
-  if (!issues?.length) return `<div class="generate-issue ok"><strong>OK</strong><span>No generator issue.</span></div>`;
+  if (!issues?.length) return `<div class="generate-issue ok"><strong>Ổn</strong><span>Không có lỗi bộ sinh.</span></div>`;
   return issues.map((issue) => `
     <div class="generate-issue ${escapeHtml(issue.severity ?? "error")}">
       <strong>${escapeHtml(issue.code)}</strong>
@@ -5361,7 +5583,7 @@ function issueRows(issues) {
 function settingsGroupHtml(settings, group) {
   const fields = GENERATE_SETTING_FIELDS.filter((field) => field.group === group);
   return `
-    <details class="generate-settings-group" ${group === "Distribution" ? "open" : ""}>
+    <details class="generate-settings-group" ${group === "Cụm và đường đi" ? "open" : ""}>
       <summary>${escapeHtml(group)}</summary>
       <div class="generate-field-grid">
         ${fields.map((field) => {
@@ -5387,38 +5609,38 @@ function renderGenerateControls(container, state) {
 
   container.innerHTML = `
     <section class="control-section">
-      <div class="section-heading"><h2>Source Data</h2><span>Read only</span></div>
+      <div class="section-heading"><h2>Dữ liệu nguồn</h2><span>Chỉ đọc</span></div>
       <div class="generate-source-grid">
-        <div><span>Layers</span><strong>${source.stats.layers}</strong></div>
-        <div><span>Trays</span><strong>${source.stats.trays}</strong></div>
-        <div><span>Need</span><strong>${source.stats.totalRequired}</strong></div>
-        <div><span>Valid Slots</span><strong>${source.stats.totalValidSlots}</strong></div>
+        <div><span>Lớp</span><strong>${source.stats.layers}</strong></div>
+        <div><span>Khay</span><strong>${source.stats.trays}</strong></div>
+        <div><span>Cần sinh</span><strong>${source.stats.totalRequired}</strong></div>
+        <div><span>Ô hợp lệ</span><strong>${source.stats.totalValidSlots}</strong></div>
       </div>
-      <div class="generate-source-note">Path, tray, start, delivery, priority and element data are locked here. Edit source in LevelDes.</div>
+      <div class="generate-source-note">Đường ray, khay, điểm bắt đầu, điểm giao, điểm ưu tiên và đối tượng đặc biệt chỉ được đọc. Muốn sửa nguồn hãy mở tab LevelDes.</div>
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Distribution</h2><span>Seeded</span></div>
+      <div class="section-heading"><h2>Phân bổ</h2><span>Có seed</span></div>
       <div class="generate-field-grid">
-        <label class="generate-field"><span>Seed</span><input type="number" data-generate-setting="seed" min="0" step="1" value="${settings.seed}"></label>
-        <label class="generate-field"><span>Retries</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
-        <label class="generate-field wide"><span>Multi Branch</span>
+        <label class="generate-field"><span>Mã ngẫu nhiên</span><input type="number" data-generate-setting="seed" min="0" step="1" value="${settings.seed}"></label>
+        <label class="generate-field"><span>Số lần thử lại</span><input type="number" data-generate-setting="maxRetries" min="1" max="500" step="1" value="${settings.maxRetries}"></label>
+        <label class="generate-field wide"><span>Chế độ nhiều nhánh</span>
           <select data-generate-setting="multiBranchMode">
-            ${["balanced", "spread", "clustered"].map((value) => `<option value="${value}" ${settings.multiBranchMode === value ? "selected" : ""}>${value}</option>`).join("")}
+            ${Object.entries(MULTI_BRANCH_MODE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.multiBranchMode === value ? "selected" : ""}>${label}</option>`).join("")}
           </select>
         </label>
       </div>
     </section>
 
     <section class="control-section">
-      <div class="section-heading"><h2>Difficulty</h2><span>Preset</span></div>
+      <div class="section-heading"><h2>Độ khó</h2><span>Mẫu nhanh</span></div>
       <div class="generate-preset-list">
-        ${Object.keys(GENERATE_PRESETS).map((preset) => `<button class="generate-preset ${settings.difficultyPreset === preset ? "active" : ""}" type="button" data-generate-preset="${preset}">${preset}</button>`).join("")}
+        ${Object.keys(GENERATE_PRESETS).map((preset) => `<button class="generate-preset ${settings.difficultyPreset === preset ? "active" : ""}" type="button" data-generate-preset="${preset}">${PRESET_LABELS[preset]}</button>`).join("")}
       </div>
-      ${["Distribution", "Tail Pressure", "Progression", "Noise", "Item & Route", "Collision"].map((group) => settingsGroupHtml(settings, group)).join("")}
+      ${["Áp lực đuôi", "Áp lực xả", "Lớp và xuất hiện", "Cụm và đường đi"].map((group) => settingsGroupHtml(settings, group)).join("")}
       <div class="generate-field-grid">
-        <label class="generate-field wide"><span>Pressure Curve</span>
-          <select data-generate-setting="pressureCurve">${["Flat", "Ramp", "Sawtooth", "PeakLate"].map((value) => `<option value="${value}" ${settings.pressureCurve === value ? "selected" : ""}>${value}</option>`).join("")}</select>
+        <label class="generate-field wide"><span>Đường cong tăng đuôi</span>
+          <select data-generate-setting="tailLengthGrowthCurve">${Object.entries(TAIL_CURVE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.tailLengthGrowthCurve === value ? "selected" : ""}>${label}</option>`).join("")}</select>
         </label>
       </div>
     </section>
@@ -5429,34 +5651,38 @@ function renderGenerateResults(container, state, result = null) {
   const source = result?.source ?? analyzeGenerateSource(state);
   const meta = result?.meta ?? state.generationMeta ?? {};
   const issues = result?.issues?.length ? result.issues : source.issues;
-  const status = result?.ok ? "Preview Ready" : statusOf(state);
+  const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
   container.innerHTML = `
     <header class="panel-header">
-      <div class="panel-title"><span class="panel-accent green"></span><div><h2>Generate Result</h2><p>${escapeHtml(status)}</p></div></div>
-      <span class="generate-status-badge ${escapeHtml(status.toLowerCase().replaceAll(" ", "-"))}">${escapeHtml(status)}</span>
+      <div class="panel-title"><span class="panel-accent green"></span><div><h2>Kết quả sinh</h2><p>${escapeHtml(status)}</p></div></div>
+      <span class="generate-status-badge ${statusClass(status)}">${escapeHtml(status)}</span>
     </header>
     <div class="generate-result-scroll">
       <section class="generate-result-card">
-        <header><h3>Item Result</h3><span>${totalGenerated}/${source.stats.totalRequired}</span></header>
+        <header><h3>Kết quả vật phẩm</h3><span>${totalGenerated}/${source.stats.totalRequired}</span></header>
         <div class="generate-source-grid compact">
-          <div><span>Required</span><strong>${source.stats.totalRequired}</strong></div>
-          <div><span>Generated</span><strong>${totalGenerated}</strong></div>
-          <div><span>Missing</span><strong>${Math.max(0, source.stats.totalRequired - totalGenerated)}</strong></div>
-          <div><span>Branches</span><strong>${meta.branchCount ?? "-"}</strong></div>
+          <div><span>Yêu cầu</span><strong>${source.stats.totalRequired}</strong></div>
+          <div><span>Đã sinh</span><strong>${totalGenerated}</strong></div>
+          <div><span>Còn thiếu</span><strong>${Math.max(0, source.stats.totalRequired - totalGenerated)}</strong></div>
+          <div><span>Nhánh dùng</span><strong>${meta.branchCount ?? "-"}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">
-        <header><h3>Difficulty Metrics</h3><span>${meta.generatorVersion ?? "draft"}</span></header>
+        <header><h3>Chỉ số độ khó</h3><span>${meta.generatorVersion ?? "nháp"}</span></header>
         <div class="generate-source-grid compact">
-          <div><span>Clusters</span><strong>${meta.clusterCount ?? "-"}</strong></div>
-          <div><span>Cluster Ratio</span><strong>${Number.isFinite(meta.actualClusterRatio) ? formatPercent(meta.actualClusterRatio) : "-"}</strong></div>
-          <div><span>Avg Tail</span><strong>${meta.avgTailLength ?? "-"}</strong></div>
-          <div><span>Slots</span><strong>${source.stats.totalValidSlots}</strong></div>
+          <div><span>Số cụm</span><strong>${meta.clusterCount ?? "-"}</strong></div>
+          <div><span>Tỷ lệ gom</span><strong>${Number.isFinite(meta.actualClusterRatio) ? formatPercent(meta.actualClusterRatio) : "-"}</strong></div>
+          <div><span>Đuôi TB</span><strong>${meta.avgTailLength ?? "-"}</strong></div>
+          <div><span>Đuôi đỉnh</span><strong>${meta.peakTailLength ?? "-"}</strong></div>
+          <div><span>Độ trễ xả TB</span><strong>${meta.avgReleaseDelay ?? "-"}</strong></div>
+          <div><span>Tồn kho tối đa</span><strong>${meta.maxUnreleasedItems ?? "-"}</strong></div>
+          <div><span>Mật độ vật phẩm</span><strong>${Number.isFinite(meta.itemDensity) ? formatPercent(meta.itemDensity) : "-"}</strong></div>
+          <div><span>Bẫy xuất hiện</span><strong>${meta.spawnTrapCount ?? "-"}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">
-        <header><h3>Warnings & Errors</h3><span>${issues.length}</span></header>
+        <header><h3>Cảnh báo & lỗi</h3><span>${issues.length}</span></header>
         <div class="generate-issue-list">${issueRows(issues)}</div>
       </section>
     </div>
@@ -5507,7 +5733,7 @@ function activateTab(tab, editorData, elements) {
   elements.levelLayerPicker.classList.toggle("read-only", isJson || isGenerate);
   elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson || isGenerate));
   if (isJson) elements.activeToolBadge.textContent = "Chỉ xem";
-  else if (isGenerate) elements.activeToolBadge.textContent = "Generate Preview";
+  else if (isGenerate) elements.activeToolBadge.textContent = "Xem trước sinh";
   else if (isLevel) {
     const eraseMode = ERASE_MODE_LABELS[editorData.eraseMode] ? editorData.eraseMode : "smart";
     elements.activeToolBadge.textContent = editorData.tool === "erase"
@@ -5515,7 +5741,7 @@ function activateTab(tab, editorData, elements) {
     : TOOL_LABELS[editorData.tool];
   }
   elements.placeholderView.classList.add("hidden");
-  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isGenerate ? "Generate / Auto Generator Level" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
+  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isGenerate ? "Sinh màn / Tự động sinh vật phẩm" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
 }
 
 
@@ -8240,7 +8466,7 @@ function renderAll() {
   elements.mapHeightInput.value = String(editor.data.grid.rows);
   elements.gridMeta.textContent = `${editor.data.grid.columns} × ${editor.data.grid.rows} · ${layer.name} · chỉ hoa quả thay đổi`;
   if (editor.data.tab === "level") elements.topbarEyebrow.textContent = "Level Design / Layer fruit đang chọn";
-  if (editor.data.tab === "generate") elements.topbarEyebrow.textContent = generatePreviewState ? "Generate / Preview chưa apply" : "Generate / Auto Generator Level";
+  if (editor.data.tab === "generate") elements.topbarEyebrow.textContent = generatePreviewState ? "Sinh màn / Xem trước chưa áp dụng" : "Sinh màn / Tự động sinh vật phẩm";
   elements.boardWrap.classList.remove("hidden-layer");
   elements.assetCount.textContent = `${paletteObjects.length} ${activePaletteCategory}`;
   renderGenerateWorkspace();
@@ -8683,7 +8909,7 @@ function validateGenerateSourceOnly() {
   const source = analyzeGenerateSource(editor.data);
   generateLastResult = { ok: source.valid, source, settings: normalizeGenerateSettings(editor.data.generateSettings), issues: source.issues };
   renderAll();
-  showNotification(elements.toast, source.valid ? "Generate source hợp lệ." : `Generate source có ${source.issues.length} lỗi.`);
+  showNotification(elements.toast, source.valid ? "Nguồn sinh hợp lệ." : `Nguồn sinh có ${source.issues.length} lỗi.`);
   return source.valid;
 }
 
@@ -8696,14 +8922,14 @@ function createGeneratePreviewResult({ silent = false } = {}) {
   }
   renderAll();
   if (!silent) {
-    showNotification(elements.toast, result.ok ? `Đã tạo preview ${result.generatedItems.length} item.` : `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+    showNotification(elements.toast, result.ok ? `Đã tạo bản xem trước ${result.generatedItems.length} vật phẩm.` : `Sinh lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
   }
   return result;
 }
 
 function applyGeneratePreviewResult() {
   if (!generatePreviewState) {
-    showNotification(elements.toast, "Chưa có preview để apply.");
+    showNotification(elements.toast, "Chưa có bản xem trước để áp dụng.");
     return false;
   }
   generateLastAppliedBackup = structuredClone(editor.data);
@@ -8712,7 +8938,7 @@ function applyGeneratePreviewResult() {
   generatePreviewState = null;
   generateLastResult = { ok: true, source: analyzeGenerateSource(editor.data), settings: editor.data.generateSettings, issues: [], generatedItems: editor.data.generatedItems, meta: editor.data.generationMeta };
   renderAll();
-  showNotification(elements.toast, "Đã apply generated items vào level hiện tại.");
+  showNotification(elements.toast, "Đã áp dụng vật phẩm đã sinh vào màn hiện tại.");
   return true;
 }
 
@@ -8737,19 +8963,19 @@ elements.generateApplyBtn.addEventListener("click", applyGeneratePreviewResult);
 elements.generateAndApplyBtn.addEventListener("click", () => {
   const result = createGeneratePreviewResult({ silent: true });
   if (result.ok) applyGeneratePreviewResult();
-  else showNotification(elements.toast, `Generate lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
+  else showNotification(elements.toast, `Sinh lỗi: ${result.issues[0]?.code ?? "GENERATION_FAILED"}`);
 });
 elements.generateResetBtn.addEventListener("click", () => {
   const backup = generateLastAppliedBackup;
   if (!backup) {
-    showNotification(elements.toast, "Chưa có bản apply gần nhất để reset.");
+    showNotification(elements.toast, "Chưa có lần áp dụng gần nhất để khôi phục.");
     return;
   }
   mutate((state) => resetGeneratedItems(state, backup));
   generateLastAppliedBackup = null;
   clearGeneratePreview();
   renderAll();
-  showNotification(elements.toast, "Đã reset generated items về trước lần apply gần nhất.");
+  showNotification(elements.toast, "Đã khôi phục vật phẩm về trước lần áp dụng gần nhất.");
 });
 elements.generateSaveBtn.addEventListener("click", downloadCurrentLevel);
 elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);

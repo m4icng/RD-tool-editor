@@ -41,7 +41,7 @@ export function activateTab(tab, editorData, elements) {
   elements.levelLayerPicker.classList.toggle("read-only", isJson || isGenerate);
   elements.levelLayerPicker.querySelectorAll("button").forEach((button) => button.classList.toggle("hidden", isJson || isGenerate));
   if (isJson) elements.activeToolBadge.textContent = "Chỉ xem";
-  else if (isGenerate) elements.activeToolBadge.textContent = "Generate Preview";
+  else if (isGenerate) elements.activeToolBadge.textContent = "Xem trước sinh";
   else if (isLevel) {
     const eraseMode = ERASE_MODE_LABELS[editorData.eraseMode] ? editorData.eraseMode : "smart";
     elements.activeToolBadge.textContent = editorData.tool === "erase"
@@ -49,5 +49,5 @@ export function activateTab(tab, editorData, elements) {
     : TOOL_LABELS[editorData.tool];
   }
   elements.placeholderView.classList.add("hidden");
-  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isGenerate ? "Generate / Auto Generator Level" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
+  elements.topbarEyebrow.textContent = isPlayable ? "Playable / Snapshot màn chơi" : isGenerate ? "Sinh màn / Tự động sinh vật phẩm" : isLevel ? "Level Design / Layer fruit đang chọn" : "Data JSON / Map editor hiện tại";
 }

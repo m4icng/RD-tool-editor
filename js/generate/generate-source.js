@@ -34,22 +34,23 @@ export function collectTrayRequirements(state) {
     const item = cell?.item;
     if (!["tray", "truck"].includes(item?.kind)) return;
     const { x, y } = parseCellKey(key);
+    const deliverIndex = positionToIndex(x, y, state.grid.columns);
     const trayId = Number.isInteger(item.trayId) ? item.trayId : positionToIndex(x, y, state.grid.columns);
     if (item.kind === "truck") {
       const itemId = Number(FRUIT_ITEM_IDS[item.fruitType] ?? item.itemId ?? item.id);
-      requirements.push({ trayId, layerIndex: 0, itemId, fruitType: item.fruitType, amount: Number(item.capacity) || 0 });
+      requirements.push({ trayId, deliverIndex, layerIndex: 0, itemId, fruitType: item.fruitType, amount: Number(item.capacity) || 0 });
       return;
     }
     (item.trayLayers ?? []).forEach((trayLayer, order) => {
       const layerIndex = Number.isInteger(trayLayer.layer) ? trayLayer.layer : order;
       FRUIT_TYPES.forEach((fruitType) => {
         const amount = Number(trayLayer.recipe?.[fruitType]) || 0;
-        if (amount > 0) requirements.push({ trayId, layerIndex, itemId: FRUIT_ITEM_IDS[fruitType], fruitType, amount });
+        if (amount > 0) requirements.push({ trayId, deliverIndex, layerIndex, itemId: FRUIT_ITEM_IDS[fruitType], fruitType, amount });
       });
       (trayLayer.unknownItems ?? []).forEach((unknown) => {
         const itemId = Number(unknown.itemId);
         const amount = Number(unknown.count) || 0;
-        if (Number.isInteger(itemId) && amount > 0) requirements.push({ trayId, layerIndex, itemId, fruitType: fruitTypeFromItemId(itemId), amount });
+        if (Number.isInteger(itemId) && amount > 0) requirements.push({ trayId, deliverIndex, layerIndex, itemId, fruitType: fruitTypeFromItemId(itemId), amount });
       });
     });
   });
@@ -167,10 +168,10 @@ export function analyzeGenerateSource(state) {
     if (!Number.isInteger(entry.itemId) || entry.itemId <= 0 || entry.amount <= 0) {
       issues.push(createGeneratorIssue({
         code: "TRAY_INVALID",
-        message: `Tray ${entry.trayId} has invalid itemId or amount.`,
+        message: `Khay ${entry.trayId} có mã vật phẩm hoặc số lượng không hợp lệ.`,
         trayId: entry.trayId,
         layerIndex: entry.layerIndex,
-        suggestion: "Check tray recipe in Level Des."
+        suggestion: "Kiểm tra công thức khay trong tab LevelDes."
       }));
       return;
     }
@@ -179,15 +180,15 @@ export function analyzeGenerateSource(state) {
   if (pathIndexes.length === 0) {
     issues.push(createGeneratorIssue({
       code: "SOURCE_INVALID",
-      message: "Level has no path cells.",
-      suggestion: "Draw path in Level Des before generating items."
+      message: "Level chưa có ô đường ray.",
+      suggestion: "Vẽ đường ray trong tab LevelDes trước khi sinh màn."
     }));
   }
   if (requirements.length === 0) {
     issues.push(createGeneratorIssue({
       code: "TRAY_INVALID",
-      message: "No tray requirement found.",
-      suggestion: "Add tray layers and block amounts in Level Des."
+      message: "Không tìm thấy yêu cầu vật phẩm từ khay.",
+      suggestion: "Thêm lớp khay và số lượng vật phẩm trong tab LevelDes."
     }));
   }
   requiredByLayer.forEach((required, layerIndex) => {
@@ -195,13 +196,16 @@ export function analyzeGenerateSource(state) {
     if (required > validSlots) {
       issues.push(createGeneratorIssue({
         code: "NOT_ENOUGH_VALID_CELLS",
-        message: `Layer ${layerIndex + 1} needs ${required} items but only has ${validSlots} valid cells.`,
+        message: `Lớp ${layerIndex + 1} cần ${required} vật phẩm nhưng chỉ có ${validSlots} ô hợp lệ.`,
         layerIndex,
-        suggestion: "Add more valid path cells or reduce tray requirement."
+        suggestion: "Thêm ô đường ray hợp lệ hoặc giảm yêu cầu trong khay."
       }));
     }
   });
   const trayCount = new Set(requirements.map((entry) => entry.trayId)).size;
+  const priorityCount = Object.keys(state.priorityPoints ?? {}).length;
+  const totalValidSlots = [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0);
+  const totalRequired = requirements.reduce((sum, entry) => sum + entry.amount, 0);
   return {
     valid: issues.every((issue) => issue.severity !== "error"),
     issues,
@@ -211,8 +215,10 @@ export function analyzeGenerateSource(state) {
     stats: {
       layers: state.layers?.length ?? 0,
       trays: trayCount,
-      totalRequired: requirements.reduce((sum, entry) => sum + entry.amount, 0),
-      totalValidSlots: [...validByLayer.values()].reduce((sum, cells) => sum + cells.length, 0)
+      priorityPoints: priorityCount,
+      totalRequired,
+      totalValidSlots,
+      itemDensity: totalValidSlots > 0 ? totalRequired / totalValidSlots : 0
     }
   };
 }

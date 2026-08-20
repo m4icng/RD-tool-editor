@@ -66,13 +66,13 @@ function nextTrayId(state) {
   return id;
 }
 
-function removeTrayAtTrayPosition(state, position) {
+function removeTrayAtDeliverPoint(state, position) {
   const targetIndex = positionToIndex(position.x, position.y, state.grid.columns);
   const entry = Object.entries(state.sharedCells ?? {}).find(([key, cell]) => {
     if (!["tray", "truck"].includes(cell.item?.kind)) return false;
     const [deliverX, deliverY] = key.split(",").map(Number);
-    const trayPosition = cell.item.trayPosition ?? { x: deliverX, y: deliverY - 1 };
-    return positionToIndex(trayPosition.x, trayPosition.y, state.grid.columns) === targetIndex;
+    if (!Number.isInteger(deliverX) || !Number.isInteger(deliverY)) return false;
+    return positionToIndex(deliverX, deliverY, state.grid.columns) === targetIndex;
   });
   if (!entry) return false;
   const [key, shared] = entry;
@@ -195,7 +195,7 @@ export function eraseAtPosition(state, position, mode = "smart") {
     state.selectedCell = { x: position.x, y: position.y };
     return { changed, removed: changed ? "one-way" : null };
   }
-  if (mode === "tray" && removeTrayAtTrayPosition(state, position)) {
+  if (mode === "tray" && removeTrayAtDeliverPoint(state, position)) {
     state.selectedCell = { x: position.x, y: position.y };
     return { changed: true, removed: "tray" };
   }

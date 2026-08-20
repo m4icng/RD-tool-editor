@@ -7,7 +7,6 @@ import { visibleSharedItemForLayer } from "../core/player-head-layer-rule.js";
 import {
   cellKey,
   ensureTerrainState,
-  getTrayVisualPosition,
   isMysteryFruitAt,
   positionToIndex
 } from "../utils/grid-utils.js";
@@ -43,13 +42,12 @@ function targetLabel(target) {
   }[target] ?? target;
 }
 
-function trayAtTrayPosition(state, index) {
+function trayAtDeliverPoint(state, index) {
   return Object.entries(state.sharedCells ?? {}).find(([key, cell]) => {
     if (!["tray", "truck"].includes(cell.item?.kind)) return false;
     const [deliverX, deliverY] = key.split(",").map(Number);
     if (!Number.isInteger(deliverX) || !Number.isInteger(deliverY)) return false;
-    const trayPosition = getTrayVisualPosition(cell.item, { x: deliverX, y: deliverY });
-    return positionToIndex(trayPosition.x, trayPosition.y, state.grid.columns) === index;
+    return positionToIndex(deliverX, deliverY, state.grid.columns) === index;
   });
 }
 
@@ -79,7 +77,7 @@ export function getDeleteTargets(state, position) {
     targets.push({ mode: "item", label: context.layerCell.item?.label ?? context.shared.item?.label ?? targetLabel("item") });
   }
   if (state.priorityPoints?.[context.key]) targets.push({ mode: "priority", label: targetLabel("priority") });
-  if (trayAtTrayPosition(state, context.index)) targets.push({ mode: "tray", label: targetLabel("tray") });
+  if (trayAtDeliverPoint(state, context.index)) targets.push({ mode: "tray", label: targetLabel("tray") });
   if (context.shared.path) targets.push({ mode: "path", label: targetLabel("path") });
   if (state.grassCells?.[context.key]) targets.push({ mode: "grass", label: targetLabel("grass") });
   return targets;

@@ -4883,13 +4883,12 @@ function targetLabel(target) {
   }[target] ?? target;
 }
 
-function trayAtTrayPosition(state, index) {
+function trayAtDeliverPoint(state, index) {
   return Object.entries(state.sharedCells ?? {}).find(([key, cell]) => {
     if (!["tray", "truck"].includes(cell.item?.kind)) return false;
     const [deliverX, deliverY] = key.split(",").map(Number);
     if (!Number.isInteger(deliverX) || !Number.isInteger(deliverY)) return false;
-    const trayPosition = getTrayVisualPosition(cell.item, { x: deliverX, y: deliverY });
-    return positionToIndex(trayPosition.x, trayPosition.y, state.grid.columns) === index;
+    return positionToIndex(deliverX, deliverY, state.grid.columns) === index;
   });
 }
 
@@ -4919,7 +4918,7 @@ function getDeleteTargets(state, position) {
     targets.push({ mode: "item", label: context.layerCell.item?.label ?? context.shared.item?.label ?? targetLabel("item") });
   }
   if (state.priorityPoints?.[context.key]) targets.push({ mode: "priority", label: targetLabel("priority") });
-  if (trayAtTrayPosition(state, context.index)) targets.push({ mode: "tray", label: targetLabel("tray") });
+  if (trayAtDeliverPoint(state, context.index)) targets.push({ mode: "tray", label: targetLabel("tray") });
   if (context.shared.path) targets.push({ mode: "path", label: targetLabel("path") });
   if (state.grassCells?.[context.key]) targets.push({ mode: "grass", label: targetLabel("grass") });
   return targets;
@@ -4976,13 +4975,13 @@ function nextTrayId(state) {
   return id;
 }
 
-function removeTrayAtTrayPosition(state, position) {
+function removeTrayAtDeliverPoint(state, position) {
   const targetIndex = positionToIndex(position.x, position.y, state.grid.columns);
   const entry = Object.entries(state.sharedCells ?? {}).find(([key, cell]) => {
     if (!["tray", "truck"].includes(cell.item?.kind)) return false;
     const [deliverX, deliverY] = key.split(",").map(Number);
-    const trayPosition = cell.item.trayPosition ?? { x: deliverX, y: deliverY - 1 };
-    return positionToIndex(trayPosition.x, trayPosition.y, state.grid.columns) === targetIndex;
+    if (!Number.isInteger(deliverX) || !Number.isInteger(deliverY)) return false;
+    return positionToIndex(deliverX, deliverY, state.grid.columns) === targetIndex;
   });
   if (!entry) return false;
   const [key, shared] = entry;
@@ -5105,7 +5104,7 @@ function eraseAtPosition(state, position, mode = "smart") {
     state.selectedCell = { x: position.x, y: position.y };
     return { changed, removed: changed ? "one-way" : null };
   }
-  if (mode === "tray" && removeTrayAtTrayPosition(state, position)) {
+  if (mode === "tray" && removeTrayAtDeliverPoint(state, position)) {
     state.selectedCell = { x: position.x, y: position.y };
     return { changed: true, removed: "tray" };
   }

@@ -1,7 +1,8 @@
-import { normalizeCountBarrierCount, normalizeCountBarrierElement, nextCountBarrierSequence } from "../objects/count-barrier-object.js";
-import { nextTunnelSequence, normalizeTunnelDraft, normalizeTunnelElement } from "../objects/tunnel-object.js";
-import { nextOneWaySequence, normalizeOneWayDraft, normalizeOneWayElement } from "../objects/one-way-object.js";
+import { normalizeCountBarrierCount, normalizeCountBarrierElementWithIdMap, nextCountBarrierSequence } from "../objects/count-barrier-object.js";
+import { nextTunnelSequence, normalizeTunnelDraft, normalizeTunnelElementWithIdMap } from "../objects/tunnel-object.js";
+import { nextOneWaySequence, normalizeOneWayDraft, normalizeOneWayElementWithIdMap } from "../objects/one-way-object.js";
 import { visibleSharedItemForLayer } from "../core/player-head-layer-rule.js";
+import { remapGroupedElementId } from "./grouped-element-ids.js";
 
 export const cellKey = (x, y) => `${x},${y}`;
 
@@ -85,45 +86,23 @@ export function ensureTerrainState(state) {
   if (!Number.isInteger(state.selectedBridgeAxis)) state.selectedBridgeAxis = 0;
   if (!Number.isInteger(state.selectedGateDirection)) state.selectedGateDirection = 0;
   state.selectedCountBarrierCount = normalizeCountBarrierCount(state.selectedCountBarrierCount);
-  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
-  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  const barrierNormalize = normalizeCountBarrierElementWithIdMap(state.countBarrierElement);
+  state.countBarrierElement = barrierNormalize.normalizedCollection;
+  state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, barrierNormalize.idMap, { pendingId: state.nextBarrierId });
+  state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, barrierNormalize.idMap);
+  const tunnelNormalize = normalizeTunnelElementWithIdMap(state.tunnelElement);
+  state.tunnelElement = tunnelNormalize.normalizedCollection;
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  state.activeTunnelId = remapGroupedElementId(state.activeTunnelId, tunnelNormalize.idMap);
   state.tunnelDraft = normalizeTunnelDraft(state.tunnelDraft);
-  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  if (state.tunnelDraft) state.tunnelDraft.tunnelId = state.nextTunnelId;
+  const oneWayNormalize = normalizeOneWayElementWithIdMap(state.oneWayElement);
+  state.oneWayElement = oneWayNormalize.normalizedCollection;
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  state.activeOneWayId = remapGroupedElementId(state.activeOneWayId, oneWayNormalize.idMap);
   state.oneWayDraft = normalizeOneWayDraft(state.oneWayDraft);
-  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
-    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
-  }
-  if (state.nextBarrierId < nextCountBarrierSequence(state.countBarrierElement)) {
-    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
-  }
-  const activeBarrierExists = state.countBarrierElement.some((entry) => entry.barrierId === state.activeBarrierId);
-  const activeBarrierIsPending = Number.isInteger(state.activeBarrierId) && state.activeBarrierId >= 0 && state.activeBarrierId < state.nextBarrierId;
-  if (!Number.isInteger(state.activeBarrierId) || (!activeBarrierExists && !activeBarrierIsPending)) {
-    state.activeBarrierId = null;
-  }
-  if (!Number.isInteger(state.drawingCountBarrierId)) state.drawingCountBarrierId = null;
-  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
-    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
-  }
-  if (state.nextTunnelId < nextTunnelSequence(state.tunnelElement)) {
-    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
-  }
-  const activeTunnelExists = state.tunnelElement.some((entry) => entry.tunnelId === state.activeTunnelId);
-  const activeTunnelIsPending = Number.isInteger(state.activeTunnelId) && state.activeTunnelId >= 0 && state.activeTunnelId < state.nextTunnelId;
-  if (!Number.isInteger(state.activeTunnelId) || (!activeTunnelExists && !activeTunnelIsPending)) {
-    state.activeTunnelId = null;
-  }
-  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
-    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
-  }
-  if (state.nextOneWayId < nextOneWaySequence(state.oneWayElement)) {
-    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
-  }
-  const activeOneWayExists = state.oneWayElement.some((entry) => entry.oneWayId === state.activeOneWayId);
-  const activeOneWayIsPending = Number.isInteger(state.activeOneWayId) && state.activeOneWayId >= 0 && state.activeOneWayId < state.nextOneWayId;
-  if (!Number.isInteger(state.activeOneWayId) || (!activeOneWayExists && !activeOneWayIsPending)) {
-    state.activeOneWayId = null;
-  }
+  if (state.oneWayDraft) state.oneWayDraft.oneWayId = state.nextOneWayId;
   if (!Array.isArray(state.mysteryFruitElement)) state.mysteryFruitElement = [];
   state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
   state.mysteryFruitDebug = Boolean(state.mysteryFruitDebug);

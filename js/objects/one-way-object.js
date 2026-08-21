@@ -1,4 +1,5 @@
 import { GATE_DIRECTIONS, ONE_WAY_ASSET_ID } from "../core/constants.js";
+import { nextGroupedElementId, normalizeGroupedElementIds, remapGroupedElementId } from "../utils/grouped-element-ids.js";
 
 export const ONE_WAY_DIRECTION_META = Object.freeze({
   [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up", icon: "▲" },
@@ -62,10 +63,12 @@ export function oneWayColor(oneWayId) {
 }
 
 export function normalizeOneWayElement(entries = []) {
-  if (!Array.isArray(entries)) return [];
-  const usedIds = new Set();
-  let nextId = 0;
-  return entries.flatMap((entry) => {
+  return normalizeOneWayElementWithIdMap(entries).normalizedCollection;
+}
+
+export function normalizeOneWayElementWithIdMap(entries = []) {
+  if (!Array.isArray(entries)) return { normalizedCollection: [], idMap: new Map() };
+  const normalizedEntries = entries.flatMap((entry) => {
     const points = Array.isArray(entry?.entryPoints) ? entry.entryPoints.slice(0, 2) : [];
     if (points.length !== 2) return [];
     const entryPoints = points.map((point) => ({
@@ -74,19 +77,14 @@ export function normalizeOneWayElement(entries = []) {
     }));
     if (entryPoints.some((point) => !Number.isInteger(point.index) || point.index < 0)) return [];
 
-    let oneWayId = Number(entry?.oneWayId);
-    if (!Number.isInteger(oneWayId) || oneWayId < 0 || usedIds.has(oneWayId)) {
-      while (usedIds.has(nextId)) nextId += 1;
-      oneWayId = nextId;
-    }
-    usedIds.add(oneWayId);
+    const oneWayId = Number(entry?.oneWayId);
     return [{ oneWayId, entryPoints }];
-  }).sort((a, b) => a.oneWayId - b.oneWayId);
+  });
+  return normalizeGroupedElementIds(normalizedEntries, "oneWayId");
 }
 
 export function nextOneWaySequence(entries = []) {
-  const ids = normalizeOneWayElement(entries).map((entry) => entry.oneWayId);
-  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+  return nextGroupedElementId(normalizeOneWayElement(entries));
 }
 
 export function findOneWayById(state, oneWayId) {
@@ -155,9 +153,7 @@ function draftUsesIndex(state, index) {
 export function startOneWayDraftAt(state, index) {
   state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
   if (usedOneWayIndexes(state).has(Number(index))) return { changed: false, reason: "one-way-overlap" };
-  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
-    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
-  }
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
   state.oneWayDraft = {
     oneWayId: state.nextOneWayId,
     step: "direction-a",
@@ -202,7 +198,7 @@ export function setOneWayDraftDirection(state, direction) {
   state.oneWayElement = [...normalizeOneWayElement(state.oneWayElement), oneWay];
   state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
   state.activeOneWayId = oneWay.oneWayId;
-  state.nextOneWayId = Math.max(Number(state.nextOneWayId) || 0, oneWay.oneWayId + 1, nextOneWaySequence(state.oneWayElement));
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
   state.oneWayDraft = null;
   return { changed: true, action: "one-way-created", oneWayId: oneWay.oneWayId };
 }
@@ -245,8 +241,10 @@ export function setOneWayEntryDirection(state, oneWayId, entryIndex, direction) 
 
 export function removeOneWayById(state, oneWayId) {
   const before = normalizeOneWayElement(state.oneWayElement);
-  state.oneWayElement = before.filter((entry) => Number(entry.oneWayId) !== Number(oneWayId));
-  if (state.activeOneWayId === Number(oneWayId)) state.activeOneWayId = null;
+  const next = normalizeOneWayElementWithIdMap(before.filter((entry) => Number(entry.oneWayId) !== Number(oneWayId)));
+  state.oneWayElement = next.normalizedCollection;
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  state.activeOneWayId = remapGroupedElementId(state.activeOneWayId, next.idMap);
   return before.length !== state.oneWayElement.length;
 }
 

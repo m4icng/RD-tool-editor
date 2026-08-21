@@ -1,4 +1,5 @@
 import { GATE_DIRECTIONS, TUNNEL_ASSET_ID } from "../core/constants.js";
+import { nextGroupedElementId, normalizeGroupedElementIds, remapGroupedElementId } from "../utils/grouped-element-ids.js";
 
 export const TUNNEL_DIRECTION_META = Object.freeze({
   [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up", icon: "↑" },
@@ -57,10 +58,12 @@ export function tunnelColor(tunnelId) {
 }
 
 export function normalizeTunnelElement(entries = []) {
-  if (!Array.isArray(entries)) return [];
-  const usedIds = new Set();
-  let nextId = 0;
-  return entries.flatMap((entry) => {
+  return normalizeTunnelElementWithIdMap(entries).normalizedCollection;
+}
+
+export function normalizeTunnelElementWithIdMap(entries = []) {
+  if (!Array.isArray(entries)) return { normalizedCollection: [], idMap: new Map() };
+  const normalizedEntries = entries.flatMap((entry) => {
     const points = Array.isArray(entry?.entryPoints) ? entry.entryPoints.slice(0, 2) : [];
     if (points.length !== 2) return [];
     const entryPoints = points.map((point) => ({
@@ -69,19 +72,14 @@ export function normalizeTunnelElement(entries = []) {
     }));
     if (entryPoints.some((point) => !Number.isInteger(point.index) || point.index < 0)) return [];
 
-    let tunnelId = Number(entry?.tunnelId);
-    if (!Number.isInteger(tunnelId) || tunnelId < 0 || usedIds.has(tunnelId)) {
-      while (usedIds.has(nextId)) nextId += 1;
-      tunnelId = nextId;
-    }
-    usedIds.add(tunnelId);
+    const tunnelId = Number(entry?.tunnelId);
     return [{ tunnelId, entryPoints }];
-  }).sort((a, b) => a.tunnelId - b.tunnelId);
+  });
+  return normalizeGroupedElementIds(normalizedEntries, "tunnelId");
 }
 
 export function nextTunnelSequence(entries = []) {
-  const ids = normalizeTunnelElement(entries).map((entry) => entry.tunnelId);
-  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+  return nextGroupedElementId(normalizeTunnelElement(entries));
 }
 
 export function findTunnelById(state, tunnelId) {
@@ -155,9 +153,7 @@ function draftUsesIndex(state, index) {
 export function startTunnelDraftAt(state, index) {
   state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
   if (usedTunnelIndexes(state).has(Number(index))) return { changed: false, reason: "tunnel-overlap" };
-  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
-    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
-  }
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
   state.tunnelDraft = {
     tunnelId: state.nextTunnelId,
     step: "direction-a",
@@ -202,7 +198,7 @@ export function setTunnelDraftDirection(state, direction) {
   state.tunnelElement = [...normalizeTunnelElement(state.tunnelElement), tunnel];
   state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
   state.activeTunnelId = tunnel.tunnelId;
-  state.nextTunnelId = Math.max(Number(state.nextTunnelId) || 0, tunnel.tunnelId + 1, nextTunnelSequence(state.tunnelElement));
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
   state.tunnelDraft = null;
   return { changed: true, action: "tunnel-created", tunnelId: tunnel.tunnelId };
 }
@@ -235,8 +231,10 @@ export function setTunnelEntryDirection(state, tunnelId, entryIndex, direction) 
 
 export function removeTunnelById(state, tunnelId) {
   const before = normalizeTunnelElement(state.tunnelElement);
-  state.tunnelElement = before.filter((entry) => Number(entry.tunnelId) !== Number(tunnelId));
-  if (state.activeTunnelId === Number(tunnelId)) state.activeTunnelId = null;
+  const next = normalizeTunnelElementWithIdMap(before.filter((entry) => Number(entry.tunnelId) !== Number(tunnelId)));
+  state.tunnelElement = next.normalizedCollection;
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  state.activeTunnelId = remapGroupedElementId(state.activeTunnelId, next.idMap);
   return before.length !== state.tunnelElement.length;
 }
 

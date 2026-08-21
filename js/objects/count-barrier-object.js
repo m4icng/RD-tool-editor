@@ -1,4 +1,5 @@
 import { COUNT_BARRIER_ASSET_ID } from "../core/constants.js";
+import { nextGroupedElementId, normalizeGroupedElementIds, remapGroupedElementId } from "../utils/grouped-element-ids.js";
 
 export function createCountBarrierTool() {
   return {
@@ -20,10 +21,12 @@ export function normalizeCountBarrierCount(value) {
 }
 
 export function normalizeCountBarrierElement(entries = []) {
-  if (!Array.isArray(entries)) return [];
-  const usedIds = new Set();
-  let nextId = 0;
-  return entries.flatMap((entry) => {
+  return normalizeCountBarrierElementWithIdMap(entries).normalizedCollection;
+}
+
+export function normalizeCountBarrierElementWithIdMap(entries = []) {
+  if (!Array.isArray(entries)) return { normalizedCollection: [], idMap: new Map() };
+  const normalizedEntries = entries.flatMap((entry) => {
     const indexes = new Set();
     (Array.isArray(entry?.index) ? entry.index : []).forEach((rawIndex) => {
       const index = Number(rawIndex);
@@ -36,46 +39,33 @@ export function normalizeCountBarrierElement(entries = []) {
     if (Number.isInteger(rawEnd) && rawEnd >= 0) indexes.add(rawEnd);
     if (indexes.size === 0) return [];
 
-    let barrierId = Number(entry?.barrierId);
-    if (!Number.isInteger(barrierId) || barrierId < 0 || usedIds.has(barrierId)) {
-      while (usedIds.has(nextId)) nextId += 1;
-      barrierId = nextId;
-    }
-    usedIds.add(barrierId);
-
     const index = [...indexes].sort((a, b) => a - b);
     const startIndex = Number.isInteger(rawStart) && rawStart >= 0 ? rawStart : index[0];
     const endIndex = Number.isInteger(rawEnd) && rawEnd >= 0 ? rawEnd : index[index.length - 1];
     return [{
-      barrierId,
+      barrierId: Number(entry?.barrierId),
       count: normalizeCountBarrierCount(entry?.count),
       startIndex,
       endIndex,
       index
     }];
-  }).sort((a, b) => a.barrierId - b.barrierId);
+  });
+  return normalizeGroupedElementIds(normalizedEntries, "barrierId");
 }
 
 export function nextCountBarrierId(entries = []) {
-  const used = new Set(normalizeCountBarrierElement(entries).map((entry) => entry.barrierId));
-  let barrierId = 0;
-  while (used.has(barrierId)) barrierId += 1;
-  return barrierId;
+  return nextCountBarrierSequence(entries);
 }
 
 export function nextCountBarrierSequence(entries = []) {
-  const ids = normalizeCountBarrierElement(entries).map((entry) => entry.barrierId);
-  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+  return nextGroupedElementId(normalizeCountBarrierElement(entries));
 }
 
 export function createNewActiveCountBarrier(state) {
   state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
-  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
-    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
-  }
-  const barrierId = state.nextBarrierId;
+  const barrierId = nextCountBarrierSequence(state.countBarrierElement);
   state.activeBarrierId = barrierId;
-  state.nextBarrierId += 1;
+  state.nextBarrierId = barrierId;
   state.drawingCountBarrierId = null;
   return barrierId;
 }
@@ -93,18 +83,22 @@ export function findCountBarrierById(state, barrierId) {
 export function removeCountBarrierAtIndex(state, index) {
   const barrier = findCountBarrierAtIndex(state, index);
   if (!barrier) return false;
-  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement)
-    .filter((entry) => entry.barrierId !== barrier.barrierId);
-  if (state.activeBarrierId === barrier.barrierId) state.activeBarrierId = null;
-  if (state.drawingCountBarrierId === barrier.barrierId) state.drawingCountBarrierId = null;
+  const next = normalizeCountBarrierElementWithIdMap(normalizeCountBarrierElement(state.countBarrierElement)
+    .filter((entry) => entry.barrierId !== barrier.barrierId));
+  state.countBarrierElement = next.normalizedCollection;
+  state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, next.idMap, { pendingId: state.nextBarrierId });
+  state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, next.idMap);
   return true;
 }
 
 export function removeCountBarrierById(state, barrierId) {
   const before = normalizeCountBarrierElement(state.countBarrierElement);
-  state.countBarrierElement = before.filter((entry) => Number(entry.barrierId) !== Number(barrierId));
-  if (state.activeBarrierId === Number(barrierId)) state.activeBarrierId = null;
-  if (state.drawingCountBarrierId === Number(barrierId)) state.drawingCountBarrierId = null;
+  const next = normalizeCountBarrierElementWithIdMap(before.filter((entry) => Number(entry.barrierId) !== Number(barrierId)));
+  state.countBarrierElement = next.normalizedCollection;
+  state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, next.idMap, { pendingId: state.nextBarrierId });
+  state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, next.idMap);
   return before.length !== state.countBarrierElement.length;
 }
 
@@ -114,8 +108,11 @@ export function removeCountBarrierCell(state, barrierId, index) {
   if (!barrier || !barrier.index.includes(index)) return false;
   barrier.index = barrier.index.filter((entryIndex) => entryIndex !== index);
   if (barrier.index.length < 2) {
-    state.countBarrierElement = state.countBarrierElement.filter((entry) => entry.barrierId !== barrier.barrierId);
-    if (state.activeBarrierId === barrier.barrierId) state.activeBarrierId = null;
+    const next = normalizeCountBarrierElementWithIdMap(state.countBarrierElement.filter((entry) => entry.barrierId !== barrier.barrierId));
+    state.countBarrierElement = next.normalizedCollection;
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+    state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, next.idMap, { pendingId: state.nextBarrierId });
+    state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, next.idMap);
     return true;
   }
   if (barrier.startIndex === index) barrier.startIndex = barrier.index[0];

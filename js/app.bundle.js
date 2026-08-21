@@ -199,6 +199,7 @@ function createId(prefix = "id") {
 
 
 
+
 const cellKey = (x, y) => `${x},${y}`;
 
 const TRAY_VISUAL_DIRECTIONS = Object.freeze({
@@ -281,45 +282,23 @@ function ensureTerrainState(state) {
   if (!Number.isInteger(state.selectedBridgeAxis)) state.selectedBridgeAxis = 0;
   if (!Number.isInteger(state.selectedGateDirection)) state.selectedGateDirection = 0;
   state.selectedCountBarrierCount = normalizeCountBarrierCount(state.selectedCountBarrierCount);
-  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
-  state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
+  const barrierNormalize = normalizeCountBarrierElementWithIdMap(state.countBarrierElement);
+  state.countBarrierElement = barrierNormalize.normalizedCollection;
+  state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, barrierNormalize.idMap, { pendingId: state.nextBarrierId });
+  state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, barrierNormalize.idMap);
+  const tunnelNormalize = normalizeTunnelElementWithIdMap(state.tunnelElement);
+  state.tunnelElement = tunnelNormalize.normalizedCollection;
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  state.activeTunnelId = remapGroupedElementId(state.activeTunnelId, tunnelNormalize.idMap);
   state.tunnelDraft = normalizeTunnelDraft(state.tunnelDraft);
-  state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
+  if (state.tunnelDraft) state.tunnelDraft.tunnelId = state.nextTunnelId;
+  const oneWayNormalize = normalizeOneWayElementWithIdMap(state.oneWayElement);
+  state.oneWayElement = oneWayNormalize.normalizedCollection;
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  state.activeOneWayId = remapGroupedElementId(state.activeOneWayId, oneWayNormalize.idMap);
   state.oneWayDraft = normalizeOneWayDraft(state.oneWayDraft);
-  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
-    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
-  }
-  if (state.nextBarrierId < nextCountBarrierSequence(state.countBarrierElement)) {
-    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
-  }
-  const activeBarrierExists = state.countBarrierElement.some((entry) => entry.barrierId === state.activeBarrierId);
-  const activeBarrierIsPending = Number.isInteger(state.activeBarrierId) && state.activeBarrierId >= 0 && state.activeBarrierId < state.nextBarrierId;
-  if (!Number.isInteger(state.activeBarrierId) || (!activeBarrierExists && !activeBarrierIsPending)) {
-    state.activeBarrierId = null;
-  }
-  if (!Number.isInteger(state.drawingCountBarrierId)) state.drawingCountBarrierId = null;
-  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
-    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
-  }
-  if (state.nextTunnelId < nextTunnelSequence(state.tunnelElement)) {
-    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
-  }
-  const activeTunnelExists = state.tunnelElement.some((entry) => entry.tunnelId === state.activeTunnelId);
-  const activeTunnelIsPending = Number.isInteger(state.activeTunnelId) && state.activeTunnelId >= 0 && state.activeTunnelId < state.nextTunnelId;
-  if (!Number.isInteger(state.activeTunnelId) || (!activeTunnelExists && !activeTunnelIsPending)) {
-    state.activeTunnelId = null;
-  }
-  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
-    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
-  }
-  if (state.nextOneWayId < nextOneWaySequence(state.oneWayElement)) {
-    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
-  }
-  const activeOneWayExists = state.oneWayElement.some((entry) => entry.oneWayId === state.activeOneWayId);
-  const activeOneWayIsPending = Number.isInteger(state.activeOneWayId) && state.activeOneWayId >= 0 && state.activeOneWayId < state.nextOneWayId;
-  if (!Number.isInteger(state.activeOneWayId) || (!activeOneWayExists && !activeOneWayIsPending)) {
-    state.activeOneWayId = null;
-  }
+  if (state.oneWayDraft) state.oneWayDraft.oneWayId = state.nextOneWayId;
   if (!Array.isArray(state.mysteryFruitElement)) state.mysteryFruitElement = [];
   state.mysteryFruitElement = normalizeMysteryFruitElement(state.mysteryFruitElement);
   state.mysteryFruitDebug = Boolean(state.mysteryFruitDebug);
@@ -475,6 +454,42 @@ function clamp(value, min, max) {
 
 function samePosition(a, b) {
   return Boolean(a && b && a.x === b.x && a.y === b.y);
+}
+
+
+// ---- js/utils/grouped-element-ids.js ----
+function normalizeGroupedElementIds(collection = [], idField) {
+  if (!Array.isArray(collection)) return { normalizedCollection: [], idMap: new Map() };
+  const idMap = new Map();
+  const normalizedCollection = collection.map((entry, index) => {
+    const oldId = Number(entry?.[idField]);
+    if (Number.isInteger(oldId) && oldId >= 0 && !idMap.has(oldId)) idMap.set(oldId, index);
+    return { ...entry, [idField]: index };
+  });
+  return { normalizedCollection, idMap };
+}
+
+function nextGroupedElementId(collection = []) {
+  return Array.isArray(collection) ? collection.length : 0;
+}
+
+function remapGroupedElementId(id, idMap, { pendingId = null } = {}) {
+  const currentId = Number(id);
+  if (!Number.isInteger(currentId) || currentId < 0) return null;
+  if (idMap?.has(currentId)) return idMap.get(currentId);
+  return currentId === pendingId ? currentId : null;
+}
+
+function findGroupedElementIdSequenceIssue(collection = [], idField, label) {
+  if (!Array.isArray(collection)) return null;
+  const ids = collection.map((entry) => Number(entry?.[idField]));
+  const valid = ids.every((id, index) => Number.isInteger(id) && id === index);
+  if (valid) return null;
+  return {
+    label,
+    ids,
+    expected: ids.map((_, index) => index)
+  };
 }
 
 
@@ -1073,6 +1088,7 @@ function bridgeOccupiesIndex(state, index) {
 
 // ---- js/objects/count-barrier-object.js ----
 
+
 function createCountBarrierTool() {
   return {
     id: COUNT_BARRIER_ASSET_ID,
@@ -1093,10 +1109,12 @@ function normalizeCountBarrierCount(value) {
 }
 
 function normalizeCountBarrierElement(entries = []) {
-  if (!Array.isArray(entries)) return [];
-  const usedIds = new Set();
-  let nextId = 0;
-  return entries.flatMap((entry) => {
+  return normalizeCountBarrierElementWithIdMap(entries).normalizedCollection;
+}
+
+function normalizeCountBarrierElementWithIdMap(entries = []) {
+  if (!Array.isArray(entries)) return { normalizedCollection: [], idMap: new Map() };
+  const normalizedEntries = entries.flatMap((entry) => {
     const indexes = new Set();
     (Array.isArray(entry?.index) ? entry.index : []).forEach((rawIndex) => {
       const index = Number(rawIndex);
@@ -1109,46 +1127,33 @@ function normalizeCountBarrierElement(entries = []) {
     if (Number.isInteger(rawEnd) && rawEnd >= 0) indexes.add(rawEnd);
     if (indexes.size === 0) return [];
 
-    let barrierId = Number(entry?.barrierId);
-    if (!Number.isInteger(barrierId) || barrierId < 0 || usedIds.has(barrierId)) {
-      while (usedIds.has(nextId)) nextId += 1;
-      barrierId = nextId;
-    }
-    usedIds.add(barrierId);
-
     const index = [...indexes].sort((a, b) => a - b);
     const startIndex = Number.isInteger(rawStart) && rawStart >= 0 ? rawStart : index[0];
     const endIndex = Number.isInteger(rawEnd) && rawEnd >= 0 ? rawEnd : index[index.length - 1];
     return [{
-      barrierId,
+      barrierId: Number(entry?.barrierId),
       count: normalizeCountBarrierCount(entry?.count),
       startIndex,
       endIndex,
       index
     }];
-  }).sort((a, b) => a.barrierId - b.barrierId);
+  });
+  return normalizeGroupedElementIds(normalizedEntries, "barrierId");
 }
 
 function nextCountBarrierId(entries = []) {
-  const used = new Set(normalizeCountBarrierElement(entries).map((entry) => entry.barrierId));
-  let barrierId = 0;
-  while (used.has(barrierId)) barrierId += 1;
-  return barrierId;
+  return nextCountBarrierSequence(entries);
 }
 
 function nextCountBarrierSequence(entries = []) {
-  const ids = normalizeCountBarrierElement(entries).map((entry) => entry.barrierId);
-  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+  return nextGroupedElementId(normalizeCountBarrierElement(entries));
 }
 
 function createNewActiveCountBarrier(state) {
   state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement);
-  if (!Number.isInteger(state.nextBarrierId) || state.nextBarrierId < 0) {
-    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
-  }
-  const barrierId = state.nextBarrierId;
+  const barrierId = nextCountBarrierSequence(state.countBarrierElement);
   state.activeBarrierId = barrierId;
-  state.nextBarrierId += 1;
+  state.nextBarrierId = barrierId;
   state.drawingCountBarrierId = null;
   return barrierId;
 }
@@ -1166,18 +1171,22 @@ function findCountBarrierById(state, barrierId) {
 function removeCountBarrierAtIndex(state, index) {
   const barrier = findCountBarrierAtIndex(state, index);
   if (!barrier) return false;
-  state.countBarrierElement = normalizeCountBarrierElement(state.countBarrierElement)
-    .filter((entry) => entry.barrierId !== barrier.barrierId);
-  if (state.activeBarrierId === barrier.barrierId) state.activeBarrierId = null;
-  if (state.drawingCountBarrierId === barrier.barrierId) state.drawingCountBarrierId = null;
+  const next = normalizeCountBarrierElementWithIdMap(normalizeCountBarrierElement(state.countBarrierElement)
+    .filter((entry) => entry.barrierId !== barrier.barrierId));
+  state.countBarrierElement = next.normalizedCollection;
+  state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, next.idMap, { pendingId: state.nextBarrierId });
+  state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, next.idMap);
   return true;
 }
 
 function removeCountBarrierById(state, barrierId) {
   const before = normalizeCountBarrierElement(state.countBarrierElement);
-  state.countBarrierElement = before.filter((entry) => Number(entry.barrierId) !== Number(barrierId));
-  if (state.activeBarrierId === Number(barrierId)) state.activeBarrierId = null;
-  if (state.drawingCountBarrierId === Number(barrierId)) state.drawingCountBarrierId = null;
+  const next = normalizeCountBarrierElementWithIdMap(before.filter((entry) => Number(entry.barrierId) !== Number(barrierId)));
+  state.countBarrierElement = next.normalizedCollection;
+  state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+  state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, next.idMap, { pendingId: state.nextBarrierId });
+  state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, next.idMap);
   return before.length !== state.countBarrierElement.length;
 }
 
@@ -1187,8 +1196,11 @@ function removeCountBarrierCell(state, barrierId, index) {
   if (!barrier || !barrier.index.includes(index)) return false;
   barrier.index = barrier.index.filter((entryIndex) => entryIndex !== index);
   if (barrier.index.length < 2) {
-    state.countBarrierElement = state.countBarrierElement.filter((entry) => entry.barrierId !== barrier.barrierId);
-    if (state.activeBarrierId === barrier.barrierId) state.activeBarrierId = null;
+    const next = normalizeCountBarrierElementWithIdMap(state.countBarrierElement.filter((entry) => entry.barrierId !== barrier.barrierId));
+    state.countBarrierElement = next.normalizedCollection;
+    state.nextBarrierId = nextCountBarrierSequence(state.countBarrierElement);
+    state.activeBarrierId = remapGroupedElementId(state.activeBarrierId, next.idMap, { pendingId: state.nextBarrierId });
+    state.drawingCountBarrierId = remapGroupedElementId(state.drawingCountBarrierId, next.idMap);
     return true;
   }
   if (barrier.startIndex === index) barrier.startIndex = barrier.index[0];
@@ -1218,6 +1230,7 @@ function remapCountBarrierIndexes(entries = [], fromWidth, toWidth) {
 
 
 // ---- js/objects/tunnel-object.js ----
+
 
 const TUNNEL_DIRECTION_META = Object.freeze({
   [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up", icon: "↑" },
@@ -1276,10 +1289,12 @@ function tunnelColor(tunnelId) {
 }
 
 function normalizeTunnelElement(entries = []) {
-  if (!Array.isArray(entries)) return [];
-  const usedIds = new Set();
-  let nextId = 0;
-  return entries.flatMap((entry) => {
+  return normalizeTunnelElementWithIdMap(entries).normalizedCollection;
+}
+
+function normalizeTunnelElementWithIdMap(entries = []) {
+  if (!Array.isArray(entries)) return { normalizedCollection: [], idMap: new Map() };
+  const normalizedEntries = entries.flatMap((entry) => {
     const points = Array.isArray(entry?.entryPoints) ? entry.entryPoints.slice(0, 2) : [];
     if (points.length !== 2) return [];
     const entryPoints = points.map((point) => ({
@@ -1288,19 +1303,14 @@ function normalizeTunnelElement(entries = []) {
     }));
     if (entryPoints.some((point) => !Number.isInteger(point.index) || point.index < 0)) return [];
 
-    let tunnelId = Number(entry?.tunnelId);
-    if (!Number.isInteger(tunnelId) || tunnelId < 0 || usedIds.has(tunnelId)) {
-      while (usedIds.has(nextId)) nextId += 1;
-      tunnelId = nextId;
-    }
-    usedIds.add(tunnelId);
+    const tunnelId = Number(entry?.tunnelId);
     return [{ tunnelId, entryPoints }];
-  }).sort((a, b) => a.tunnelId - b.tunnelId);
+  });
+  return normalizeGroupedElementIds(normalizedEntries, "tunnelId");
 }
 
 function nextTunnelSequence(entries = []) {
-  const ids = normalizeTunnelElement(entries).map((entry) => entry.tunnelId);
-  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+  return nextGroupedElementId(normalizeTunnelElement(entries));
 }
 
 function findTunnelById(state, tunnelId) {
@@ -1374,9 +1384,7 @@ function draftUsesIndex(state, index) {
 function startTunnelDraftAt(state, index) {
   state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
   if (usedTunnelIndexes(state).has(Number(index))) return { changed: false, reason: "tunnel-overlap" };
-  if (!Number.isInteger(state.nextTunnelId) || state.nextTunnelId < 0) {
-    state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
-  }
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
   state.tunnelDraft = {
     tunnelId: state.nextTunnelId,
     step: "direction-a",
@@ -1421,7 +1429,7 @@ function setTunnelDraftDirection(state, direction) {
   state.tunnelElement = [...normalizeTunnelElement(state.tunnelElement), tunnel];
   state.tunnelElement = normalizeTunnelElement(state.tunnelElement);
   state.activeTunnelId = tunnel.tunnelId;
-  state.nextTunnelId = Math.max(Number(state.nextTunnelId) || 0, tunnel.tunnelId + 1, nextTunnelSequence(state.tunnelElement));
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
   state.tunnelDraft = null;
   return { changed: true, action: "tunnel-created", tunnelId: tunnel.tunnelId };
 }
@@ -1454,8 +1462,10 @@ function setTunnelEntryDirection(state, tunnelId, entryIndex, direction) {
 
 function removeTunnelById(state, tunnelId) {
   const before = normalizeTunnelElement(state.tunnelElement);
-  state.tunnelElement = before.filter((entry) => Number(entry.tunnelId) !== Number(tunnelId));
-  if (state.activeTunnelId === Number(tunnelId)) state.activeTunnelId = null;
+  const next = normalizeTunnelElementWithIdMap(before.filter((entry) => Number(entry.tunnelId) !== Number(tunnelId)));
+  state.tunnelElement = next.normalizedCollection;
+  state.nextTunnelId = nextTunnelSequence(state.tunnelElement);
+  state.activeTunnelId = remapGroupedElementId(state.activeTunnelId, next.idMap);
   return before.length !== state.tunnelElement.length;
 }
 
@@ -1480,6 +1490,7 @@ function remapTunnelIndexes(entries = [], fromWidth, toWidth) {
 
 
 // ---- js/objects/one-way-object.js ----
+
 
 const ONE_WAY_DIRECTION_META = Object.freeze({
   [GATE_DIRECTIONS.UP]: { key: "up", label: "Up", className: "up", icon: "▲" },
@@ -1543,10 +1554,12 @@ function oneWayColor(oneWayId) {
 }
 
 function normalizeOneWayElement(entries = []) {
-  if (!Array.isArray(entries)) return [];
-  const usedIds = new Set();
-  let nextId = 0;
-  return entries.flatMap((entry) => {
+  return normalizeOneWayElementWithIdMap(entries).normalizedCollection;
+}
+
+function normalizeOneWayElementWithIdMap(entries = []) {
+  if (!Array.isArray(entries)) return { normalizedCollection: [], idMap: new Map() };
+  const normalizedEntries = entries.flatMap((entry) => {
     const points = Array.isArray(entry?.entryPoints) ? entry.entryPoints.slice(0, 2) : [];
     if (points.length !== 2) return [];
     const entryPoints = points.map((point) => ({
@@ -1555,19 +1568,14 @@ function normalizeOneWayElement(entries = []) {
     }));
     if (entryPoints.some((point) => !Number.isInteger(point.index) || point.index < 0)) return [];
 
-    let oneWayId = Number(entry?.oneWayId);
-    if (!Number.isInteger(oneWayId) || oneWayId < 0 || usedIds.has(oneWayId)) {
-      while (usedIds.has(nextId)) nextId += 1;
-      oneWayId = nextId;
-    }
-    usedIds.add(oneWayId);
+    const oneWayId = Number(entry?.oneWayId);
     return [{ oneWayId, entryPoints }];
-  }).sort((a, b) => a.oneWayId - b.oneWayId);
+  });
+  return normalizeGroupedElementIds(normalizedEntries, "oneWayId");
 }
 
 function nextOneWaySequence(entries = []) {
-  const ids = normalizeOneWayElement(entries).map((entry) => entry.oneWayId);
-  return ids.length > 0 ? Math.max(...ids) + 1 : 0;
+  return nextGroupedElementId(normalizeOneWayElement(entries));
 }
 
 function findOneWayById(state, oneWayId) {
@@ -1636,9 +1644,7 @@ function draftUsesIndex(state, index) {
 function startOneWayDraftAt(state, index) {
   state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
   if (usedOneWayIndexes(state).has(Number(index))) return { changed: false, reason: "one-way-overlap" };
-  if (!Number.isInteger(state.nextOneWayId) || state.nextOneWayId < 0) {
-    state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
-  }
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
   state.oneWayDraft = {
     oneWayId: state.nextOneWayId,
     step: "direction-a",
@@ -1683,7 +1689,7 @@ function setOneWayDraftDirection(state, direction) {
   state.oneWayElement = [...normalizeOneWayElement(state.oneWayElement), oneWay];
   state.oneWayElement = normalizeOneWayElement(state.oneWayElement);
   state.activeOneWayId = oneWay.oneWayId;
-  state.nextOneWayId = Math.max(Number(state.nextOneWayId) || 0, oneWay.oneWayId + 1, nextOneWaySequence(state.oneWayElement));
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
   state.oneWayDraft = null;
   return { changed: true, action: "one-way-created", oneWayId: oneWay.oneWayId };
 }
@@ -1726,8 +1732,10 @@ function setOneWayEntryDirection(state, oneWayId, entryIndex, direction) {
 
 function removeOneWayById(state, oneWayId) {
   const before = normalizeOneWayElement(state.oneWayElement);
-  state.oneWayElement = before.filter((entry) => Number(entry.oneWayId) !== Number(oneWayId));
-  if (state.activeOneWayId === Number(oneWayId)) state.activeOneWayId = null;
+  const next = normalizeOneWayElementWithIdMap(before.filter((entry) => Number(entry.oneWayId) !== Number(oneWayId)));
+  state.oneWayElement = next.normalizedCollection;
+  state.nextOneWayId = nextOneWaySequence(state.oneWayElement);
+  state.activeOneWayId = remapGroupedElementId(state.activeOneWayId, next.idMap);
   return before.length !== state.oneWayElement.length;
 }
 
@@ -2450,6 +2458,7 @@ function normalizeFileName(value) {
 
 
 
+
 function collectStats(layer) {
   const stats = {
     paths: 0, items: 0, snake: 0, fruits: 0, capacity: 0,
@@ -2503,9 +2512,17 @@ function collectStats(layer) {
 }
 
 function validateLevel(level) {
+  const idSequenceIssues = [
+    findGroupedElementIdSequenceIssue(level?.countBarrierElement, "barrierId", "Count Barrier"),
+    findGroupedElementIdSequenceIssue(level?.tunnelElement, "tunnelId", "Tunnel"),
+    findGroupedElementIdSequenceIssue(level?.oneWayElement, "oneWayId", "One Way")
+  ].filter(Boolean);
   ensureTerrainState(level);
   const errors = [];
   const warnings = [];
+  idSequenceIssues.forEach((issue) => {
+    errors.push(`ELEMENT_ID_SEQUENCE_INVALID: ${issue.label} IDs phải liên tục từ 0. Hiện tại: ${issue.ids.join(",")}; expected: ${issue.expected.join(",")}.`);
+  });
   const indexOfKey = (key) => {
     const { x, y } = parseCellKey(key);
     return positionToIndex(x, y, level?.grid?.columns ?? 0);

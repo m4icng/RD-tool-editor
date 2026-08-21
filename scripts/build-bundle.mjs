@@ -12,6 +12,7 @@ const sourceFiles = [
   "js/utils/id-generator.js",
   "js/utils/grid-utils.js",
   "js/utils/math-utils.js",
+  "js/utils/grouped-element-ids.js",
   "js/utils/file-utils.js",
   "js/objects/path-object.js",
   "js/objects/fruit-object.js",

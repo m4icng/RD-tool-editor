@@ -14,6 +14,7 @@ import { normalizeCountBarrierElement } from "../objects/count-barrier-object.js
 import { isValidTunnelDirection, normalizeTunnelDirection, normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { isValidOneWayDirection, normalizeOneWayDirection, normalizeOneWayElement } from "../objects/one-way-object.js";
 import { createMergedLayer, ensureTerrainState, getTrayVisualCells, getTrayVisualPosition, indexToPosition, isInsideGrid, parseCellKey, positionToIndex } from "../utils/grid-utils.js";
+import { findGroupedElementIdSequenceIssue } from "../utils/grouped-element-ids.js";
 
 export function collectStats(layer) {
   const stats = {
@@ -68,9 +69,17 @@ export function collectStats(layer) {
 }
 
 export function validateLevel(level) {
+  const idSequenceIssues = [
+    findGroupedElementIdSequenceIssue(level?.countBarrierElement, "barrierId", "Count Barrier"),
+    findGroupedElementIdSequenceIssue(level?.tunnelElement, "tunnelId", "Tunnel"),
+    findGroupedElementIdSequenceIssue(level?.oneWayElement, "oneWayId", "One Way")
+  ].filter(Boolean);
   ensureTerrainState(level);
   const errors = [];
   const warnings = [];
+  idSequenceIssues.forEach((issue) => {
+    errors.push(`ELEMENT_ID_SEQUENCE_INVALID: ${issue.label} IDs phải liên tục từ 0. Hiện tại: ${issue.ids.join(",")}; expected: ${issue.expected.join(",")}.`);
+  });
   const indexOfKey = (key) => {
     const { x, y } = parseCellKey(key);
     return positionToIndex(x, y, level?.grid?.columns ?? 0);

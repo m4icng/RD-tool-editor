@@ -42,6 +42,8 @@ const sourceFiles = [
   "js/generate/item-layer-locks.js",
   "js/generate/generate-source.js",
   "js/generate/adaptive-parameters.js",
+  "js/generate/difficulty-evaluator.js",
+  "js/data/level-info-analyzer.js",
   "js/generate/cluster-distribution.js",
   "js/generate/noise-allocator.js",
   "js/generate/generator-engine.js",

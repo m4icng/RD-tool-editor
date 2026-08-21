@@ -46,6 +46,7 @@ import { activateTab, renderToolbar } from "./ui/toolbar.js";
 import { showNotification } from "./ui/notification.js";
 import { validateLevel } from "./data/validator.js";
 import { deserializeEditorState, deserializeLevel, normalizeFileName, serializeEditorState, serializeLevel } from "./data/serializer.js";
+import { LEVEL_INFO_ITEM_META, analyzeLevelInfo } from "./data/level-info-analyzer.js";
 import { migrateLevel } from "./data/migration.js";
 import { LevelFileManager } from "./data/file-manager.js";
 import { downloadJson, readJsonFile, stringifyJson } from "./utils/file-utils.js";
@@ -101,6 +102,15 @@ const folderFileState = {
   loading: false,
   error: null,
   scanId: 0
+};
+const levelInfoCache = new Map();
+const levelInfoPopupState = {
+  isOpen: false,
+  fileName: null,
+  loading: false,
+  levelInfo: null,
+  error: null,
+  requestId: 0
 };
 let folderFiles = [];
 let fileDirty = editor.data.fileDirty ?? !editor.data.sourceFileName;
@@ -231,6 +241,30 @@ function rememberSelectedDataFileName(fileName) {
   } catch (error) {
     console.warn("Không thể lưu file data đang chọn", error);
   }
+}
+
+function levelInfoCacheKey(file) {
+  return `${file?.name ?? ""}:${file?.lastModified ?? 0}:${file?.size ?? 0}`;
+}
+
+function invalidateLevelInfoCache(fileName = null) {
+  if (!fileName) {
+    levelInfoCache.clear();
+    return;
+  }
+  [...levelInfoCache.keys()].forEach((key) => {
+    if (key.startsWith(`${fileName}:`)) levelInfoCache.delete(key);
+  });
+  if (levelInfoPopupState.fileName === fileName) closeLevelInfoPopup();
+}
+
+function closeLevelInfoPopup() {
+  levelInfoPopupState.isOpen = false;
+  levelInfoPopupState.fileName = null;
+  levelInfoPopupState.loading = false;
+  levelInfoPopupState.levelInfo = null;
+  levelInfoPopupState.error = null;
+  levelInfoPopupState.requestId += 1;
 }
 
 function renderValidation(layer) {
@@ -425,6 +459,75 @@ function getFolderFilePlayableStatus(file) {
   }
 }
 
+function renderLevelInfoItemChips(levelInfo) {
+  if (!levelInfo?.itemIds?.length) return `<span class="level-info-empty">Chưa có item</span>`;
+  return levelInfo.itemIds.map((itemId) => {
+    const meta = LEVEL_INFO_ITEM_META[itemId];
+    const label = meta?.label ?? `Unknown ID ${itemId}`;
+    const style = meta?.color ? ` style="--chip-color:${meta.color}"` : "";
+    const warningClass = meta ? "" : " unknown";
+    return `<span class="level-info-chip${warningClass}"${style}><span></span>${escapeHtml(label)}</span>`;
+  }).join("");
+}
+
+function renderLevelInfoMetric(label, value) {
+  return `<div class="level-info-metric"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value ?? "-")}</strong></div>`;
+}
+
+function renderLevelInfoPopup(file) {
+  const popup = document.createElement("div");
+  popup.className = "level-info-popup";
+  popup.dataset.levelInfoPopup = file.name;
+  const title = escapeHtml(file.name);
+  if (levelInfoPopupState.loading) {
+    popup.innerHTML = `
+      <header><strong>LEVEL INFO - ${title}</strong><button type="button" data-level-info-close title="Đóng">×</button></header>
+      <div class="level-info-loading">Đang phân tích Level...</div>
+    `;
+    return popup;
+  }
+  if (levelInfoPopupState.error) {
+    popup.innerHTML = `
+      <header><strong>LEVEL INFO - ${title}</strong><button type="button" data-level-info-close title="Đóng">×</button></header>
+      <div class="level-info-error">
+        <strong>Không thể đọc Level</strong>
+        <span>${escapeHtml(levelInfoPopupState.error)}</span>
+      </div>
+      <footer><button class="btn" type="button" data-level-info-close>Đóng</button></footer>
+    `;
+    return popup;
+  }
+  const info = levelInfoPopupState.levelInfo;
+  const scoreText = Number.isFinite(info?.difficultyScore100) ? `${info.difficultyScore100} / 100` : "-";
+  const mapText = Number.isInteger(info?.mapWidth) && Number.isInteger(info?.mapHeight) ? `${info.mapWidth} × ${info.mapHeight}` : "-";
+  const warnings = info?.warnings?.length
+    ? `<div class="level-info-warning">⚠ ${info.warnings.map(escapeHtml).join(" · ")}</div>`
+    : "";
+  popup.innerHTML = `
+    <header><strong>LEVEL INFO - ${title}</strong><button type="button" data-level-info-close title="Đóng">×</button></header>
+    <div class="level-info-body">
+      <div class="level-info-grid">
+        ${renderLevelInfoMetric("Map", mapText)}
+        ${renderLevelInfoMetric("Số khay", info?.trayCount ?? 0)}
+        ${renderLevelInfoMetric("Số Layer khay", info?.trayLayerCount ?? 0)}
+        ${renderLevelInfoMetric("Số Layer Item", info?.itemLayerCount ?? 0)}
+      </div>
+      <section class="level-info-section">
+        <span>Loại Item</span>
+        <div class="level-info-chips">${renderLevelInfoItemChips(info)}</div>
+        <strong>${info?.itemTypeCount ?? 0} loại</strong>
+      </section>
+      <div class="level-info-grid">
+        ${renderLevelInfoMetric("Độ khó", info?.difficultyLabel ?? "Không thể đánh giá")}
+        ${renderLevelInfoMetric("Difficulty Score", scoreText)}
+      </div>
+      ${warnings}
+    </div>
+    <footer><button class="btn" type="button" data-level-info-close>Đóng</button></footer>
+  `;
+  return popup;
+}
+
 function folderStatusText() {
   if (!fileManager.supported) return "Trình duyệt không hỗ trợ mở folder trực tiếp; vẫn có thể Nhập file và Tải xuống.";
   if (folderFileState.loading) return `Loading folder${folderFileState.directoryName ? ` ${folderFileState.directoryName}` : ""}...`;
@@ -462,7 +565,8 @@ function renderFolderFiles() {
   folderFiles.forEach((file) => {
     const playableStatus = getFolderFilePlayableStatus(file);
     const row = document.createElement("div");
-    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${playableStatus.valid ? "" : " file-error"}`;
+    const infoOpen = levelInfoPopupState.isOpen && levelInfoPopupState.fileName === file.name;
+    row.className = `json-file-row${editor.data.sourceFileName === file.name ? " active" : ""}${playableStatus.valid ? "" : " file-error"}${infoOpen ? " info-open" : ""}`;
     row.dataset.fileName = file.name;
     const copy = document.createElement("div");
     copy.className = "json-file-copy";
@@ -475,9 +579,10 @@ function renderFolderFiles() {
     copy.append(title, meta);
     const actions = document.createElement("div");
     actions.className = "json-file-actions";
-    [["open", "Mở"], ["save", "Lưu đè"], ["rename", "Đổi tên"], ["delete", "Xóa"]].forEach(([action, label]) => {
+    [["open", "Mở"], ["info", "Xem thông tin"], ["save", "Lưu đè"], ["rename", "Đổi tên"], ["delete", "Xóa"]].forEach(([action, label]) => {
       const button = document.createElement("button");
       button.type = "button"; button.dataset.fileAction = action; button.textContent = label;
+      if (action === "info" && infoOpen) button.className = "active";
       if (action === "delete") button.className = "danger";
       if (action === "open" && file.status !== "valid") {
         button.title = file.errorMessage ?? "File không thể mở vào editor.";
@@ -485,6 +590,7 @@ function renderFolderFiles() {
       actions.appendChild(button);
     });
     row.append(copy, actions);
+    if (infoOpen) row.appendChild(renderLevelInfoPopup(file));
     elements.jsonFileList.appendChild(row);
   });
 }
@@ -1515,6 +1621,7 @@ async function downloadCurrentLevel() {
   if (fileManager.connected && folderFileState.permission === "granted") {
     try {
       await fileManager.write(editor.data.fileName, documentData);
+      invalidateLevelInfoCache(editor.data.fileName);
       editor.data.sourceFileName = editor.data.fileName;
       fileDirty = false;
       editor.data.fileDirty = false;
@@ -1562,6 +1669,43 @@ function openFolderDataEntry(entry) {
   openImportedData(entry.data, entry.name);
   rememberSelectedDataFileName(entry.name);
   return true;
+}
+
+async function showLevelInfoForFile(name) {
+  const entry = folderFiles.find((file) => file.name === name);
+  if (!entry) return;
+  const requestId = levelInfoPopupState.requestId + 1;
+  levelInfoPopupState.isOpen = true;
+  levelInfoPopupState.fileName = name;
+  levelInfoPopupState.loading = true;
+  levelInfoPopupState.levelInfo = null;
+  levelInfoPopupState.error = null;
+  levelInfoPopupState.requestId = requestId;
+  renderAll();
+  await Promise.resolve();
+  if (levelInfoPopupState.requestId !== requestId) return;
+
+  const cacheKey = levelInfoCacheKey(entry);
+  const cached = levelInfoCache.get(cacheKey);
+  if (cached) {
+    Object.assign(levelInfoPopupState, { loading: false, levelInfo: cached.levelInfo ?? null, error: cached.error ?? null });
+    renderAll();
+    return;
+  }
+
+  try {
+    if (entry.status !== "valid") throw new Error(entry.errorMessage ?? "JSON không hợp lệ");
+    const levelInfo = analyzeLevelInfo(entry.data, { fileName: entry.name });
+    levelInfoCache.set(cacheKey, { levelInfo, error: null });
+    if (levelInfoPopupState.requestId !== requestId) return;
+    Object.assign(levelInfoPopupState, { loading: false, levelInfo, error: null });
+  } catch (error) {
+    const message = entry.status === "invalid" ? `JSON không hợp lệ: ${error.message}` : (error.message ?? "Không thể phân tích Level");
+    levelInfoCache.set(cacheKey, { levelInfo: null, error: message });
+    if (levelInfoPopupState.requestId !== requestId) return;
+    Object.assign(levelInfoPopupState, { loading: false, levelInfo: null, error: message });
+  }
+  renderAll();
 }
 
 byId("exportBtn").addEventListener("click", downloadCurrentLevel);
@@ -1620,6 +1764,8 @@ function applyFolderHandle(handle) {
   folderFileState.directoryHandle = handle ?? null;
   folderFileState.directoryName = handle?.name ?? "";
   fileManager.setDirectory(handle);
+  invalidateLevelInfoCache();
+  closeLevelInfoPopup();
 }
 
 async function restoreSelectedFolderFile({ askBeforeReplace = false } = {}) {
@@ -1640,6 +1786,7 @@ async function restoreSelectedFolderFile({ askBeforeReplace = false } = {}) {
 
 async function scanFolder({ restoreSelected = false, askBeforeReplace = false } = {}) {
   if (!fileManager.connected) return;
+  closeLevelInfoPopup();
   const scanId = folderFileState.scanId + 1;
   folderFileState.scanId = scanId;
   folderFileState.loading = true;
@@ -1708,12 +1855,18 @@ elements.reconnectFolderBtn.addEventListener("click", async () => {
 elements.refreshFolderBtn.addEventListener("click", () => scanFolder({ restoreSelected: true, askBeforeReplace: false }));
 
 elements.jsonFileList.addEventListener("click", async (event) => {
+  if (event.target.closest("[data-level-info-close]")) {
+    closeLevelInfoPopup();
+    renderAll();
+    return;
+  }
   const button = event.target.closest("[data-file-action]");
   const row = event.target.closest("[data-file-name]");
   if (!button || !row) return;
   const name = row.dataset.fileName;
   try {
     if (button.dataset.fileAction === "open") {
+      closeLevelInfoPopup();
       const entry = folderFiles.find((file) => file.name === name);
       if (entry?.status !== "valid") {
         showNotification(elements.toast, `Không thể mở ${name}: ${entry?.errorMessage ?? "File JSON không hợp lệ."}`);
@@ -1721,28 +1874,37 @@ elements.jsonFileList.addEventListener("click", async (event) => {
       }
       if (!canReplaceCurrentLevel()) return;
       openFolderDataEntry(entry ?? { name, data: await fileManager.read(name), status: "valid" });
+    } else if (button.dataset.fileAction === "info") {
+      await showLevelInfoForFile(name);
     } else if (button.dataset.fileAction === "save") {
+      closeLevelInfoPopup();
       if (!confirm(`Lưu đè toàn bộ nội dung hiện tại vào ${name}?`)) return;
       const report = validateLevel(editor.data);
       await fileManager.write(name, serializeLevel(editor.data));
+      invalidateLevelInfoCache(name);
       editor.data.fileName = name; editor.data.sourceFileName = name; fileDirty = false;
       editor.data.fileDirty = false;
       rememberSelectedDataFileName(name);
       await scanFolder();
       showNotification(elements.toast, report.valid ? `Đã lưu đè ${name}` : `Đã lưu đè ${name} · Level hiện có ${report.errors.length} lỗi`);
     } else if (button.dataset.fileAction === "rename") {
+      closeLevelInfoPopup();
       const proposed = prompt("Tên file mới:", name);
       if (!proposed) return;
       const nextName = normalizeFileName(proposed);
       if (!confirm(`Đổi tên ${name} thành ${nextName}?`)) return;
       if (folderFiles.some((file) => file.name === nextName)) return showNotification(elements.toast, `${nextName} đã tồn tại.`);
       await fileManager.rename(name, nextName);
+      invalidateLevelInfoCache(name);
+      invalidateLevelInfoCache(nextName);
       if (editor.data.sourceFileName === name) { editor.data.sourceFileName = nextName; editor.data.fileName = nextName; }
       if (folderFileState.selectedFileName === name) rememberSelectedDataFileName(nextName);
       await scanFolder(); showNotification(elements.toast, `Đã đổi tên thành ${nextName}`);
     } else if (button.dataset.fileAction === "delete") {
+      closeLevelInfoPopup();
       if (!confirm(`Xóa vĩnh viễn file ${name} khỏi ổ đĩa?`)) return;
       await fileManager.remove(name);
+      invalidateLevelInfoCache(name);
       if (editor.data.sourceFileName === name) { editor.data.sourceFileName = null; fileDirty = true; editor.data.fileDirty = true; }
       if (folderFileState.selectedFileName === name) rememberSelectedDataFileName(null);
       await scanFolder(); showNotification(elements.toast, `Đã xóa ${name}`);

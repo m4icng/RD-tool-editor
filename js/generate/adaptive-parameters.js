@@ -71,6 +71,37 @@ function collectReleaseOpportunityMetrics(state, source) {
   };
 }
 
+function noiseProfileForDifficulty({ difficultyScore, demandLayerCount, tuning }) {
+  const futureDepth = Math.max(1, demandLayerCount - 1);
+  const relief = Math.max(tuning.releaseRelief, tuning.tailRelief);
+  const desiredMax = difficultyScore >= 0.72
+    ? 3
+    : difficultyScore >= 0.48
+      ? 2
+      : 1;
+  const maxDistance = clampAdaptiveValue(desiredMax - Math.min(1, Math.floor(relief / 2)), 1, Math.min(3, futureDepth));
+  const deepPenalty = relief * 0.08;
+  const weightsByDistance = {
+    1: maxDistance >= 1 ? clampAdaptiveValue(0.9 - difficultyScore * 0.35 + relief * 0.05, 0.45, 1) : 0,
+    2: maxDistance >= 2 ? clampAdaptiveValue(0.18 + difficultyScore * 0.25 - deepPenalty, 0.05, 0.4) : 0,
+    3: maxDistance >= 3 ? clampAdaptiveValue(0.06 + difficultyScore * 0.18 - deepPenalty, 0.03, 0.24) : 0
+  };
+  const totalWeight = Object.values(weightsByDistance).reduce((sum, value) => sum + value, 0) || 1;
+  Object.keys(weightsByDistance).forEach((distance) => {
+    weightsByDistance[distance] = roundAdaptiveValue(weightsByDistance[distance] / totalWeight, 3);
+  });
+  return {
+    minDistance: 1,
+    maxDistance,
+    weightsByDistance,
+    maxPreloadRatioByDistance: {
+      1: 1,
+      2: roundAdaptiveValue(clampAdaptiveValue(0.72 - difficultyScore * 0.14 - relief * 0.04, 0.38, 0.76), 3),
+      3: roundAdaptiveValue(clampAdaptiveValue(0.48 - difficultyScore * 0.1 - relief * 0.05, 0.22, 0.54), 3)
+    }
+  };
+}
+
 export function analyzeAdaptiveLevel(state, source) {
   const topology = collectPathTopology(state, source);
   const demand = collectDemandMetrics(source);
@@ -148,6 +179,7 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
   const reliefDuration = clampAdaptiveValue(Math.round(2 + (1 - difficultyScore) * 3 + tuning.releaseRelief), 1, 10);
   const continuousGrowthTarget = clampAdaptiveValue(Math.round(targetAverageTail + difficultyScore * 3 + density * 2 - tuning.tailRelief * 0.4), 2, 18);
   const releaseAmountTarget = clampAdaptiveValue(Math.round(clusterMax * requiredColorRatio + reliefDuration * 0.35), 1, 9);
+  const noiseProfile = noiseProfileForDifficulty({ difficultyScore, demandLayerCount: analysis.demand.demandLayerCount, tuning });
   const layerDensity = source.validByLayer
     ? [...source.validByLayer.entries()].map(([layerIndex, cells]) => ({
       layerIndex,
@@ -171,6 +203,11 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     clusterRatio: clusterAdjacencyRatio,
     minClusterSizePerBranch: clusterMin,
     maxClusterSizePerBranch: clusterMax,
+    noiseMinDistance: noiseProfile.minDistance,
+    noiseMaxDistance: noiseProfile.maxDistance,
+    noiseDistanceWeight1: noiseProfile.weightsByDistance[1] ?? 0,
+    noiseDistanceWeight2: noiseProfile.weightsByDistance[2] ?? 0,
+    noiseDistanceWeight3: noiseProfile.weightsByDistance[3] ?? 0,
     branchDistributionBalance: branchDistribution,
     routeChoicePressure: clampAdaptiveValue(0.12 + difficultyScore * 0.68 + analysis.topology.junctionRatio * 0.3, 0.08, 0.92),
     narrowPathUsage: clampAdaptiveValue(0.08 + difficultyScore * 0.48 + analysis.topology.narrowPathRatio * 0.25 - tuning.tailRelief * 0.02, 0.04, 0.85),
@@ -185,6 +222,8 @@ export function estimateDerivedGenerateParameters(source, analysis, intent, tuni
     noiseRatio: roundAdaptiveValue(noiseRatio, 3),
     requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
     carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08, 0.18, 0.72), 3),
+    noiseProfile,
+    maxPreloadRatioByDistance: noiseProfile.maxPreloadRatioByDistance,
     clusterSizeDistribution: { min: clusterMin, preferred: clampAdaptiveValue(Math.round((clusterMin + clusterMax) / 2), clusterMin, clusterMax), max: clusterMax },
     clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
     highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),

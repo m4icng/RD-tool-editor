@@ -2989,7 +2989,7 @@ class LevelFileManager {
 
 
 // ---- js/generate/generate-settings.js ----
-const GENERATOR_VERSION = "1.3.0";
+const GENERATOR_VERSION = "1.4.0";
 
 const GENERATE_PRESETS = Object.freeze({
   De: { difficultyScore: 0.25 },
@@ -3019,6 +3019,14 @@ const TAIL_CURVE_LABELS = Object.freeze({
   "peak-late": "Khó cuối màn"
 });
 
+const NOISE_DEPTH_MODE_LABELS = Object.freeze({
+  auto: "Auto",
+  near: "Near",
+  medium: "Medium",
+  deep: "Deep",
+  custom: "Custom"
+});
+
 const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
   { key: "targetPeakTail", label: "Đuôi đỉnh mục tiêu", type: "number", min: 2, max: 60, step: 1, group: "Áp lực đuôi", tip: "Đỉnh áp lực đuôi dự kiến cho level; dùng để designer khóa cảm giác peak mong muốn." },
@@ -3036,6 +3044,11 @@ const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
   { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
   { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
+  { key: "noiseMinDistance", label: "Noise Min", type: "number", min: 1, max: 8, step: 1, group: "Noise Window", tip: "Khoảng cách Future Tray Layer gần nhất được phép lấy noise." },
+  { key: "noiseMaxDistance", label: "Noise Max", type: "number", min: 1, max: 8, step: 1, group: "Noise Window", tip: "Khoảng cách Future Tray Layer xa nhất được phép lấy noise." },
+  { key: "noiseDistanceWeight1", label: "Noise +1", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise Window", tip: "Tỷ trọng target cho noise từ Tray Layer kế tiếp." },
+  { key: "noiseDistanceWeight2", label: "Noise +2", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise Window", tip: "Tỷ trọng target cho noise cách 2 Tray Layer." },
+  { key: "noiseDistanceWeight3", label: "Noise +3", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise Window", tip: "Tỷ trọng target cho noise cách 3 Tray Layer." },
   { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
   { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
@@ -3085,6 +3098,12 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   releaseAmountTarget: 4,
   noiseRatio: 0.42,
   carryOverRatio: 0.34,
+  noiseDepthMode: "auto",
+  noiseMinDistance: 1,
+  noiseMaxDistance: 3,
+  noiseDistanceWeight1: 0.6,
+  noiseDistanceWeight2: 0.3,
+  noiseDistanceWeight3: 0.1,
   beamWidth: 11
 });
 
@@ -3132,12 +3151,16 @@ function normalizeGenerateSettings(value = {}) {
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
   settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
   settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
+  settings.noiseDepthMode = NOISE_DEPTH_MODE_LABELS[settings.noiseDepthMode] ? settings.noiseDepthMode : "auto";
   DERIVED_GENERATE_SETTING_FIELDS.forEach((field) => {
     const numeric = Number(settings[field.key]);
     settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
   if (settings.minClusterSizePerBranch > settings.maxClusterSizePerBranch) {
     settings.maxClusterSizePerBranch = settings.minClusterSizePerBranch;
+  }
+  if (settings.noiseMinDistance > settings.noiseMaxDistance) {
+    settings.noiseMaxDistance = settings.noiseMinDistance;
   }
   settings.autoDerived = settings.autoDerived !== false;
   settings.derivedOverrideKeys = Array.isArray(settings.derivedOverrideKeys)
@@ -3618,6 +3641,37 @@ function collectReleaseOpportunityMetrics(state, source) {
   };
 }
 
+function noiseProfileForDifficulty({ difficultyScore, demandLayerCount, tuning }) {
+  const futureDepth = Math.max(1, demandLayerCount - 1);
+  const relief = Math.max(tuning.releaseRelief, tuning.tailRelief);
+  const desiredMax = difficultyScore >= 0.72
+    ? 3
+    : difficultyScore >= 0.48
+      ? 2
+      : 1;
+  const maxDistance = clampAdaptiveValue(desiredMax - Math.min(1, Math.floor(relief / 2)), 1, Math.min(3, futureDepth));
+  const deepPenalty = relief * 0.08;
+  const weightsByDistance = {
+    1: maxDistance >= 1 ? clampAdaptiveValue(0.9 - difficultyScore * 0.35 + relief * 0.05, 0.45, 1) : 0,
+    2: maxDistance >= 2 ? clampAdaptiveValue(0.18 + difficultyScore * 0.25 - deepPenalty, 0.05, 0.4) : 0,
+    3: maxDistance >= 3 ? clampAdaptiveValue(0.06 + difficultyScore * 0.18 - deepPenalty, 0.03, 0.24) : 0
+  };
+  const totalWeight = Object.values(weightsByDistance).reduce((sum, value) => sum + value, 0) || 1;
+  Object.keys(weightsByDistance).forEach((distance) => {
+    weightsByDistance[distance] = roundAdaptiveValue(weightsByDistance[distance] / totalWeight, 3);
+  });
+  return {
+    minDistance: 1,
+    maxDistance,
+    weightsByDistance,
+    maxPreloadRatioByDistance: {
+      1: 1,
+      2: roundAdaptiveValue(clampAdaptiveValue(0.72 - difficultyScore * 0.14 - relief * 0.04, 0.38, 0.76), 3),
+      3: roundAdaptiveValue(clampAdaptiveValue(0.48 - difficultyScore * 0.1 - relief * 0.05, 0.22, 0.54), 3)
+    }
+  };
+}
+
 function analyzeAdaptiveLevel(state, source) {
   const topology = collectPathTopology(state, source);
   const demand = collectDemandMetrics(source);
@@ -3695,6 +3749,7 @@ function estimateDerivedGenerateParameters(source, analysis, intent, tuning = cr
   const reliefDuration = clampAdaptiveValue(Math.round(2 + (1 - difficultyScore) * 3 + tuning.releaseRelief), 1, 10);
   const continuousGrowthTarget = clampAdaptiveValue(Math.round(targetAverageTail + difficultyScore * 3 + density * 2 - tuning.tailRelief * 0.4), 2, 18);
   const releaseAmountTarget = clampAdaptiveValue(Math.round(clusterMax * requiredColorRatio + reliefDuration * 0.35), 1, 9);
+  const noiseProfile = noiseProfileForDifficulty({ difficultyScore, demandLayerCount: analysis.demand.demandLayerCount, tuning });
   const layerDensity = source.validByLayer
     ? [...source.validByLayer.entries()].map(([layerIndex, cells]) => ({
       layerIndex,
@@ -3718,6 +3773,11 @@ function estimateDerivedGenerateParameters(source, analysis, intent, tuning = cr
     clusterRatio: clusterAdjacencyRatio,
     minClusterSizePerBranch: clusterMin,
     maxClusterSizePerBranch: clusterMax,
+    noiseMinDistance: noiseProfile.minDistance,
+    noiseMaxDistance: noiseProfile.maxDistance,
+    noiseDistanceWeight1: noiseProfile.weightsByDistance[1] ?? 0,
+    noiseDistanceWeight2: noiseProfile.weightsByDistance[2] ?? 0,
+    noiseDistanceWeight3: noiseProfile.weightsByDistance[3] ?? 0,
     branchDistributionBalance: branchDistribution,
     routeChoicePressure: clampAdaptiveValue(0.12 + difficultyScore * 0.68 + analysis.topology.junctionRatio * 0.3, 0.08, 0.92),
     narrowPathUsage: clampAdaptiveValue(0.08 + difficultyScore * 0.48 + analysis.topology.narrowPathRatio * 0.25 - tuning.tailRelief * 0.02, 0.04, 0.85),
@@ -3732,6 +3792,8 @@ function estimateDerivedGenerateParameters(source, analysis, intent, tuning = cr
     noiseRatio: roundAdaptiveValue(noiseRatio, 3),
     requiredColorRatio: roundAdaptiveValue(requiredColorRatio, 3),
     carryOverRatio: roundAdaptiveValue(clampAdaptiveValue(noiseRatio * 0.9 + difficultyScore * 0.08, 0.18, 0.72), 3),
+    noiseProfile,
+    maxPreloadRatioByDistance: noiseProfile.maxPreloadRatioByDistance,
     clusterSizeDistribution: { min: clusterMin, preferred: clampAdaptiveValue(Math.round((clusterMin + clusterMax) / 2), clusterMin, clusterMax), max: clusterMax },
     clusterAdjacencyRatio: roundAdaptiveValue(clusterAdjacencyRatio, 3),
     highPressureRatio: roundAdaptiveValue(highPressureRatio, 3),
@@ -3939,7 +4001,9 @@ function buildStraightClusterContext(state, validCells, targetAmount, maxCluster
 
 function preferredClusterSize(requirement, settings, random) {
   const derived = settings.autoDerivedParameters?.clusterSizeDistribution ?? {};
-  const maxSize = clamp(Number(settings.maxClusterSizePerBranch) || Number(derived.max) || 6, 1, 20);
+  const distance = Math.max(0, Number(requirement.noiseDistance) || 0);
+  const deepNoiseScale = distance > 1 ? Math.max(0.45, 1 - (distance - 1) * 0.2) : 1;
+  const maxSize = clamp(Math.ceil((Number(settings.maxClusterSizePerBranch) || Number(derived.max) || 6) * deepNoiseScale), 1, 20);
   const minSize = clamp(Number(settings.minClusterSizePerBranch) || Number(derived.min) || 1, 1, maxSize);
   const preferred = clamp(Number(derived.preferred) || Math.round(maxSize * Math.max(0.35, settings.clusterRatio)), minSize, maxSize);
   const variance = random() < 0.35 ? (random() < 0.5 ? -1 : 1) : 0;
@@ -4182,7 +4246,195 @@ function summarizeSpatialDistribution(context, placedClusters) {
 }
 
 
+// ---- js/generate/noise-allocator.js ----
+const NOISE_DEPTH_PRESETS = Object.freeze({
+  near: { minDistance: 1, maxDistance: 1, weightsByDistance: { 1: 1 } },
+  medium: { minDistance: 1, maxDistance: 2, weightsByDistance: { 1: 0.7, 2: 0.3 } },
+  deep: { minDistance: 1, maxDistance: 3, weightsByDistance: { 1: 0.55, 2: 0.3, 3: 0.15 } }
+});
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function normalizeWeightMap(weightsByDistance, minDistance, maxDistance) {
+  const weights = {};
+  for (let distance = minDistance; distance <= maxDistance; distance += 1) {
+    const value = Number(weightsByDistance?.[distance] ?? weightsByDistance?.[String(distance)] ?? 0);
+    weights[distance] = Number.isFinite(value) && value > 0 ? value : 0;
+  }
+  const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
+  if (total > 0) {
+    Object.keys(weights).forEach((distance) => {
+      weights[distance] = weights[distance] / total;
+    });
+    return weights;
+  }
+  for (let distance = minDistance; distance <= maxDistance; distance += 1) {
+    weights[distance] = distance === minDistance ? 1 : 0;
+  }
+  return weights;
+}
+
+function createNoiseProfile(settings) {
+  const mode = settings.noiseDepthMode ?? "auto";
+  const derived = settings.autoDerivedParameters?.noiseProfile;
+  const preset = NOISE_DEPTH_PRESETS[mode];
+  const source = mode === "auto"
+    ? (derived ?? NOISE_DEPTH_PRESETS.medium)
+    : mode === "custom"
+      ? {
+        minDistance: settings.noiseMinDistance,
+        maxDistance: settings.noiseMaxDistance,
+        weightsByDistance: {
+          1: settings.noiseDistanceWeight1,
+          2: settings.noiseDistanceWeight2,
+          3: settings.noiseDistanceWeight3
+        }
+      }
+      : preset ?? NOISE_DEPTH_PRESETS.medium;
+  const minDistance = clamp(Math.floor(Number(source.minDistance) || 1), 1, 8);
+  const maxDistance = clamp(Math.floor(Number(source.maxDistance) || minDistance), minDistance, 8);
+  return {
+    mode,
+    minDistance,
+    maxDistance,
+    weightsByDistance: normalizeWeightMap(source.weightsByDistance, minDistance, maxDistance),
+    preloadRatioByDistance: {
+      1: 1,
+      ...(settings.autoDerivedParameters?.maxPreloadRatioByDistance ?? {})
+    }
+  };
+}
+
+function availableNoiseCount(entry, distance, profile) {
+  const ratio = Number(profile.preloadRatioByDistance?.[distance] ?? Math.max(0.2, 1 - (distance - 1) * 0.22));
+  const maxPreload = Math.max(1, Math.ceil(entry.amount * clamp(ratio, 0.05, 1)));
+  return Math.max(0, Math.min(entry.remaining, maxPreload - (entry.preloaded ?? 0)));
+}
+
+function distanceCapacity(pool, currentTrayLayerIndex, distance, profile) {
+  return pool.reduce((sum, entry) => {
+    const entryDistance = entry.sourceTrayLayerIndex - currentTrayLayerIndex;
+    if (entryDistance !== distance) return sum;
+    return sum + availableNoiseCount(entry, distance, profile);
+  }, 0);
+}
+
+function allocateWeightedCounts(total, distances, capacities, weights, random) {
+  const counts = Object.fromEntries(distances.map((distance) => [distance, 0]));
+  const capacityTotal = distances.reduce((sum, distance) => sum + capacities[distance], 0);
+  let remaining = Math.min(total, capacityTotal);
+  while (remaining > 0 && distances.some((distance) => counts[distance] < capacities[distance])) {
+    const available = distances.filter((distance) => counts[distance] < capacities[distance]);
+    const weightTotal = available.reduce((sum, distance) => sum + (weights[distance] ?? 0), 0);
+    const quotas = available.map((distance) => {
+      const weight = weightTotal > 0 ? weights[distance] ?? 0 : 1 / available.length;
+      return { distance, quota: remaining * weight / (weightTotal > 0 ? weightTotal : 1) };
+    });
+    let allocatedThisPass = 0;
+    quotas.forEach(({ distance, quota }) => {
+      const amount = Math.min(capacities[distance] - counts[distance], Math.floor(quota));
+      if (amount <= 0) return;
+      counts[distance] += amount;
+      allocatedThisPass += amount;
+    });
+    remaining -= allocatedThisPass;
+    if (remaining <= 0) break;
+    const ranked = quotas
+      .filter(({ distance }) => counts[distance] < capacities[distance])
+      .map((entry) => ({ ...entry, score: entry.quota - Math.floor(entry.quota) + random() * 0.01 }))
+      .sort((a, b) => b.score - a.score);
+    const picked = ranked[0];
+    if (!picked) break;
+    counts[picked.distance] += 1;
+    remaining -= 1;
+  }
+  return counts;
+}
+
+function takeFromDistance({ pool, currentTrayLayerIndex, distance, count, profile, existingCarryByItemId, random }) {
+  const taken = [];
+  let remaining = count;
+  while (remaining > 0) {
+    const candidates = pool
+      .filter((entry) => entry.sourceTrayLayerIndex - currentTrayLayerIndex === distance)
+      .map((entry) => ({ entry, capacity: availableNoiseCount(entry, distance, profile) }))
+      .filter((candidate) => candidate.capacity > 0)
+      .map((candidate) => {
+        const sameCarry = existingCarryByItemId.get(candidate.entry.itemId) ?? 0;
+        const demandScore = candidate.capacity + candidate.entry.remaining * 0.35;
+        const trayScore = 1 / (1 + Number(candidate.entry.trayId ?? 0) * 0.001);
+        return {
+          ...candidate,
+          score: demandScore + trayScore - sameCarry * 0.55 + random() * 0.2
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+    const picked = candidates[0];
+    if (!picked) break;
+    const amount = Math.min(picked.capacity, remaining);
+    picked.entry.remaining -= amount;
+    picked.entry.preloaded = (picked.entry.preloaded ?? 0) + amount;
+    existingCarryByItemId.set(picked.entry.itemId, (existingCarryByItemId.get(picked.entry.itemId) ?? 0) + amount);
+    taken.push({
+      ...picked.entry,
+      amount,
+      isNoise: true,
+      noiseDistance: distance
+    });
+    remaining -= amount;
+  }
+  return { taken, missing: remaining };
+}
+
+function allocateFutureNoise({ pool, currentTrayLayerIndex, totalNoiseCount, settings, random, existingCarryByItemId = new Map() }) {
+  const profile = createNoiseProfile(settings);
+  const maxAvailableDistance = Math.max(0, ...pool
+    .filter((entry) => entry.remaining > 0)
+    .map((entry) => entry.sourceTrayLayerIndex - currentTrayLayerIndex));
+  const minDistance = Math.min(profile.minDistance, Math.max(1, maxAvailableDistance || profile.minDistance));
+  const maxDistance = Math.min(profile.maxDistance, maxAvailableDistance);
+  if (totalNoiseCount <= 0 || maxDistance < minDistance) {
+    return { taken: [], missing: Math.max(0, totalNoiseCount), report: { profile, effectiveMinDistance: minDistance, effectiveMaxDistance: maxDistance, byDistance: {} } };
+  }
+  const distances = [];
+  for (let distance = minDistance; distance <= maxDistance; distance += 1) distances.push(distance);
+  const capacities = Object.fromEntries(distances.map((distance) => [distance, distanceCapacity(pool, currentTrayLayerIndex, distance, profile)]));
+  const eligibleDistances = distances.filter((distance) => capacities[distance] > 0);
+  if (eligibleDistances.length === 0) {
+    return { taken: [], missing: totalNoiseCount, report: { profile, effectiveMinDistance: minDistance, effectiveMaxDistance: maxDistance, byDistance: {} } };
+  }
+  const weights = normalizeWeightMap(profile.weightsByDistance, minDistance, maxDistance);
+  const distanceCounts = allocateWeightedCounts(totalNoiseCount, eligibleDistances, capacities, weights, random);
+  const taken = [];
+  const byDistance = {};
+  eligibleDistances.forEach((distance) => {
+    const result = takeFromDistance({ pool, currentTrayLayerIndex, distance, count: distanceCounts[distance], profile, existingCarryByItemId, random });
+    taken.push(...result.taken);
+    byDistance[distance] = {
+      target: distanceCounts[distance],
+      actual: result.taken.reduce((sum, entry) => sum + entry.amount, 0),
+      capacity: capacities[distance],
+      weight: weights[distance] ?? 0
+    };
+  });
+  const actual = taken.reduce((sum, entry) => sum + entry.amount, 0);
+  return {
+    taken,
+    missing: Math.max(0, totalNoiseCount - actual),
+    report: {
+      profile,
+      effectiveMinDistance: minDistance,
+      effectiveMaxDistance: maxDistance,
+      byDistance
+    }
+  };
+}
+
+
 // ---- js/generate/generator-engine.js ----
+
 
 
 
@@ -4374,14 +4626,15 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
   const autoLayerIndexes = autoLayerIndexesForSource(source);
   if (autoLayerIndexes.length === 0) return { layerCount: 0, layerIndexes: [], requirements: [] };
   const budgets = generatedLayerBudgets(source.stats.totalRequired, autoLayerIndexes, source, random);
-  const span = demandSpan(source);
   const noiseRatio = Number(settings.autoDerivedParameters?.noiseRatio ?? 0.42);
   const carryOverRatio = Number(settings.autoDerivedParameters?.carryOverRatio ?? noiseRatio);
   const futureRatio = Math.max(noiseRatio, carryOverRatio);
   const pool = source.requirements
-    .map((entry) => ({ ...entry, sourceTrayLayerIndex: entry.layerIndex, remaining: entry.amount }))
+    .map((entry) => ({ ...entry, sourceTrayLayerIndex: entry.layerIndex, remaining: entry.amount, preloaded: 0 }))
     .sort((a, b) => a.sourceTrayLayerIndex - b.sourceTrayLayerIndex || a.trayId - b.trayId || a.itemId - b.itemId);
   const planned = [];
+  const noiseReports = [];
+  const existingCarryByItemId = new Map();
   budgets.forEach((budget, mapLayerOrder) => {
     const mapLayerIndex = autoLayerIndexes[mapLayerOrder];
     if (!Number.isInteger(mapLayerIndex)) return;
@@ -4389,61 +4642,71 @@ function buildAdaptiveLayerRequirements(state, source, settings, random) {
     const isLastAutoLayer = mapLayerOrder === budgets.length - 1;
     const target = isLastAutoLayer ? remainingTotal : Math.min(budget, remainingTotal);
     if (target <= 0) return;
-    const futureStart = Math.min(span.max, mapLayerOrder + 2);
-    const futureFocus = Math.min(span.max, futureStart + 1 + Math.round(random() * Math.max(1, span.max - futureStart)));
     const futureTarget = isLastAutoLayer
       ? 0
       : Math.min(target, Math.round(target * futureRatio));
-    const nearTarget = isLastAutoLayer
-      ? 0
-      : Math.min(target - futureTarget, Math.round(target * 0.18));
-    const anchorTarget = Math.max(0, target - futureTarget - nearTarget);
-    const future = takeDemandFromPool(
+    const future = allocateFutureNoise({
       pool,
-      futureTarget,
-      (entry) => entry.sourceTrayLayerIndex >= futureStart,
-      (entry) => 12 - Math.abs(entry.sourceTrayLayerIndex - futureFocus) * 1.7 + entry.sourceTrayLayerIndex * 0.08,
-      random
-    );
-    const near = takeDemandFromPool(
-      pool,
-      nearTarget,
-      (entry) => entry.sourceTrayLayerIndex >= mapLayerOrder && entry.sourceTrayLayerIndex < futureStart,
-      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - (mapLayerOrder + 1)),
-      random
-    );
+      currentTrayLayerIndex: mapLayerOrder,
+      totalNoiseCount: futureTarget,
+      settings,
+      random,
+      existingCarryByItemId
+    });
+    const futureCount = future.taken.reduce((sum, entry) => sum + entry.amount, 0);
+    const anchorTarget = Math.max(0, target - futureCount);
     const anchor = takeDemandFromPool(
       pool,
       anchorTarget,
       () => true,
-      (entry) => 4 - Math.abs(entry.sourceTrayLayerIndex - mapLayerOrder) * 0.6,
+      (entry) => 8 - Math.abs(entry.sourceTrayLayerIndex - mapLayerOrder) * 0.9 - Math.max(0, entry.sourceTrayLayerIndex - mapLayerOrder - 1) * 0.5,
       random
     );
-    const missing = future.missing + near.missing + anchor.missing;
-    const fallback = missing > 0
+    const fallback = anchor.missing > 0
       ? takeDemandFromPool(
         pool,
-        missing,
+        anchor.missing,
         () => true,
         (entry) => 2 - entry.sourceTrayLayerIndex * 0.03,
         random
       ).taken
       : [];
-    [...future.taken, ...near.taken, ...anchor.taken, ...fallback].forEach((entry) => {
+    const layerEntries = [...future.taken, ...anchor.taken, ...fallback];
+    layerEntries.forEach((entry) => {
       planned.push({
         ...entry,
         layerIndex: mapLayerIndex,
         mapLayerOrder,
         sourceTrayLayerIndex: entry.sourceTrayLayerIndex,
+        noiseDistance: entry.noiseDistance ?? Math.max(0, entry.sourceTrayLayerIndex - mapLayerOrder),
+        isNoise: Boolean(entry.isNoise),
         amount: entry.amount
       });
+    });
+    noiseReports.push({
+      itemLayerIndex: mapLayerIndex,
+      mapLayerOrder,
+      totalItems: layerEntries.reduce((sum, entry) => sum + entry.amount, 0),
+      noiseTarget: futureTarget,
+      noiseActual: futureCount,
+      weightedNoiseDepth: futureCount
+        ? Number((future.taken.reduce((sum, entry) => sum + entry.amount * entry.noiseDistance, 0) / futureCount).toFixed(2))
+        : 0,
+      sources: future.taken.map((entry) => ({
+        sourceTrayId: entry.trayId,
+        sourceTrayLayer: entry.sourceTrayLayerIndex,
+        distance: entry.noiseDistance,
+        itemId: entry.itemId,
+        count: entry.amount
+      })),
+      allocator: future.report
     });
   });
   pool.filter((entry) => entry.remaining > 0).forEach((entry) => {
     planned.push({ ...entry, layerIndex: autoLayerIndexes[autoLayerIndexes.length - 1], mapLayerOrder: autoLayerIndexes.length - 1, amount: entry.remaining });
     entry.remaining = 0;
   });
-  return { layerCount: autoLayerIndexes.length, layerIndexes: autoLayerIndexes, requirements: planned };
+  return { layerCount: autoLayerIndexes.length, layerIndexes: autoLayerIndexes, requirements: planned, noiseReports };
 }
 
 function quotaCountsFromRequirements(requirements) {
@@ -4508,7 +4771,7 @@ function estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClus
   return Math.min(delayedCount, Math.max(settings.maxClusterSizePerBranch, densityPressure + colorMixPressure + scalePressure));
 }
 
-function generatedMetrics(generatedItems, settings, source) {
+function generatedMetrics(generatedItems, settings, source, layerPlan = null) {
   const byBranch = new Set(generatedItems.map((item) => item.branchId).filter(Boolean));
   const byCluster = new Set(generatedItems.map((item) => item.clusterId).filter(Boolean));
   const byLayer = new Map();
@@ -4546,6 +4809,15 @@ function generatedMetrics(generatedItems, settings, source) {
   const maxUnreleasedItems = estimatePeakUnreleasedInventory({ delayedCount, itemDensity, actualClusterRatio, settings });
   const spawnTrapCount = generatedItems.filter((item) => item.spawnRisk).length;
   const carryOverCount = generatedItems.filter((item) => Number(item.sourceTrayLayerIndex) > Number(item.layerIndex) + 1).length;
+  const noiseItems = generatedItems.filter((item) => item.isNoise && Number(item.noiseDistance) > 0);
+  const noiseByDistance = {};
+  noiseItems.forEach((item) => {
+    const key = String(item.noiseDistance);
+    noiseByDistance[key] = (noiseByDistance[key] ?? 0) + 1;
+  });
+  const weightedNoiseDepth = noiseItems.length
+    ? Number((noiseItems.reduce((sum, item) => sum + Number(item.noiseDistance), 0) / noiseItems.length).toFixed(2))
+    : 0;
   let adjacentOverlapCount = 0;
   let adjacentLayerItemCount = 0;
   [...indexesByLayer.keys()].sort((a, b) => a - b).forEach((layerIndex) => {
@@ -4580,6 +4852,10 @@ function generatedMetrics(generatedItems, settings, source) {
     maxUnreleasedItems,
     carryOverCount,
     carryOverActualRatio: generatedItems.length ? Number((carryOverCount / generatedItems.length).toFixed(3)) : 0,
+    noiseCount: noiseItems.length,
+    noiseActualRatio: generatedItems.length ? Number((noiseItems.length / generatedItems.length).toFixed(3)) : 0,
+    noiseByDistance,
+    weightedNoiseDepth,
     adjacentOverlapCount,
     adjacentOverlapRatio: adjacentLayerItemCount ? Number((adjacentOverlapCount / adjacentLayerItemCount).toFixed(3)) : 0,
     generatedMapLayerCount: byLayer.size,
@@ -4588,6 +4864,7 @@ function generatedMetrics(generatedItems, settings, source) {
     loopRiskScore: Number(loopRiskScore.toFixed(3)),
     quotaValidated: true,
     difficultyScore: Number(settings.difficultyScore),
+    noiseReport: structuredClone(layerPlan?.noiseReports ?? []),
     derivedParameters: structuredClone(settings.autoDerivedParameters ?? null),
     autoTuningAttempt: Number(settings.autoTuningAttempt ?? 1),
     autoTuningProfile: structuredClone(settings.autoTuningProfile ?? null),
@@ -4706,6 +4983,9 @@ function generatePreviewAttempt(state, source, settings) {
         itemId: requirement.itemId,
         layerIndex,
         sourceTrayLayerIndex: requirement.sourceTrayLayerIndex,
+        sourceTrayLayer: requirement.sourceTrayLayerIndex,
+        isNoise: Boolean(requirement.isNoise),
+        noiseDistance: Number(requirement.noiseDistance) || 0,
         gridX: x,
         gridY: y,
         pathIndex: cell.index,
@@ -4715,6 +4995,7 @@ function generatePreviewAttempt(state, source, settings) {
         clusterSize: cell.clusterSize,
         clusterOrientation: cell.orientation,
         sourceTrayId: `tray_${requirement.trayId}`,
+        sourceTrayNumericId: requirement.trayId,
         releaseDelay,
         spawnRisk: requirement.layerIndex > 0 && pathOrder < settings.spawnSafetyDistance,
         connectionCount: pathConnectionsAt(state, cell.index).length
@@ -4739,7 +5020,7 @@ function generatePreviewAttempt(state, source, settings) {
     };
   }
 
-  const meta = generatedMetrics(generatedItems, settings, source);
+  const meta = generatedMetrics(generatedItems, settings, source, layerPlan);
   const metricIssues = validateDifficultyMetrics(meta, settings);
   if (metricIssues.length > 0) {
     return { ok: false, preview: null, source, settings, issues: metricIssues, generatedItems, meta };
@@ -4766,9 +5047,26 @@ function canRetryGeneration(result) {
 function applyOverrideDerivedParameters(derivedParameters, overrideSettings) {
   const next = {
     ...derivedParameters,
+    noiseProfile: {
+      ...(derivedParameters.noiseProfile ?? {}),
+      weightsByDistance: { ...(derivedParameters.noiseProfile?.weightsByDistance ?? {}) }
+    },
     clusterSizeDistribution: { ...(derivedParameters.clusterSizeDistribution ?? {}) }
   };
   Object.entries(overrideSettings).forEach(([key, value]) => {
+    if (key === "noiseMinDistance") {
+      next.noiseProfile.minDistance = Number(value);
+      return;
+    }
+    if (key === "noiseMaxDistance") {
+      next.noiseProfile.maxDistance = Number(value);
+      return;
+    }
+    const noiseWeightMatch = key.match(/^noiseDistanceWeight([1-3])$/);
+    if (noiseWeightMatch) {
+      next.noiseProfile.weightsByDistance[noiseWeightMatch[1]] = Number(value);
+      return;
+    }
     if (Object.prototype.hasOwnProperty.call(next, key)) {
       next[key] = value;
       return;
@@ -4816,7 +5114,11 @@ function generatePreview(state, rawSettings = {}) {
   let tuning = createTuningState();
   for (let attempt = 0; attempt < baseSettings.maxRetries; attempt += 1) {
     const derived = estimateDerivedGenerateParameters(source, analysis, baseSettings, tuning);
-    const overrideSettings = Object.fromEntries((baseSettings.derivedOverrideKeys ?? [])
+    const derivedOverrideKeys = new Set(baseSettings.derivedOverrideKeys ?? []);
+    if (baseSettings.noiseDepthMode === "custom") {
+      ["noiseMinDistance", "noiseMaxDistance", "noiseDistanceWeight1", "noiseDistanceWeight2", "noiseDistanceWeight3"].forEach((key) => derivedOverrideKeys.add(key));
+    }
+    const overrideSettings = Object.fromEntries([...derivedOverrideKeys]
       .filter((key) => DERIVED_GENERATE_SETTING_KEYS.includes(key))
       .map((key) => [key, baseSettings[key]]));
     const autoDerivedParameters = applyOverrideDerivedParameters(derived.derivedParameters, overrideSettings);
@@ -7258,6 +7560,53 @@ function derivedSummaryCardsHtml(settings, derived, overrideKeys) {
   }).join("");
 }
 
+function noiseProfileForDisplay(settings, derived) {
+  if (settings.noiseDepthMode === "custom") {
+    return {
+      minDistance: settings.noiseMinDistance,
+      maxDistance: settings.noiseMaxDistance,
+      weightsByDistance: {
+        1: settings.noiseDistanceWeight1,
+        2: settings.noiseDistanceWeight2,
+        3: settings.noiseDistanceWeight3
+      }
+    };
+  }
+  return derived.noiseProfile ?? {
+    minDistance: settings.noiseMinDistance,
+    maxDistance: settings.noiseMaxDistance,
+    weightsByDistance: {
+      1: settings.noiseDistanceWeight1,
+      2: settings.noiseDistanceWeight2,
+      3: settings.noiseDistanceWeight3
+    }
+  };
+}
+
+function noiseControlsHtml(settings, derived) {
+  const profile = noiseProfileForDisplay(settings, derived);
+  const weights = profile.weightsByDistance ?? {};
+  const custom = settings.noiseDepthMode === "custom";
+  const weightRows = [1, 2, 3].map((distance) => `
+    <label class="generate-field" title="Tỷ lệ target cho Tray Layer +${distance}.">
+      <span>Layer +${distance}</span>
+      <input type="number" data-generate-setting="noiseDistanceWeight${distance}" data-setting-type="percent" min="0" max="100" step="1" value="${Math.round(Number(weights[distance] ?? 0) * 100)}" ${custom ? "" : "disabled"}>
+    </label>
+  `).join("");
+  return `
+    <div class="generate-field-grid">
+      <label class="generate-field wide"><span>Noise Depth</span>
+        <select data-generate-setting="noiseDepthMode">
+          ${Object.entries(NOISE_DEPTH_MODE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.noiseDepthMode === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="generate-field"><span>Min Distance</span><input type="number" data-generate-setting="noiseMinDistance" min="1" max="8" step="1" value="${profile.minDistance}" ${custom ? "" : "disabled"}></label>
+      <label class="generate-field"><span>Max Distance</span><input type="number" data-generate-setting="noiseMaxDistance" min="1" max="8" step="1" value="${profile.maxDistance}" ${custom ? "" : "disabled"}></label>
+      ${weightRows}
+    </div>
+  `;
+}
+
 function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
@@ -7312,6 +7661,11 @@ function renderGenerateControls(container, state) {
       </div>
       <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Advanced Noise</h2><span>${NOISE_DEPTH_MODE_LABELS[settings.noiseDepthMode]}</span></div>
+      ${noiseControlsHtml(settings, derived)}
+    </section>
   `;
 }
 
@@ -7322,6 +7676,7 @@ function renderGenerateResults(container, state, result = null) {
   const issues = result?.issues?.length ? result.issues : source.issues;
   const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
+  const noiseByDistance = meta.noiseByDistance ?? {};
   container.innerHTML = `
     <header class="panel-header">
       <div class="panel-title"><span class="panel-accent green"></span><div><h2>Kết quả sinh</h2><p>${escapeHtml(status)}</p></div></div>
@@ -7361,6 +7716,17 @@ function renderGenerateResults(container, state, result = null) {
           <div><span>Release Cycle</span><strong>${derived?.releaseCycleCount ?? "-"}</strong></div>
           <div><span>Repair</span><strong>${derived?.repairIntensity ?? "-"}</strong></div>
           <div><span>Search/Beam</span><strong>${derived ? `${derived.searchDepth}/${derived.beamWidth}` : "-"}</strong></div>
+        </div>
+      </section>
+      <section class="generate-result-card">
+        <header><h3>Noise Report</h3><span>${meta.noiseCount ?? 0}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Total Noise</span><strong>${meta.noiseCount ?? "-"}</strong></div>
+          <div><span>Tỷ lệ thực</span><strong>${Number.isFinite(meta.noiseActualRatio) ? formatPercent(meta.noiseActualRatio) : "-"}</strong></div>
+          <div><span>Depth TB</span><strong>${meta.weightedNoiseDepth ?? "-"}</strong></div>
+          <div><span>Layer +1</span><strong>${noiseByDistance["1"] ?? 0}</strong></div>
+          <div><span>Layer +2</span><strong>${noiseByDistance["2"] ?? 0}</strong></div>
+          <div><span>Layer +3</span><strong>${noiseByDistance["3"] ?? 0}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">

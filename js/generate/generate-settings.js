@@ -1,4 +1,4 @@
-export const GENERATOR_VERSION = "1.3.0";
+export const GENERATOR_VERSION = "1.4.0";
 
 export const GENERATE_PRESETS = Object.freeze({
   De: { difficultyScore: 0.25 },
@@ -28,6 +28,14 @@ export const TAIL_CURVE_LABELS = Object.freeze({
   "peak-late": "Khó cuối màn"
 });
 
+export const NOISE_DEPTH_MODE_LABELS = Object.freeze({
+  auto: "Auto",
+  near: "Near",
+  medium: "Medium",
+  deep: "Deep",
+  custom: "Custom"
+});
+
 export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "avgTailLengthTarget", label: "Đuôi TB mục tiêu", type: "number", min: 1, max: 40, step: 1, group: "Áp lực đuôi", tip: "Độ dài đuôi tàu trung bình mà bộ sinh cố gắng hướng tới." },
   { key: "targetPeakTail", label: "Đuôi đỉnh mục tiêu", type: "number", min: 2, max: 60, step: 1, group: "Áp lực đuôi", tip: "Đỉnh áp lực đuôi dự kiến cho level; dùng để designer khóa cảm giác peak mong muốn." },
@@ -45,6 +53,11 @@ export const DERIVED_GENERATE_SETTING_FIELDS = Object.freeze([
   { key: "clusterRatio", label: "Tỷ lệ gom màu", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ ưu tiên gom vật phẩm cùng màu; thấp hơn sẽ xen kẽ màu nhiều hơn." },
   { key: "noiseRatio", label: "Tỷ lệ noise", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item lấy từ nhu cầu khay tương lai để kéo dài thân, chưa fill ngay ở layer hiện tại." },
   { key: "carryOverRatio", label: "Tỷ lệ carry-over", type: "percent", min: 0, max: 0.8, step: 0.01, group: "Cụm và đường đi", tip: "Tỷ lệ item được đẩy qua nhiều nhịp/layer trước khi có cơ hội xả vào khay." },
+  { key: "noiseMinDistance", label: "Noise Min", type: "number", min: 1, max: 8, step: 1, group: "Noise Window", tip: "Khoảng cách Future Tray Layer gần nhất được phép lấy noise." },
+  { key: "noiseMaxDistance", label: "Noise Max", type: "number", min: 1, max: 8, step: 1, group: "Noise Window", tip: "Khoảng cách Future Tray Layer xa nhất được phép lấy noise." },
+  { key: "noiseDistanceWeight1", label: "Noise +1", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise Window", tip: "Tỷ trọng target cho noise từ Tray Layer kế tiếp." },
+  { key: "noiseDistanceWeight2", label: "Noise +2", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise Window", tip: "Tỷ trọng target cho noise cách 2 Tray Layer." },
+  { key: "noiseDistanceWeight3", label: "Noise +3", type: "percent", min: 0, max: 1, step: 0.01, group: "Noise Window", tip: "Tỷ trọng target cho noise cách 3 Tray Layer." },
   { key: "minClusterSizePerBranch", label: "Cụm tối thiểu/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Kích thước cụm nhỏ nhất mà bộ sinh ưu tiên khi tách item theo màu." },
   { key: "maxClusterSizePerBranch", label: "Cụm tối đa/nhánh", type: "number", min: 1, max: 20, step: 1, group: "Cụm và đường đi", tip: "Giới hạn cứng số vật phẩm cùng màu trong một cụm trên mỗi nhánh." },
   { key: "branchDistributionBalance", label: "Cân bằng nhánh", type: "percent", min: 0, max: 1, step: 0.01, group: "Cụm và đường đi", tip: "Ưu tiên mềm để không dồn toàn bộ vật phẩm vào một nhánh." },
@@ -94,6 +107,12 @@ const FALLBACK_DERIVED_SETTINGS = Object.freeze({
   releaseAmountTarget: 4,
   noiseRatio: 0.42,
   carryOverRatio: 0.34,
+  noiseDepthMode: "auto",
+  noiseMinDistance: 1,
+  noiseMaxDistance: 3,
+  noiseDistanceWeight1: 0.6,
+  noiseDistanceWeight2: 0.3,
+  noiseDistanceWeight3: 0.1,
   beamWidth: 11
 });
 
@@ -141,12 +160,16 @@ export function normalizeGenerateSettings(value = {}) {
   settings.maxRetries = Math.max(1, Math.min(500, Math.floor(Number(settings.maxRetries) || defaults.maxRetries)));
   settings.multiBranchMode = MULTI_BRANCH_MODE_LABELS[settings.multiBranchMode] ? settings.multiBranchMode : "balanced";
   settings.tailLengthGrowthCurve = TAIL_CURVE_LABELS[settings.tailLengthGrowthCurve] ? settings.tailLengthGrowthCurve : "linear";
+  settings.noiseDepthMode = NOISE_DEPTH_MODE_LABELS[settings.noiseDepthMode] ? settings.noiseDepthMode : "auto";
   DERIVED_GENERATE_SETTING_FIELDS.forEach((field) => {
     const numeric = Number(settings[field.key]);
     settings[field.key] = clamp(Number.isFinite(numeric) ? numeric : defaults[field.key], field.min, field.max);
   });
   if (settings.minClusterSizePerBranch > settings.maxClusterSizePerBranch) {
     settings.maxClusterSizePerBranch = settings.minClusterSizePerBranch;
+  }
+  if (settings.noiseMinDistance > settings.noiseMaxDistance) {
+    settings.noiseMaxDistance = settings.noiseMinDistance;
   }
   settings.autoDerived = settings.autoDerived !== false;
   settings.derivedOverrideKeys = Array.isArray(settings.derivedOverrideKeys)

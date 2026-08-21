@@ -181,7 +181,9 @@ export function buildStraightClusterContext(state, validCells, targetAmount, max
 
 function preferredClusterSize(requirement, settings, random) {
   const derived = settings.autoDerivedParameters?.clusterSizeDistribution ?? {};
-  const maxSize = clamp(Number(settings.maxClusterSizePerBranch) || Number(derived.max) || 6, 1, 20);
+  const distance = Math.max(0, Number(requirement.noiseDistance) || 0);
+  const deepNoiseScale = distance > 1 ? Math.max(0.45, 1 - (distance - 1) * 0.2) : 1;
+  const maxSize = clamp(Math.ceil((Number(settings.maxClusterSizePerBranch) || Number(derived.max) || 6) * deepNoiseScale), 1, 20);
   const minSize = clamp(Number(settings.minClusterSizePerBranch) || Number(derived.min) || 1, 1, maxSize);
   const preferred = clamp(Number(derived.preferred) || Math.round(maxSize * Math.max(0.35, settings.clusterRatio)), minSize, maxSize);
   const variance = random() < 0.35 ? (random() < 0.5 ? -1 : 1) : 0;

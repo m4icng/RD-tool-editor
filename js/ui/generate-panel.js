@@ -1,4 +1,4 @@
-import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_FIELDS, GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
+import { DERIVED_GENERATE_PARAMETER_ALIASES, DERIVED_GENERATE_SETTING_FIELDS, GENERATE_PRESETS, GENERATE_SETTING_FIELDS, MULTI_BRANCH_MODE_LABELS, NOISE_DEPTH_MODE_LABELS, PRESET_LABELS, normalizeGenerateSettings } from "../generate/generate-settings.js";
 import { analyzeAdaptiveLevel, estimateDerivedGenerateParameters } from "../generate/adaptive-parameters.js";
 import { analyzeGenerateSource } from "../generate/generate-source.js";
 import { ITEM_LAYER_LOCKED, getItemLayerLockRows } from "../generate/item-layer-locks.js";
@@ -150,6 +150,53 @@ function derivedSummaryCardsHtml(settings, derived, overrideKeys) {
   }).join("");
 }
 
+function noiseProfileForDisplay(settings, derived) {
+  if (settings.noiseDepthMode === "custom") {
+    return {
+      minDistance: settings.noiseMinDistance,
+      maxDistance: settings.noiseMaxDistance,
+      weightsByDistance: {
+        1: settings.noiseDistanceWeight1,
+        2: settings.noiseDistanceWeight2,
+        3: settings.noiseDistanceWeight3
+      }
+    };
+  }
+  return derived.noiseProfile ?? {
+    minDistance: settings.noiseMinDistance,
+    maxDistance: settings.noiseMaxDistance,
+    weightsByDistance: {
+      1: settings.noiseDistanceWeight1,
+      2: settings.noiseDistanceWeight2,
+      3: settings.noiseDistanceWeight3
+    }
+  };
+}
+
+function noiseControlsHtml(settings, derived) {
+  const profile = noiseProfileForDisplay(settings, derived);
+  const weights = profile.weightsByDistance ?? {};
+  const custom = settings.noiseDepthMode === "custom";
+  const weightRows = [1, 2, 3].map((distance) => `
+    <label class="generate-field" title="Tỷ lệ target cho Tray Layer +${distance}.">
+      <span>Layer +${distance}</span>
+      <input type="number" data-generate-setting="noiseDistanceWeight${distance}" data-setting-type="percent" min="0" max="100" step="1" value="${Math.round(Number(weights[distance] ?? 0) * 100)}" ${custom ? "" : "disabled"}>
+    </label>
+  `).join("");
+  return `
+    <div class="generate-field-grid">
+      <label class="generate-field wide"><span>Noise Depth</span>
+        <select data-generate-setting="noiseDepthMode">
+          ${Object.entries(NOISE_DEPTH_MODE_LABELS).map(([value, label]) => `<option value="${value}" ${settings.noiseDepthMode === value ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="generate-field"><span>Min Distance</span><input type="number" data-generate-setting="noiseMinDistance" min="1" max="8" step="1" value="${profile.minDistance}" ${custom ? "" : "disabled"}></label>
+      <label class="generate-field"><span>Max Distance</span><input type="number" data-generate-setting="noiseMaxDistance" min="1" max="8" step="1" value="${profile.maxDistance}" ${custom ? "" : "disabled"}></label>
+      ${weightRows}
+    </div>
+  `;
+}
+
 export function renderGenerateControls(container, state) {
   const settings = normalizeGenerateSettings(state.generateSettings);
   const source = analyzeGenerateSource(state);
@@ -204,6 +251,11 @@ export function renderGenerateControls(container, state) {
       </div>
       <button class="btn generate-reset-derived-btn" type="button" data-reset-derived-settings ${overrideCount ? "" : "disabled"}>Reset Auto Derived</button>
     </section>
+
+    <section class="control-section">
+      <div class="section-heading"><h2>Advanced Noise</h2><span>${NOISE_DEPTH_MODE_LABELS[settings.noiseDepthMode]}</span></div>
+      ${noiseControlsHtml(settings, derived)}
+    </section>
   `;
 }
 
@@ -214,6 +266,7 @@ export function renderGenerateResults(container, state, result = null) {
   const issues = result?.issues?.length ? result.issues : source.issues;
   const status = result?.ok ? "Sẵn sàng xem trước" : statusOf(state);
   const totalGenerated = result?.generatedItems?.length ?? state.generatedItems?.length ?? 0;
+  const noiseByDistance = meta.noiseByDistance ?? {};
   container.innerHTML = `
     <header class="panel-header">
       <div class="panel-title"><span class="panel-accent green"></span><div><h2>Kết quả sinh</h2><p>${escapeHtml(status)}</p></div></div>
@@ -253,6 +306,17 @@ export function renderGenerateResults(container, state, result = null) {
           <div><span>Release Cycle</span><strong>${derived?.releaseCycleCount ?? "-"}</strong></div>
           <div><span>Repair</span><strong>${derived?.repairIntensity ?? "-"}</strong></div>
           <div><span>Search/Beam</span><strong>${derived ? `${derived.searchDepth}/${derived.beamWidth}` : "-"}</strong></div>
+        </div>
+      </section>
+      <section class="generate-result-card">
+        <header><h3>Noise Report</h3><span>${meta.noiseCount ?? 0}</span></header>
+        <div class="generate-source-grid compact">
+          <div><span>Total Noise</span><strong>${meta.noiseCount ?? "-"}</strong></div>
+          <div><span>Tỷ lệ thực</span><strong>${Number.isFinite(meta.noiseActualRatio) ? formatPercent(meta.noiseActualRatio) : "-"}</strong></div>
+          <div><span>Depth TB</span><strong>${meta.weightedNoiseDepth ?? "-"}</strong></div>
+          <div><span>Layer +1</span><strong>${noiseByDistance["1"] ?? 0}</strong></div>
+          <div><span>Layer +2</span><strong>${noiseByDistance["2"] ?? 0}</strong></div>
+          <div><span>Layer +3</span><strong>${noiseByDistance["3"] ?? 0}</strong></div>
         </div>
       </section>
       <section class="generate-result-card">

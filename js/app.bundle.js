@@ -3021,9 +3021,6 @@ const TAIL_CURVE_LABELS = Object.freeze({
 
 const NOISE_DEPTH_MODE_LABELS = Object.freeze({
   auto: "Auto",
-  near: "Near",
-  medium: "Medium",
-  deep: "Deep",
   custom: "Custom"
 });
 
@@ -4247,10 +4244,10 @@ function summarizeSpatialDistribution(context, placedClusters) {
 
 
 // ---- js/generate/noise-allocator.js ----
-const NOISE_DEPTH_PRESETS = Object.freeze({
-  near: { minDistance: 1, maxDistance: 1, weightsByDistance: { 1: 1 } },
-  medium: { minDistance: 1, maxDistance: 2, weightsByDistance: { 1: 0.7, 2: 0.3 } },
-  deep: { minDistance: 1, maxDistance: 3, weightsByDistance: { 1: 0.55, 2: 0.3, 3: 0.15 } }
+const DEFAULT_AUTO_NOISE_PROFILE = Object.freeze({
+  minDistance: 1,
+  maxDistance: 2,
+  weightsByDistance: { 1: 0.7, 2: 0.3 }
 });
 
 function clamp(value, min, max) {
@@ -4279,9 +4276,8 @@ function normalizeWeightMap(weightsByDistance, minDistance, maxDistance) {
 function createNoiseProfile(settings) {
   const mode = settings.noiseDepthMode ?? "auto";
   const derived = settings.autoDerivedParameters?.noiseProfile;
-  const preset = NOISE_DEPTH_PRESETS[mode];
   const source = mode === "auto"
-    ? (derived ?? NOISE_DEPTH_PRESETS.medium)
+    ? (derived ?? DEFAULT_AUTO_NOISE_PROFILE)
     : mode === "custom"
       ? {
         minDistance: settings.noiseMinDistance,
@@ -4292,7 +4288,7 @@ function createNoiseProfile(settings) {
           3: settings.noiseDistanceWeight3
         }
       }
-      : preset ?? NOISE_DEPTH_PRESETS.medium;
+      : (derived ?? DEFAULT_AUTO_NOISE_PROFILE);
   const minDistance = clamp(Math.floor(Number(source.minDistance) || 1), 1, 8);
   const maxDistance = clamp(Math.floor(Number(source.maxDistance) || minDistance), minDistance, 8);
   return {

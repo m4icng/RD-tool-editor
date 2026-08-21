@@ -197,41 +197,33 @@ Noise từ các Layer phía sau
 
 ---
 
-## 6. Preset nhanh
+## 6. Noise Depth Mode
 
-Có thể có:
+UI chỉ cần:
 
 ```text
 Noise Depth
-[ Near ▼ ]
+[ Auto ▼ ]
 ```
 
-Preset:
-
-### Near
+Option:
 
 ```text
-+1 = 100%
+Auto
+Custom
 ```
 
-### Medium
+Auto sẽ derive Noise Window theo preset độ khó hiện tại.
+
+Custom cho designer override:
 
 ```text
-+1 = 70%
-+2 = 30%
+Min Distance
+Max Distance
++1 Weight
++2 Weight
++3 Weight
 ```
-
-### Deep
-
-```text
-+1 = 55%
-+2 = 30%
-+3 = 15%
-```
-
-Các số này chỉ là preset UI.
-
-Nếu Generator đang dùng Auto Adaptive thì hệ thống tự derive.
 
 ---
 
@@ -1225,7 +1217,8 @@ Simulate again
 
 - Added V1 runtime Noise Window using `noiseMinDistance`, `noiseMaxDistance`, and per-distance weights.
 - Added `noise-allocator.js` to distribute one total Noise budget across future Tray Layer distances without multiplying budget.
-- Added Auto/Near/Medium/Deep/Custom Noise Depth handling in Generate settings.
+- Added Auto/Custom Noise Depth handling in Generate settings. Auto derives from difficulty preset; Custom lets designer override distance range and weights.
 - Added runtime/debug metadata for Noise source tray, source layer, and distance.
 - Added Generate tab Noise Report summary.
 - Kept Level JSON export schema unchanged.
+- Simplified Noise Depth UI to only `Auto` and `Custom`; removed manual Near/Medium/Deep selector options.

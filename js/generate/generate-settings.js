@@ -30,9 +30,6 @@ export const TAIL_CURVE_LABELS = Object.freeze({
 
 export const NOISE_DEPTH_MODE_LABELS = Object.freeze({
   auto: "Auto",
-  near: "Near",
-  medium: "Medium",
-  deep: "Deep",
   custom: "Custom"
 });
 

@@ -15,7 +15,7 @@ export function detectCollision({ grid, layer, snake }, nextHead, direction = sn
   if (gateBlocks(headCell?.element, direction) || gateBlocks(cell.element, direction)) return { type: "gate", element: cell.element ?? headCell?.element };
   if (!ignoreSelfCollision
     && snake.body.some((part) => !part.hiddenInTunnel && part.x === nextHead.x && part.y === nextHead.y)
-    && !bridgeAllowsDifferentAxisOverlap(layer, snake, nextHead, direction)) return { type: "self" };
+    && !bridgeAllowsDifferentAxisOverlap(layer, { ...snake, body: snake.body.filter((part) => !part.hiddenInTunnel) }, nextHead, direction)) return { type: "self" };
   if (cell.item?.kind === "obstacle") return { type: "obstacle", item: cell.item };
   return null;
 }

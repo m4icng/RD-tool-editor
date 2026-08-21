@@ -1,10 +1,11 @@
-import { cellKey, createMergedLayer, isInsideGrid } from "../utils/grid-utils.js";
+import { cellKey, createMergedLayer } from "../utils/grid-utils.js";
 import { nextPosition } from "./snake-movement.js";
 import { detectCollision } from "./collision-system.js";
 import { collectFruit, deliverToTruck } from "./delivery-system.js";
 import { isWinState } from "./win-condition.js";
 import { normalizeTunnelElement } from "../objects/tunnel-object.js";
 import { normalizeOneWayDirection, normalizeOneWayElement, oneWayDirectionKey, reverseOneWayDirection } from "../objects/one-way-object.js";
+import { beginTunnelTransit, createTunnelTransitState, recordTunnelHeadStep } from "./tunnel-transit.js";
 
 function findSnakeStart(layer) {
   for (const [key, cell] of Object.entries(layer.cells)) {
@@ -31,6 +32,7 @@ export function createSimulation(level) {
       passedEntries: []
     })),
     snake: { body: [{ x: start.x, y: start.y }], direction: start.direction },
+    tunnelTransit: createTunnelTransitState(),
     inventory: {},
     delivered: {},
     status: "running",
@@ -67,11 +69,6 @@ function tunnelEntryAtIndex(tunnels, index) {
   return null;
 }
 
-function tunnelBodySlotVisible(state, position) {
-  return isInsideGrid(state.grid, position.x, position.y)
-    && Boolean(state.layer.cells[cellKey(position.x, position.y)]?.path);
-}
-
 function tunnelExitPathDirections(state, exitPosition, incomingDirection) {
   return Object.entries({
     up: { x: 0, y: -1 },
@@ -91,27 +88,6 @@ function tunnelExitPathDirections(state, exitPosition, incomingDirection) {
 function actualTunnelExitDirection(state, exitPosition, incomingDirection) {
   const directions = tunnelExitPathDirections(state, exitPosition, incomingDirection);
   return directions.includes(incomingDirection) ? incomingDirection : directions[0] ?? incomingDirection;
-}
-
-function rebuildBodyFromTunnelExit(state, body, exitPosition, exitDirection) {
-  const vector = {
-    up: { x: 0, y: -1 },
-    down: { x: 0, y: 1 },
-    left: { x: -1, y: 0 },
-    right: { x: 1, y: 0 }
-  }[exitDirection];
-  return body.map((segment, index) => {
-    const position = {
-      x: exitPosition.x - (vector.x * index),
-      y: exitPosition.y - (vector.y * index)
-    };
-    return {
-      ...segment,
-      ...position,
-      direction: exitDirection,
-      hiddenInTunnel: index > 0 && !tunnelBodySlotVisible(state, position)
-    };
-  });
 }
 
 function moveSimulationSnake(snake, direction) {
@@ -151,8 +127,9 @@ export function stepSimulation(simulation, direction = simulation.snake.directio
   state.snake = moveSimulationSnake(state.snake, direction);
   if (tunnelEntry) {
     const exit = { x: tunnelEntry.exitPoint.index % state.grid.columns, y: Math.floor(tunnelEntry.exitPoint.index / state.grid.columns) };
-    state.snake.direction = actualTunnelExitDirection(state, exit, direction);
-    state.snake.body = rebuildBodyFromTunnelExit(state, state.snake.body, exit, state.snake.direction);
+    beginTunnelTransit(state, tunnelEntry, exit, actualTunnelExitDirection(state, exit, direction));
+  } else {
+    recordTunnelHeadStep(state, state.snake.body[0], direction);
   }
   const finalHead = state.snake.body[0];
   updateOneWayRuntime(state, (finalHead.y * state.grid.columns) + finalHead.x);

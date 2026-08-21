@@ -55,6 +55,15 @@ import {
   temporaryItemOffsetClass,
   trackSpawnedItemOffsets
 } from "./layer-spawn-runtime.js";
+import {
+  appendTunnelCargo,
+  beginTunnelTransit,
+  createTunnelTransitState,
+  recordTunnelHeadStep,
+  resolveTunnelBodyFromTrail,
+  trimTunnelTrailAfterBodyChange,
+  tunnelTransitActive
+} from "./tunnel-transit.js";
 
 export const PLAY_STATUS = Object.freeze({
   READY: "ready",
@@ -109,41 +118,6 @@ function tunnelEntryAtIndex(tunnels, index) {
     }
   }
   return null;
-}
-
-function tunnelBodySlotVisible(session, position) {
-  return isInsideGrid(session.grid, position.x, position.y)
-    && Boolean(session.layer.cells[cellKey(position.x, position.y)]?.path);
-}
-
-function rebuildBodyFromTunnelExit(session, body, exitPosition, exitDirection) {
-  const vector = DIRECTIONS[exitDirection];
-  return body.map((segment, index) => {
-    const position = {
-      x: exitPosition.x - (vector.x * index),
-      y: exitPosition.y - (vector.y * index)
-    };
-    return {
-      ...segment,
-      ...position,
-      direction: exitDirection,
-      hiddenInTunnel: index > 0 && !tunnelBodySlotVisible(session, position)
-    };
-  });
-}
-
-function nextTailPosition(session, body, direction) {
-  const tail = body[body.length - 1];
-  const vector = DIRECTIONS[direction];
-  const position = {
-    x: tail.x - vector.x,
-    y: tail.y - vector.y
-  };
-  return {
-    ...position,
-    direction,
-    hiddenInTunnel: Boolean(tail.hiddenInTunnel) || !tunnelBodySlotVisible(session, position)
-  };
 }
 
 function tailLogicDisabled(session) {
@@ -427,6 +401,7 @@ export function createPlayableSession(level, { mode = "continuous", ...rawSettin
     deliveryEffect: null,
     teleporting: false,
     tailDisabled: false,
+    tunnelTransit: createTunnelTransitState(),
     shovel: createShovelBoosterRuntime()
   };
   resetLayerSpawnRuntime(session);
@@ -479,7 +454,8 @@ function cellIsTraversable(session, position, direction = null, { ignoreSelfColl
   if (ignoreSelfCollision || tailLogicDisabled(session)) return true;
   const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && !part.hiddenInShovel && part.x === position.x && part.y === position.y);
   if (!hitsSelf) return true;
-  return bridgeAllowsDifferentAxisOverlap(session.layer, session.snake, position, direction);
+  const visibleSnake = { ...session.snake, body: session.snake.body.filter((part) => !part.hiddenInTunnel && !part.hiddenInShovel) };
+  return bridgeAllowsDifferentAxisOverlap(session.layer, visibleSnake, position, direction);
 }
 
 function oneWayAllowsMovement(session, index, direction) {
@@ -562,6 +538,7 @@ export function deliverNextCargo(session) {
   const [segment] = session.snake.body.splice(cargoIndex, 1);
   const fillResult = fillFruitIntoTray(tray, segment.fruitType);
   session.snake.body = session.snake.body.map((part, index) => ({ ...part, ...positions[index] }));
+  trimTunnelTrailAfterBodyChange(session);
   session.deliveryEffect = {
     fruitType: segment.fruitType,
     itemId: segment.itemId,
@@ -610,7 +587,8 @@ function directionBlockedBySelfCollision(session, direction) {
   if (!oneWayAllowsMovement(session, nextIndex, direction)) return false;
   if (!cellIsTraversable(session, nextPosition, direction, { ignoreSelfCollision: true })) return false;
   const hitsSelf = session.snake.body.some((part) => !part.hiddenInTunnel && !part.hiddenInShovel && part.x === nextPosition.x && part.y === nextPosition.y);
-  return hitsSelf && !bridgeAllowsDifferentAxisOverlap(session.layer, session.snake, nextPosition, direction);
+  const visibleSnake = { ...session.snake, body: session.snake.body.filter((part) => !part.hiddenInTunnel && !part.hiddenInShovel) };
+  return hitsSelf && !bridgeAllowsDifferentAxisOverlap(session.layer, visibleSnake, nextPosition, direction);
 }
 
 function loseReasonForBlockedDirections(session, directions = Object.keys(DIRECTIONS)) {
@@ -690,7 +668,6 @@ export function movePlayableSession(session, direction) {
   const tunnelEntry = tunnelEntryAtIndex(session.tunnels, positionToIndex(nextHead.x, nextHead.y, session.grid.columns));
   if (tunnelEntry) {
     session.teleporting = true;
-    session.tailDisabled = true;
     session.status = PLAY_STATUS.TELEPORTING;
   }
   const previousCargo = previousBody.slice(1);
@@ -710,13 +687,13 @@ export function movePlayableSession(session, direction) {
       x: tunnelEntry.exitPoint.index % session.grid.columns,
       y: Math.floor(tunnelEntry.exitPoint.index / session.grid.columns)
     };
-    session.snake.direction = actualTunnelExitDirection(session, exit, direction);
-    session.snake.body = rebuildBodyFromTunnelExit(session, movedBody, exit, session.snake.direction);
-    session.tailDisabled = false;
+    session.snake.body = movedBody;
+    beginTunnelTransit(session, tunnelEntry, exit, actualTunnelExitDirection(session, exit, direction));
     session.teleporting = false;
   } else {
     session.snake.direction = direction;
     session.snake.body = movedBody;
+    recordTunnelHeadStep(session, session.snake.body[0], direction);
   }
   restoreReleasedItemOffsets(session);
 
@@ -726,12 +703,20 @@ export function movePlayableSession(session, direction) {
   const cell = session.layer.cells[key];
   const spawnedNextLayer = spawnPendingFruitLayerAtPoint(session, key);
   if (!spawnedNextLayer && cell.item?.kind === "fruit") {
-    const tailPosition = tunnelEntry ? nextTailPosition(session, session.snake.body, session.snake.direction) : previousBody[previousBody.length - 1];
-    session.snake.body.push({ ...tailPosition, fruitType: cell.item.fruitType, itemId: blockItemIdFromItem(cell.item), hiddenInShovel: isShovelRestoring(session) });
+    const tailPosition = previousBody[previousBody.length - 1];
+    const cargo = {
+      ...tailPosition,
+      fruitType: cell.item.fruitType,
+      itemId: blockItemIdFromItem(cell.item),
+      hiddenInShovel: isShovelRestoring(session)
+    };
+    if (tunnelTransitActive(session)) appendTunnelCargo(session, cargo);
+    else session.snake.body.push(cargo);
     cell.item = null;
     session.remainingFruits -= 1;
     markFruitLayerClearIfNeeded(session);
   }
+  if (tunnelTransitActive(session)) resolveTunnelBodyFromTrail(session);
   revealNextShovelTailSegment(session);
   const tray = session.trays.find((candidate) => candidate.checkpointKey === key);
   if (!beginCheckpointDelivery(session, tray)) setPostMoveStatus(session);

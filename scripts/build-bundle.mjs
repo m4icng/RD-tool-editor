@@ -66,6 +66,7 @@ const sourceFiles = [
   "js/gameplay/collision-system.js",
   "js/gameplay/delivery-system.js",
   "js/gameplay/win-condition.js",
+  "js/gameplay/tunnel-transit.js",
   "js/gameplay/simulator.js",
   "js/gameplay/shovel-booster.js",
   "js/gameplay/tray-fill-system.js",

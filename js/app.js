@@ -37,8 +37,10 @@ import { selectCell, changeSelectedTruckCapacity } from "./editor/selection-mana
 import { renderGrid } from "./editor/grid-renderer.js";
 import { InputController } from "./editor/input-controller.js";
 import { CameraController } from "./editor/camera-controller.js";
+import { applyBatchColorRemap } from "./editor/batch-color-remap.js";
 import { changeMapDimension, hasDataOnResizeEdge, resizeMapEdge } from "./ui/level-settings.js";
 import { renderObjectPalette } from "./ui/object-palette.js";
+import { createBatchColorDialog } from "./ui/batch-color-dialog.js";
 import { getSelectedCellIndex, renderInspector } from "./ui/inspector-panel.js";
 import { activateTab, renderToolbar } from "./ui/toolbar.js";
 import { showNotification } from "./ui/notification.js";
@@ -84,7 +86,7 @@ const elements = Object.fromEntries([
   "playableTrayCount", "playableTrayProgress", "playableEndOverlay", "playableEndIcon", "playableEndTitle", "playableEndCopy", "playReviveBtn", "playAgainBtn", "exitPlayableBtn",
   "toast", "saveStatus", "fileInput", "newLevelBtn", "jsonImportBtn", "jsonDownloadBtn", "chooseFolderBtn", "reconnectFolderBtn", "refreshFolderBtn",
   "jsonFileNameInput", "levelValidityBadge", "levelValidationPopover", "folderStatus", "jsonFileList", "jsonPreview", "jsonValidationStatus", "jsonDirtyStatus",
-  "generateValidateBtn", "generatePreviewBtn", "generateApplyBtn", "generateAndApplyBtn", "generateResetBtn", "generateSaveBtn", "generateExportBtn"
+  "generateValidateBtn", "generatePreviewBtn", "generateApplyBtn", "generateAndApplyBtn", "generateResetBtn", "generateSaveBtn", "generateExportBtn", "batchColorToolBtn"
 ].map((id) => [id, byId(id)]));
 
 const editor = new EditorState(loadSavedState());
@@ -341,6 +343,21 @@ function clearGeneratePreview() {
   generateLastResult = null;
   generateActiveLayerId = null;
 }
+
+const batchColorDialog = createBatchColorDialog({
+  getState: () => editor.data,
+  onApply(options, preview) {
+    const result = mutate((state) => applyBatchColorRemap(state, options));
+    if (!result?.valid) {
+      showNotification(elements.toast, "Không tìm thấy Item ID này trong phạm vi đã chọn.");
+      return;
+    }
+    clearGeneratePreview();
+    generateLastAppliedBackup = null;
+    renderAll();
+    showNotification(elements.toast, `Đã đổi màu ${preview.mapAffected} Map item và ${preview.trayAffected} Tray requirement.`);
+  }
+});
 
 function renderJsonWorkspace() {
   editor.data.fileName = normalizeFileName(editor.data.fileName);
@@ -864,6 +881,7 @@ elements.generateResetBtn.addEventListener("click", () => {
 });
 elements.generateSaveBtn.addEventListener("click", downloadCurrentLevel);
 elements.generateExportBtn.addEventListener("click", downloadCurrentLevel);
+elements.batchColorToolBtn.addEventListener("click", () => batchColorDialog.open());
 
 document.querySelector(".tool-list").addEventListener("click", (event) => {
   const eraseAction = event.target.closest("[data-erase-action]");
